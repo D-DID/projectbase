@@ -34,6 +34,10 @@ dependencies {
     testCompileOnly 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testAnnotationProcessor 'org.projectlombok:lombok'
+    // JWT Libraries
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6' // API 정의
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6' // 구현체
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6' // JSON 파싱/생성을 위한 Jackson 바인딩
 }
 
 tasks.named('test') {
