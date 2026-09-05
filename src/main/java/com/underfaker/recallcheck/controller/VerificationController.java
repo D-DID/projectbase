@@ -33,12 +33,11 @@ public class VerificationController {
         return ApiResponse.success(verificationService.verifyByImage(request));
     }
 
-    /** FR-008 추출 실패 시 사용자 직접 입력으로 검증 계속 */
-    @PostMapping("/{verificationId}/manual")
+    /** FR-008 사용자 직접 입력 검증 — 추출부터 4단계 판정까지 */
+    @PostMapping("/manual")
     public ApiResponse<VerificationResultResponse> verifyByManualInput(
-            @PathVariable Long verificationId,
             @Valid @RequestBody ManualInputRequest request) {
-        return ApiResponse.success(verificationService.verifyByManualInput(verificationId, request));
+        return ApiResponse.success(verificationService.verifyByManualInput(request));
     }
 
     /** FR-013 검증 결과 조회 */

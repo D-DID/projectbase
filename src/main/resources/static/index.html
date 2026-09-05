@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>리콜체크 · 멀티모달 매칭 기반 리콜 자동 검증</title>
+<style>
+  :root{
+    --navy:#0f1e3d; --navy-2:#1b3260; --accent:#2f6df6; --line:#e3e7ee;
+    --bg:#f6f8fb; --text:#101828; --muted:#667085;
+    --match:#d92d20; --partial:#f79009; --nomatch:#12b76a; --unknown:#667085;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:"Pretendard","Malgun Gothic",system-ui,-apple-system,sans-serif;}
+  header{background:var(--navy);color:#fff;padding:18px 28px;display:flex;align-items:center;gap:16px}
+  header .brand{font-weight:700;font-size:17px;letter-spacing:-.2px}
+  header .sub{font-size:12px;color:#9fb0d0}
+  header .spacer{flex:1}
+  header .who{font-size:13px;color:#cfd9ec}
+  .wrap{max-width:1080px;margin:28px auto;padding:0 20px;display:grid;gap:20px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px 24px}
+  .card h2{margin:0 0 4px;font-size:16px}
+  .card p.desc{margin:0 0 18px;font-size:13px;color:var(--muted)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+  input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;
+    font-family:inherit;background:#fff}
+  input:focus{outline:2px solid rgba(47,109,246,.25);border-color:var(--accent)}
+  button{padding:11px 18px;border:0;border-radius:8px;background:var(--navy);color:#fff;
+    font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+  button:hover{background:var(--navy-2)}
+  button.ghost{background:#fff;color:var(--navy);border:1px solid var(--line)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .row{display:flex;gap:10px;align-items:flex-end;margin-top:14px;flex-wrap:wrap}
+  .badge{display:inline-block;padding:7px 16px;border-radius:999px;color:#fff;font-weight:700;font-size:15px}
+  .b-MATCH{background:var(--match)} .b-PARTIAL{background:var(--partial)}
+  .b-NO_MATCH{background:var(--nomatch)} .b-UNKNOWN{background:var(--unknown)}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
+  th,td{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:top}
+  th{color:var(--muted);font-weight:600;width:130px;white-space:nowrap}
+  .hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6}
+  .msg{margin-top:12px;padding:11px 14px;border-radius:8px;font-size:13px;display:none}
+  .msg.ok{background:#ecfdf3;color:#027a48;display:block}
+  .msg.err{background:#fef3f2;color:#b42318;display:block}
+  .score{font-size:28px;font-weight:700;color:var(--navy)}
+  .muted{color:var(--muted)}
+  .warn{background:#fffaeb;border:1px solid #fedf89;color:#93370d;
+    padding:11px 14px;border-radius:8px;font-size:12.5px;line-height:1.6}
+  #resultCard{display:none}
+  .kv{font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="brand">리콜체크 &nbsp;|&nbsp; RecallCheck</div>
+    <div class="sub">멀티모달 매칭 기반 온라인 유통 제품 리콜 자동 검증 시스템 · 팀 UnderFaker</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="who" id="who">로그인 필요</div>
+</header>
+
+<div class="wrap">
+
+  <div class="card" id="authCard">
+    <h2>로그인 · 회원가입</h2>
+    <p class="desc">FR-001 회원가입 / FR-002 로그인 — JWT 발급</p>
+    <div class="grid3">
+      <div><label>이메일</label><input id="email" value="test@test.com"></div>
+      <div><label>비밀번호</label><input id="password" type="password" value="test1234"></div>
+      <div><label>이름 (회원가입 시)</label><input id="username" value="테스터"></div>
+    </div>
+    <div class="row">
+      <button onclick="signup()">회원가입</button>
+      <button onclick="login()">로그인</button>
+      <button class="ghost" onclick="logout()">로그아웃</button>
+    </div>
+    <div class="msg" id="authMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>제품 정보로 리콜 검증</h2>
+    <p class="desc">FR-008 직접 입력 → FR-007 정보 통합 → FR-010 유사도 매칭 → FR-011 4단계 판정</p>
+    <div class="grid3">
+      <div><label>제품명</label><input id="productName" placeholder="예: 가정용 물티슈"></div>
+      <div><label>모델명</label><input id="modelName" placeholder="예: WT-100C"></div>
+      <div><label>제조사</label><input id="makerName" placeholder="예: ○○산업"></div>
+    </div>
+    <div class="grid3" style="margin-top:12px">
+      <div><label>브랜드명</label><input id="brandName"></div>
+      <div><label>인증번호</label><input id="certNum" placeholder="예: HU07-123456"></div>
+      <div><label>바코드</label><input id="barcodeNum"></div>
+    </div>
+    <div class="row">
+      <button onclick="verify()" id="verifyBtn">검증하기</button>
+      <button class="ghost" onclick="loadHistory()">내 검증 이력</button>
+    </div>
+    <div class="hint">
+      URL 입력(FR-005) · 이미지 OCR(FR-006) 경로는 구현 중입니다.
+      자동 추출이 실패해도 종료하지 않고 직접 입력으로 이어지는 것이 설계 원칙이며,
+      현재 그 경로가 end-to-end 로 동작합니다.
+    </div>
+    <div class="msg" id="verifyMsg"></div>
+  </div>
+
+  <div class="card" id="resultCard">
+    <h2>검증 결과</h2>
+    <p class="desc">FR-013 판정 결과 · FR-014 판정 근거 공개</p>
+    <div class="row" style="align-items:center;gap:18px;margin-top:0">
+      <span id="badge" class="badge">-</span>
+      <div>
+        <div class="score" id="score">-</div>
+        <div class="muted" style="font-size:12px">종합 유사도</div>
+      </div>
+    </div>
+    <table id="resultTable"></table>
+    <div class="hint" id="reason"></div>
+  </div>
+
+  <div class="card" id="historyCard" style="display:none">
+    <h2>내 검증 이력</h2>
+    <p class="desc">FR-015</p>
+    <table id="historyTable"></table>
+  </div>
+
+  <div class="warn">
+    현재 <code>recall</code> 테이블에는 개발 검증용 <b>샘플 데이터</b>가 들어 있습니다.
+    국가기술표준원 Open API 연동(FR-009 · FR-016)을 통한 실제 공표 데이터 적재는 진행 중이며,
+    화면에 표시되는 리콜 정보는 실제 공표문이 아닙니다.
+  </div>
+</div>
+
+<script>
+const API = '';
+let token = localStorage.getItem('rc_token') || null;
+let userEmail = localStorage.getItem('rc_email') || null;
+paintWho();
+
+function paintWho(){
+  document.getElementById('who').textContent = token ? (userEmail + ' 님 · 로그인됨') : '로그인 필요';
+}
+function show(id, text, ok){
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+function headers(){
+  const h = {'Content-Type':'application/json'};
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+}
+function val(id){ const v = document.getElementById(id).value.trim(); return v === '' ? null : v; }
+
+async function call(path, method, body){
+  const res = await fetch(API + path, {
+    method: method,
+    headers: headers(),
+    body: body ? JSON.stringify(body) : undefined
+  });
+  let json = null;
+  try { json = await res.json(); } catch (e) {}
+  return { status: res.status, json: json };
+}
+
+async function signup(){
+  const r = await call('/api/auth/signup', 'POST', {
+    email: val('email'), password: val('password'), username: val('username')
+  });
+  if (r.json && r.json.success) show('authMsg', '회원가입 완료. 이제 로그인하세요.', true);
+  else show('authMsg', '실패 (' + r.status + ') ' + (r.json ? r.json.message : ''), false);
+}
+
+async function login(){
+  const r = await call('/api/auth/login', 'POST', {
+    email: val('email'), password: val('password')
+  });
+  if (r.json && r.json.success) {
+    token = r.json.data.accessToken;
+    userEmail = val('email');
+    localStorage.setItem('rc_token', token);
+    localStorage.setItem('rc_email', userEmail);
+    paintWho();
+    show('authMsg', '로그인 성공. 토큰이 발급되었습니다.', true);
+  } else {
+    show('authMsg', '실패 (' + r.status + ') ' + (r.json ? r.json.message : ''), false);
+  }
+}
+
+function logout(){
+  token = null; userEmail = null;
+  localStorage.removeItem('rc_token'); localStorage.removeItem('rc_email');
+  paintWho();
+  show('authMsg', '로그아웃되었습니다.', true);
+}
+
+const LABEL = { MATCH:'일치', PARTIAL:'부분 일치', NO_MATCH:'불일치', UNKNOWN:'확인 불가' };
+const SUBLABEL = {
+  MATCH:'리콜 대상 상품과 일치',
+  PARTIAL:'추가 확인 필요',
+  NO_MATCH:'일치하는 리콜 정보 없음',
+  UNKNOWN:'정보 부족으로 판별 불가'
+};
+
+async function verify(){
+  if (!token) { show('verifyMsg', '먼저 로그인하세요.', false); return; }
+  const btn = document.getElementById('verifyBtn');
+  btn.disabled = true; btn.textContent = '검증 중...';
+
+  const r = await call('/api/verifications/manual', 'POST', {
+    productName: val('productName'), brandName: val('brandName'),
+    modelName: val('modelName'), makerName: val('makerName'),
+    barcodeNum: val('barcodeNum'), certNum: val('certNum')
+  });
+
+  btn.disabled = false; btn.textContent = '검증하기';
+
+  if (!r.json || !r.json.success) {
+    show('verifyMsg', '실패 (' + r.status + ') ' + (r.json ? r.json.message : ''), false);
+    return;
+  }
+  show('verifyMsg', '검증 완료 (verificationId = ' + r.json.data.verificationId + ')', true);
+  render(r.json.data);
+  loadEvidence(r.json.data.verificationId);
+}
+
+function render(d){
+  document.getElementById('resultCard').style.display = 'block';
+  const fr = d.finalResult || 'UNKNOWN';
+  const badge = document.getElementById('badge');
+  badge.className = 'badge b-' + fr;
+  badge.textContent = LABEL[fr] + ' · ' + SUBLABEL[fr];
+  document.getElementById('score').textContent =
+    d.similarityScore == null ? '-' : (d.similarityScore * 100).toFixed(1) + '%';
+
+  const rows = [
+    ['제품명', d.recallProductName], ['브랜드명', d.recallBrandName],
+    ['모델명', d.recallModelName], ['제조사', d.makerName],
+    ['리콜 종류', d.recallTypeName], ['리콜 방법', d.recallMeans],
+    ['리콜 사업자', d.recallCmpnyName], ['공표일', fmtDate(d.publishDate)],
+    ['제품 결함', d.harmDscr], ['위해 정보', d.accidentCaseDscr],
+    ['소비자 행동요령', d.publishActionDscr]
+  ].filter(function(x){ return x[1]; });
+
+  document.getElementById('resultTable').innerHTML = rows.length
+    ? rows.map(function(x){ return '<tr><th>' + x[0] + '</th><td>' + esc(x[1]) + '</td></tr>'; }).join('')
+    : '<tr><td class="muted">대조된 공식 리콜 정보가 없습니다.</td></tr>';
+}
+
+async function loadEvidence(id){
+  const r = await call('/api/verifications/' + id + '/evidence', 'GET');
+  if (r.json && r.json.success && r.json.data) {
+    document.getElementById('reason').textContent = '판정 근거 · ' + (r.json.data.reason || '');
+  }
+}
+
+async function loadHistory(){
+  if (!token) { show('verifyMsg', '먼저 로그인하세요.', false); return; }
+  const r = await call('/api/verifications/me?page=0&size=10', 'GET');
+  if (!r.json || !r.json.success) { show('verifyMsg', '이력 조회 실패 (' + r.status + ')', false); return; }
+  document.getElementById('historyCard').style.display = 'block';
+  const head = '<tr><th>ID</th><th>입력</th><th>상태</th><th>판정</th><th>시각</th></tr>';
+  const body = r.json.data.content.map(function(v){
+    return '<tr><td>' + v.verificationId + '</td><td>' + esc(v.inputSummary) + '</td><td>' +
+      v.status + '</td><td>' + (LABEL[v.finalResult] || '-') + '</td><td>' +
+      (v.createdAt || '').replace('T', ' ').substring(0, 19) + '</td></tr>';
+  }).join('');
+  document.getElementById('historyTable').innerHTML = head + body;
+}
+
+function fmtDate(s){
+  if (!s || s.length !== 8) return s;
+  return s.substring(0,4) + '-' + s.substring(4,6) + '-' + s.substring(6,8);
+}
+function esc(s){
+  return String(s).replace(/[&<>]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];
+  });
+}
+</script>
+</body>
+</html>

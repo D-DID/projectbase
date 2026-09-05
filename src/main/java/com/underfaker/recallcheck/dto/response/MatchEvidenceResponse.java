@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * FR-014 판정 근거 — 판정에 사용된 항목과 유사도 점수.
- * 사용자가 판정을 직접 검증할 수 있게 항목별 대조표와 공표문 원문 링크를 함께 노출한다.
+ * 사용자가 판정을 직접 검증할 수 있도록 항목별 대조 결과를 함께 노출한다.
  */
 public record MatchEvidenceResponse(
 
@@ -16,7 +16,9 @@ public record MatchEvidenceResponse(
         Decision decision,
         Double similarityScore,
         String reason,
-        String recallUrl,
+        String recallProductName,
+        /** yyyyMMdd */
+        String publishDate,
         List<FieldComparison> comparisons
 ) {
 }

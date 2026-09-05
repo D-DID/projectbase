@@ -4,10 +4,13 @@ import com.underfaker.recallcheck.common.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
 
@@ -34,13 +37,44 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException e,
                                                               HttpServletRequest request) {
         String detail = e.getBindingResult().getFieldErrors().stream()
-                .map(fieldError -> fieldError.getField() + ": " + fieldError.getDefaultMessage())
+                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
                 .collect(Collectors.joining(", "));
         log.warn("[검증 실패] {} {} -> {}", request.getMethod(), request.getRequestURI(), detail);
 
         ErrorCode code = ErrorCode.INVALID_INPUT;
+        return ResponseEntity.status(code.getStatus()).body(ApiResponse.error(code.getCode(), detail));
+    }
+
+    /** 요청 본문 누락 / JSON 문법 오류 — 클라이언트 잘못이므로 400 */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnreadable(HttpMessageNotReadableException e,
+                                                              HttpServletRequest request) {
+        log.warn("[본문 오류] {} {} -> {}", request.getMethod(), request.getRequestURI(), e.getMessage());
+        ErrorCode code = ErrorCode.INVALID_INPUT;
         return ResponseEntity.status(code.getStatus())
-                .body(ApiResponse.error(code.getCode(), detail));
+                .body(ApiResponse.error(code.getCode(),
+                        "요청 본문이 비어 있거나 JSON 형식이 잘못되었습니다."));
+    }
+
+    /** 브라우저 주소창으로 POST 전용 경로를 열면 여기로 온다 */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethod(HttpRequestMethodNotSupportedException e,
+                                                          HttpServletRequest request) {
+        String supported = e.getSupportedHttpMethods() == null ? "" : e.getSupportedHttpMethods().toString();
+        ErrorCode code = ErrorCode.METHOD_NOT_ALLOWED;
+        log.warn("[메서드 불일치] {} {} -> 지원 {}", request.getMethod(), request.getRequestURI(), supported);
+        return ResponseEntity.status(code.getStatus())
+                .body(ApiResponse.error(code.getCode(),
+                        supported + " 로만 호출할 수 있는 경로입니다. 현재 요청: " + request.getMethod()));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNotFound(NoResourceFoundException e,
+                                                            HttpServletRequest request) {
+        ErrorCode code = ErrorCode.NOT_FOUND;
+        log.warn("[없는 경로] {} {}", request.getMethod(), request.getRequestURI());
+        return ResponseEntity.status(code.getStatus())
+                .body(ApiResponse.error(code.getCode(), code.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)
