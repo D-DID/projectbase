@@ -4,9 +4,9 @@ plugins {
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
-group = 'com.meta'
+group = 'com.underfaker'
 version = '0.0.1-SNAPSHOT'
-description = 'projectbase'
+description = 'recallcheck'
 
 java {
     toolchain {
@@ -23,6 +23,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    // DTO 검증(@Valid, @NotBlank 등)에 필요 — 새로 추가한 항목
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.thymeleaf.extras:thymeleaf-extras-springsecurity6'
     compileOnly 'org.projectlombok:lombok'
     runtimeOnly 'com.mysql:mysql-connector-j'
@@ -38,6 +40,8 @@ dependencies {
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6' // API 정의
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6' // 구현체
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6' // JSON 파싱/생성을 위한 Jackson 바인딩
+    // 웹페이지 텍스트 파싱 (FR-005) — WebTextExtractor 구현 시 주석 해제
+    // implementation 'org.jsoup:jsoup:1.18.1'
 }
 
 tasks.named('test') {
