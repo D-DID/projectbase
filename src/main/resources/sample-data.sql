@@ -69,7 +69,8 @@ VALUES
 
 INSERT INTO `recall_file` (`recall_uid`, `file_div`, `image_url`) VALUES
 (900001, '전체사진', 'https://example.invalid/sample/900001_full.jpg'),
-(900001, '부분사진', 'https://example.invalid/sample/900001_label.jpg'),
+(900001, '부분사진', 'https:
+//example.invalid/sample/900001_label.jpg'),
 (900002, '전체사진', 'https://example.invalid/sample/900002_full.jpg'),
 (900003, '전체사진', 'https://example.invalid/sample/900003_full.jpg');
 
