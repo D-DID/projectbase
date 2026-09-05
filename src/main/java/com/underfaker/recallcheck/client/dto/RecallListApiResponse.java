@@ -6,36 +6,58 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
- * recallList.json 응답 (외부 전용 DTO).
+ * recallList.json 응답 (외부 전용 DTO — 엔티티에 직접 매핑하지 말 것).
  *
- * 인터페이스 설계서 v2.0 대조에서 확인된 불일치를 여기서 흡수한다.
- *   - recallCmpnDivName : 명세 표(p.11) ≠ 예시 JSON(p.10)
- *   - recallurl / recallUrl : 대소문자 불일치 (p.17 vs p.16)
- *   - accidentCaseDscr : 표 국문명(p.17) ≠ 예시 값(p.15)
- * 엔티티에 직접 매핑하지 말 것. 매퍼에서 Recall 로 변환한다.
+ * 공통 응답 규격: resultCode / resultMsg / resultData
+ * 결과 코드: 2000 Success · 2004 No Data · 4000 Invalid Auth Key · 4001 Invalid IP
+ *           · 4005 Invalid Parameter · 5000 Internal Server Error
+ *
+ * 주의: resultData 가 배열인지 객체 래퍼인지는 명세서에 명시돼 있지 않다.
+ *       첫 호출 응답을 보고 이 타입을 확정할 것.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record RecallListApiResponse(
 
         @JsonProperty("resultCode") String resultCode,
         @JsonProperty("resultMsg") String resultMsg,
-        @JsonProperty("totalCount") Integer totalCount,
-        @JsonProperty("items") List<Item> items
+        @JsonProperty("resultData") List<Item> resultData
 ) {
+
+    public boolean isSuccess() {
+        return "2000".equals(resultCode);
+    }
+
+    /** 데이터 없음 — 오류가 아니라 정상 응답이다 */
+    public boolean isNoData() {
+        return "2004".equals(resultCode);
+    }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Item(
 
             @JsonProperty("recallUid") Long recallUid,
-            @JsonProperty("prductNm") String productName,
-            @JsonProperty("mdlNm") String modelName,
-            @JsonProperty("mnfcturNm") String makerName,
+            @JsonProperty("recallProductName") String recallProductName,
+            @JsonProperty("recallBrandName") String recallBrandName,
+            /** 콤마로 구분된 모델명 목록 */
+            @JsonProperty("recallModelName") String recallModelName,
+            @JsonProperty("recallModelCnt") Integer recallModelCnt,
+            @JsonProperty("barcodeNum") String barcodeNum,
+            /** 콤마로 구분된 인증번호 목록 */
             @JsonProperty("certNum") String certNum,
-            /** 리콜 종류 — 명세 불일치 항목 */
-            @JsonProperty("recallCmpnDivName") String recallType,
-            @JsonProperty("bssnDate") String announcedAt,
-            /** 공표문 링크 — 대소문자 불일치 항목 */
-            @JsonProperty("recallUrl") String recallUrl
+            @JsonProperty("categoryName") String categoryName,
+            @JsonProperty("recallTypeName") String recallTypeName,
+            @JsonProperty("recallMeans") String recallMeans,
+            @JsonProperty("recallCmpnyName") String recallCmpnyName,
+            @JsonProperty("makerName") String makerName,
+            @JsonProperty("makingCntryName") String makingCntryName,
+            /** yyyyMMdd */
+            @JsonProperty("publishDate") String publishDate,
+            /** 제품 결함 */
+            @JsonProperty("harmDscr") String harmDscr,
+            /** 위해 정보 */
+            @JsonProperty("accidentCaseDscr") String accidentCaseDscr,
+            /** 소비자 행동요령 (v2.0 추가 항목) */
+            @JsonProperty("publishActionDscr") String publishActionDscr
     ) {
     }
 }

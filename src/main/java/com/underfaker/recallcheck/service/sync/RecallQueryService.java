@@ -5,6 +5,7 @@ import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
 import com.underfaker.recallcheck.dto.request.RecallSearchRequest;
 import com.underfaker.recallcheck.dto.response.RecallDetailResponse;
 import com.underfaker.recallcheck.entity.Recall;
+import com.underfaker.recallcheck.repository.RecallFileRepository;
 import com.underfaker.recallcheck.repository.RecallRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,10 +23,19 @@ import java.util.List;
 public class RecallQueryService {
 
     private final RecallRepository recallRepository;
+    private final RecallFileRepository recallFileRepository;
 
-    /** 매칭 후보 조회 — 모델명·인증번호·제품명 기준 1차 필터링 */
+    /**
+     * 매칭 후보 조회.
+     *
+     * 후보 축소 순서 — 단서가 강한 것부터:
+     *   1) barcodeNum 완전 일치
+     *   2) certNum 부분 일치 (recall.cert_num 은 콤마 구분 목록)
+     *   3) recallModelName 부분 일치 (recall_model_name 도 콤마 구분 목록)
+     *   4) recallProductName 부분 일치
+     */
     public List<Recall> findCandidates(ExtractedProduct product) {
-        // TODO 인증번호 완전일치 → 모델명 부분일치 → 제품명 토큰 검색 순으로 후보 축소
+        // TODO 위 순서대로 조회하고 중복 제거해서 반환
         throw new UnsupportedOperationException("TODO: findCandidates");
     }
 
@@ -34,6 +44,7 @@ public class RecallQueryService {
     }
 
     public RecallDetailResponse getDetail(Long recallUid) {
+        // TODO recall + recall_file 조회해서 imageUrls 채우기
         throw new UnsupportedOperationException("TODO: getDetail");
     }
 }

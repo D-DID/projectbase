@@ -13,9 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * FR-016, 017 — 리콜 데이터 적재·로그 기록.
  *
- * 주의: Recall 의 PK 는 API 원본 키(recallUid)를 그대로 쓴다.
- * JPA 에서 ID 를 직접 할당하면 save() 마다 SELECT 가 선행되므로
- * Recall 이 Persistable 을 구현하거나 JDBC batch insert 로 처리할 것.
+ * 주의 1. Recall 의 PK 는 API 원본 키(recallUid)라 직접 할당된다.
+ *         Persistable 구현으로 save() 앞 SELECT 는 막았지만, 대량 적재 시에는
+ *         saveAll 배치 크기(hibernate.jdbc.batch_size)를 함께 조정할 것.
+ * 주의 2. 목록 API 는 페이징 파라미터가 없고 최대 1,000건까지만 내려온다.
+ *         전체 적재가 필요하면 conditionKey 를 publishDate 등으로 나눠 여러 번 호출해야 한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -27,12 +29,17 @@ public class RecallSyncService {
     private final RecallFileRepository recallFileRepository;
     private final ApiSyncLogRepository apiSyncLogRepository;
 
-    /** FR-016 동기화 실행 */
-    public SyncLogResponse sync() {
-        // TODO 1) recallClient.fetchList(...) 페이징 순회
-        //      2) 신규/변경 건만 upsert
-        //      3) 상세 조회로 리콜 사진(recall_file) 적재
-        //      4) ApiSyncLog 에 실행 시각·결과 코드·처리 건수 기록 (FR-017)
+    /**
+     * FR-016 동기화 실행.
+     *
+     * @param adminId 실행한 관리자 (api_sync_log.admin_id)
+     */
+    public SyncLogResponse sync(Long adminId) {
+        // TODO 1) ApiSyncLog.start(adminId, ApiType.RECALL) 생성
+        //      2) recallClient.fetchList(...) 호출, resultCode 검사
+        //      3) 신규는 저장, 기존은 Recall.syncFrom(...) 으로 갱신
+        //      4) 각 건 fetchDetail 로 recallFiles 적재 (FileDiv.from 으로 한글 값 변환)
+        //      5) log.finish(resultCode, recordCount) 후 저장 (FR-017)
         throw new UnsupportedOperationException("TODO: RecallSyncService.sync");
     }
 

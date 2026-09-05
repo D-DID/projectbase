@@ -19,14 +19,15 @@ public class AdminSyncController {
 
     /** FR-016 리콜 데이터 동기화 실행 */
     @PostMapping("/recalls")
-    public ApiResponse<SyncLogResponse> syncRecalls() {
-        return ApiResponse.success(recallSyncService.sync());
+    public ApiResponse<SyncLogResponse> syncRecalls(@RequestParam Long adminId) {
+        // TODO adminId 는 인증 구현 후 SecurityContext 에서 꺼내도록 교체할 것
+        return ApiResponse.success(recallSyncService.sync(adminId));
     }
 
     /** FR-016 KC인증 데이터 동기화 실행 */
     @PostMapping("/certifications")
-    public ApiResponse<SyncLogResponse> syncCertifications() {
-        return ApiResponse.success(certificationSyncService.sync());
+    public ApiResponse<SyncLogResponse> syncCertifications(@RequestParam Long adminId) {
+        return ApiResponse.success(certificationSyncService.sync(adminId));
     }
 
     /** FR-017 동기화 실행 이력 조회 */

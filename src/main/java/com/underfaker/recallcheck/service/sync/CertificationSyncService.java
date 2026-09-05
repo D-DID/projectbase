@@ -18,8 +18,11 @@ public class CertificationSyncService {
     private final CertificationRepository certificationRepository;
     private final ApiSyncLogRepository apiSyncLogRepository;
 
-    public SyncLogResponse sync() {
-        // TODO certClient.fetchList(...) → upsert → ApiSyncLog 기록
+    /**
+     * @param adminId 실행한 관리자 (api_sync_log.admin_id)
+     */
+    public SyncLogResponse sync(Long adminId) {
+        // TODO ApiSyncLog.start(adminId, ApiType.CERT) → fetchList → upsert → finish
         throw new UnsupportedOperationException("TODO: CertificationSyncService.sync");
     }
 }

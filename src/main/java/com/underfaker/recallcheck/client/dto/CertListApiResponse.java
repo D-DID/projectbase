@@ -11,18 +11,35 @@ public record CertListApiResponse(
 
         @JsonProperty("resultCode") String resultCode,
         @JsonProperty("resultMsg") String resultMsg,
-        @JsonProperty("totalCount") Integer totalCount,
-        @JsonProperty("items") List<Item> items
+        @JsonProperty("resultData") List<Item> resultData
 ) {
+
+    public boolean isSuccess() {
+        return "2000".equals(resultCode);
+    }
+
+    public boolean isNoData() {
+        return "2004".equals(resultCode);
+    }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Item(
 
+            @JsonProperty("certUid") Long certUid,
             @JsonProperty("certNum") String certNum,
-            @JsonProperty("prductNm") String productName,
-            @JsonProperty("mdlNm") String modelName,
-            @JsonProperty("mnfcturNm") String makerName,
-            @JsonProperty("certDate") String certifiedAt
+            /**
+             * 인증상태. '안전인증표시 사용금지 2개월' 처럼 개월 수가 문자열에 포함되므로
+             * 축약하지 말고 원문 그대로 비교할 것.
+             */
+            @JsonProperty("certState") String certState,
+            /** yyyyMMdd */
+            @JsonProperty("certDate") String certDate,
+            @JsonProperty("productName") String productName,
+            @JsonProperty("brandName") String brandName,
+            /** 모델명(로트번호) */
+            @JsonProperty("modelName") String modelName,
+            @JsonProperty("makerName") String makerName,
+            @JsonProperty("makerCntryName") String makerCntryName
     ) {
     }
 }
