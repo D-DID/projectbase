@@ -1,23 +1,26 @@
 package com.underfaker.recallcheck.service.sync;
 
 import com.underfaker.recallcheck.client.SafetyKoreaRecallClient;
+import com.underfaker.recallcheck.client.dto.RecallDetailApiResponse;
+import com.underfaker.recallcheck.client.dto.RecallListApiResponse;
 import com.underfaker.recallcheck.common.PageResponse;
 import com.underfaker.recallcheck.dto.response.SyncLogResponse;
+import com.underfaker.recallcheck.entity.ApiSyncLog;
+import com.underfaker.recallcheck.entity.Recall;
+import com.underfaker.recallcheck.entity.RecallFile;
+import com.underfaker.recallcheck.entity.enums.ApiType;
+import com.underfaker.recallcheck.entity.enums.FileDiv;
 import com.underfaker.recallcheck.repository.ApiSyncLogRepository;
 import com.underfaker.recallcheck.repository.RecallFileRepository;
 import com.underfaker.recallcheck.repository.RecallRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * FR-016, 017 — 리콜 데이터 적재·로그 기록.
- *
- * 주의 1. Recall 의 PK 는 API 원본 키(recallUid)라 직접 할당된다.
- *         Persistable 구현으로 save() 앞 SELECT 는 막았지만, 대량 적재 시에는
- *         saveAll 배치 크기(hibernate.jdbc.batch_size)를 함께 조정할 것.
- * 주의 2. 목록 API 는 페이징 파라미터가 없고 최대 1,000건까지만 내려온다.
- *         전체 적재가 필요하면 conditionKey 를 publishDate 등으로 나눠 여러 번 호출해야 한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -31,21 +34,86 @@ public class RecallSyncService {
 
     /**
      * FR-016 동기화 실행.
-     *
      * @param adminId 실행한 관리자 (api_sync_log.admin_id)
      */
     public SyncLogResponse sync(Long adminId) {
-        // TODO 1) ApiSyncLog.start(adminId, ApiType.RECALL) 생성
-        //      2) recallClient.fetchList(...) 호출, resultCode 검사
-        //      3) 신규는 저장, 기존은 Recall.syncFrom(...) 으로 갱신
-        //      4) 각 건 fetchDetail 로 recallFiles 적재 (FileDiv.from 으로 한글 값 변환)
-        //      5) log.finish(resultCode, recordCount) 후 저장 (FR-017)
-        throw new UnsupportedOperationException("TODO: RecallSyncService.sync");
+        ApiSyncLog log = ApiSyncLog.start(adminId, ApiType.RECALL);
+
+        RecallListApiResponse response =
+                recallClient.fetchList(SafetyKoreaRecallClient.KEY_PRODUCT_NAME, "물티슈");
+        int savedCount = 0;
+
+        if (response.isSuccess() && response.resultData() != null) {
+            for (RecallListApiResponse.Item item : response.resultData()) {
+                Recall fresh = toEntity(item);
+
+                recallRepository.findById(item.recallUid())
+                        .ifPresentOrElse(
+                                existing -> existing.syncFrom(fresh),
+                                () -> recallRepository.save(fresh)
+                        );
+
+                loadFiles(item.recallUid());
+                savedCount++;
+            }
+        }
+
+        log.finish(response.resultCode(), savedCount);
+        apiSyncLogRepository.save(log);
+
+        return toResponse(log);
+    }
+
+    private void loadFiles(Long recallUid) {
+        RecallDetailApiResponse detail = recallClient.fetchDetail(recallUid);
+        if (!detail.isSuccess() || detail.resultData() == null
+                || detail.resultData().recallFiles() == null) {
+            return;
+        }
+        recallFileRepository.deleteByRecallUid(recallUid);
+        for (RecallDetailApiResponse.RecallFileItem fileItem : detail.resultData().recallFiles()) {
+            recallFileRepository.save(RecallFile.builder()
+                    .recallUid(recallUid)
+                    .fileDiv(FileDiv.from(fileItem.fileDiv()))
+                    .imageUrl(fileItem.imageUrl())
+                    .build());
+        }
+    }
+
+    private Recall toEntity(RecallListApiResponse.Item item) {
+        return Recall.builder()
+                .recallUid(item.recallUid())
+                .recallProductName(item.recallProductName())
+                .recallBrandName(item.recallBrandName())
+                .recallModelName(item.recallModelName())
+                .recallModelCnt(item.recallModelCnt())
+                .barcodeNum(item.barcodeNum())
+                .certNum(item.certNum())
+                .categoryName(item.categoryName())
+                .recallTypeName(item.recallTypeName())
+                .recallMeans(item.recallMeans())
+                .recallCmpnyName(item.recallCmpnyName())
+                .makerName(item.makerName())
+                .makingCntryName(item.makingCntryName())
+                .publishDate(item.publishDate())
+                .harmDscr(item.harmDscr())
+                .accidentCaseDscr(item.accidentCaseDscr())
+                .publishActionDscr(item.publishActionDscr())
+                .build();
+    }
+
+    private SyncLogResponse toResponse(ApiSyncLog log) {
+        return new SyncLogResponse(
+                log.getId(), log.getAdminId(), log.getApiType(),
+                log.getResultCode(), log.getRecordCount(),
+                log.getStartedAt(), log.getFinishedAt());
     }
 
     /** FR-017 동기화 이력 조회 */
     @Transactional(readOnly = true)
     public PageResponse<SyncLogResponse> getLogs(int page, int size) {
-        throw new UnsupportedOperationException("TODO: getLogs");
+        Page<ApiSyncLog> logs =
+                apiSyncLogRepository.findAllByOrderByStartedAtDesc(PageRequest.of(page, size));
+        return PageResponse.from(logs.map(this::toResponse));
     }
 }
