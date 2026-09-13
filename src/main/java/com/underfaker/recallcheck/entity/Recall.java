@@ -1,5 +1,6 @@
 package com.underfaker.recallcheck.entity;
 
+import com.underfaker.recallcheck.common.TextNormalizer;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -18,6 +19,13 @@ import java.time.LocalDateTime;
  *
  * 주의: recall_model_name 과 cert_num 은 단일 값이 아니라 콤마로 구분된 목록이다.
  *       매칭 시 split 해서 개별 비교할 것. 통째로 비교하면 절대 일치하지 않는다.
+ *
+ * 9/14 수정 — 후보조회 정규화 버그: RecallQueryService.findCandidates() 가 후보를 찾을 때
+ * recall_product_name 원본 텍스트에 그대로 LIKE 를 걸었다. "가정용물티슈"(공백 없음)로
+ * 검증하면 "가정용 물티슈"(공백 있음) 리콜은 SQL 상 부분일치가 안 돼서 후보 풀에
+ * 아예 안 들어갔다 — 매칭 로직 이전 단계에서 이미 걸러진 것이라 유사도 점수 자체가
+ * 계산되지 않는 문제였다. normalized_* 컬럼(공백·기호 제거, 대문자 통일)을 추가해서
+ * 저장 시점에 미리 정규화해두고, 조회도 정규화된 컬럼 기준으로 하도록 고쳤다.
  */
 @Getter
 @Entity
@@ -98,6 +106,18 @@ public class Recall implements Persistable<Long> {
     @Column(name = "synced_at")
     private LocalDateTime syncedAt;
 
+    /** normalizedProductName — recallProductName 정규화(공백·기호 제거, 대문자) 캐시 */
+    @Column(name = "normalized_product_name", length = 255)
+    private String normalizedProductName;
+
+    /** normalizedModelName — recallModelName 정규화 캐시 (콤마 구분 목록 통째로 정규화) */
+    @Column(name = "normalized_model_name", length = 1000)
+    private String normalizedModelName;
+
+    /** normalizedCertNum — certNum 정규화 캐시 (콤마 구분 목록 통째로 정규화) */
+    @Column(name = "normalized_cert_num", length = 255)
+    private String normalizedCertNum;
+
     @Transient
     private boolean isNew = true;
 
@@ -115,6 +135,19 @@ public class Recall implements Persistable<Long> {
     @PostLoad
     void markNotNew() {
         this.isNew = false;
+    }
+
+    /**
+     * 저장·수정 직전에 normalized_* 컬럼을 원본 필드로부터 다시 계산한다.
+     * 후보조회(RecallRepository.findByNormalized*Containing)가 이 컬럼을 기준으로
+     * 검색하므로, 원본 필드가 바뀌었는데 이걸 안 돌리면 다시 예전 버그가 재현된다.
+     */
+    @PrePersist
+    @PreUpdate
+    void normalizeFields() {
+        this.normalizedProductName = TextNormalizer.normalize(this.recallProductName);
+        this.normalizedModelName = TextNormalizer.normalize(this.recallModelName);
+        this.normalizedCertNum = TextNormalizer.normalize(this.certNum);
     }
 
     @Builder

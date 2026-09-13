@@ -1,5 +1,6 @@
 package com.underfaker.recallcheck.service.matching;
 
+import com.underfaker.recallcheck.common.TextNormalizer;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -14,18 +15,18 @@ import java.util.Locale;
  * 정규화 없이 비교하면 매칭률이 0 이 된다.
  *
  * Spring 의존이 없는 순수 로직이라 단위 테스트로 임계값을 튜닝할 수 있다.
+ *
+ * 9/14 수정: 실제 정규화 규칙은 common.TextNormalizer 로 옮겼다. entity.Recall 이
+ * normalized_* 컬럼을 채울 때 이 빈을 주입받을 수 없어서(JPA 엔티티는 생성자 주입 불가)
+ * 규칙이 두 군데(여기 vs entity)로 갈라져 있었던 게 후보조회 정규화 버그의 원인이었다.
+ * 지금은 양쪽 다 TextNormalizer 하나만 보게 만들어서 더 이상 갈라질 수 없다.
  */
 @Component
 public class FieldNormalizer {
 
     /** 공백·괄호·특수문자 제거 후 대문자 통일 */
     public String normalize(String raw) {
-        if (raw == null) {
-            return "";
-        }
-        return raw.replaceAll("[\\s\\-_/,.()\\[\\]{}<>·・~!@#$%^&*+=|\\\\'\"]", "")
-                .toUpperCase(Locale.ROOT)
-                .trim();
+        return TextNormalizer.normalize(raw);
     }
 
     /** 모델명 전용 — 영문·숫자·한글만 남긴다 */

@@ -61,11 +61,21 @@ CREATE TABLE `recall` (
     `accident_case_dscr`    TEXT            NULL,       -- 위해 정보
     `publish_action_dscr`   TEXT            NULL,       -- 소비자 행동요령
     `synced_at`             DATETIME        NULL,
+    -- 9/14 추가 — 후보조회 정규화 버그 수정용. 저장 시 entity.Recall#normalizeFields() 가
+    -- 위 recall_product_name/recall_model_name/cert_num 을 공백·기호 제거 + 대문자로 정규화해서
+    -- 채운다. 후보조회·검색은 이 컬럼 기준으로 LIKE 를 건다(원본 컬럼 LIKE 는 공백 표기 차이로
+    -- 매칭이 안 됐던 게 버그 원인).
+    `normalized_product_name` VARCHAR(255)  NULL,
+    `normalized_model_name`   VARCHAR(1000) NULL,
+    `normalized_cert_num`     VARCHAR(255)  NULL,
     CONSTRAINT `PK_RECALL` PRIMARY KEY (`recall_uid`),
     INDEX `IX_RECALL_BARCODE` (`barcode_num`),
     INDEX `IX_RECALL_CERT_NUM` (`cert_num`),
     INDEX `IX_RECALL_PRODUCT_NAME` (`recall_product_name`),
-    INDEX `IX_RECALL_PUBLISH_DATE` (`publish_date`)
+    INDEX `IX_RECALL_PUBLISH_DATE` (`publish_date`),
+    INDEX `IX_RECALL_NORMALIZED_PRODUCT_NAME` (`normalized_product_name`),
+    INDEX `IX_RECALL_NORMALIZED_MODEL_NAME` (`normalized_model_name`(255)),
+    INDEX `IX_RECALL_NORMALIZED_CERT_NUM` (`normalized_cert_num`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------------- recall_file

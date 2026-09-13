@@ -24,11 +24,16 @@ import com.underfaker.recallcheck.security.CustomUserDetailsService;
 import com.underfaker.recallcheck.service.extraction.ExtractionService;
 import com.underfaker.recallcheck.service.matching.MatchingService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -38,6 +43,7 @@ import java.util.List;
  *   VerificationService → ExtractionService / MatchingService / RecallRepository
  * 역방향 참조는 금지.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -48,6 +54,16 @@ public class VerificationService {
     private final RecallRepository recallRepository;
     private final ExtractionService extractionService;
     private final MatchingService matchingService;
+
+    /**
+     * 자기 자신의 프록시 참조. verifyByManualInputBatch() 안에서 verifyByManualInput() 을
+     * this.verifyByManualInput() 으로 직접 호출하면 프록시를 안 거쳐서 그 메서드의
+     * @Transactional 이 무시된다(스프링 self-invocation 문제). self.verifyByManualInput() 으로
+     * 불러야 항목별로 독립된 트랜잭션이 걸린다. 생성자 주입 시 순환참조가 생기므로 @Lazy 필드 주입 사용.
+     */
+    @Lazy
+    @Autowired
+    private VerificationService self;
 
     /** FR-003 URL 입력 검증 (미구현) */
     @Transactional
@@ -104,6 +120,33 @@ public class VerificationService {
                 : recallRepository.findById(best.recallUid()).orElse(null);
 
         return toResult(verification, best, recall);
+    }
+
+    /**
+     * FR-008 사용자 직접 입력 검증(배치) — 크롬 확장이 쿠팡 주문내역 페이지에서 한 번에 여러 건을
+     * 뽑아 보냈을 때 사용. 9/13 결정: 필드는 verifyByManualInput() 과 동일한 6필드, 배열로만 받음.
+     *
+     * 트랜잭션 격리 방식: 이 메서드 자체는 트랜잭션을 안 열고(NOT_SUPPORTED), 항목마다
+     * self.verifyByManualInput() 을 프록시 경유로 호출한다 — 그래야 항목 하나가 각자
+     * 자기 트랜잭션 안에서 커밋/롤백된다. 배치 메서드까지 같이 트랜잭션으로 묶으면
+     * 한 항목이 던진 예외 때문에 트랜잭션 전체가 rollback-only로 걸려서, try/catch로 잡아도
+     * 커밋 시점에 나머지 항목까지 전부 롤백돼버린다(스프링에서 흔히 걸리는 함정).
+     *
+     * 항목 하나가 실패하면(추출 실패, 매칭 중 예외 등) 그 항목은 로그만 남기고 건너뛰고
+     * 나머지는 계속 처리한다 — 몇 건이 실패했는지는 결과 배열 길이와 요청 배열 길이를
+     * 비교해서 호출 쪽에서 판단해야 한다(1단계 버전: 실패 건수를 별도 필드로 반환하지 않음).
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public List<VerificationResultResponse> verifyByManualInputBatch(List<ManualInputRequest> requests) {
+        List<VerificationResultResponse> results = new ArrayList<>();
+        for (ManualInputRequest request : requests) {
+            try {
+                results.add(self.verifyByManualInput(request));
+            } catch (RuntimeException e) {
+                log.warn("배치 검증 중 1건 실패, 건너뜀 (productName={})", request.productName(), e);
+            }
+        }
+        return results;
     }
 
     /** FR-013 판정 결과·리콜 사유·행동요령 */

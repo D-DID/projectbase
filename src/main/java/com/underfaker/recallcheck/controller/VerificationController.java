@@ -13,6 +13,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /** FR-003,004,008,013,014,015 — 검증 전체 */
 @RestController
 @RequestMapping("/api/verifications")
@@ -38,6 +40,19 @@ public class VerificationController {
     public ApiResponse<VerificationResultResponse> verifyByManualInput(
             @Valid @RequestBody ManualInputRequest request) {
         return ApiResponse.success(verificationService.verifyByManualInput(request));
+    }
+
+    /**
+     * FR-008 사용자 직접 입력 검증(배치) — 크롬 확장이 쿠팡 주문내역 페이지에서 한 번에 여러 건을
+     * 추출했을 때 사용. 9/13 결정: 필드 구조는 기존 /manual 과 동일한 6필드 그대로, 배열로만 받음
+     * (썸네일 이미지 매칭은 아직 이 계약에 안 들어감 — 2단계에서 별도 추가 예정).
+     * 항목 하나가 실패해도 나머지 항목은 계속 처리됨(각 항목 독립 트랜잭션) — 상세는
+     * VerificationService#verifyByManualInputBatch 주석 참고.
+     */
+    @PostMapping("/manual/batch")
+    public ApiResponse<List<VerificationResultResponse>> verifyByManualInputBatch(
+            @Valid @RequestBody List<@Valid ManualInputRequest> requests) {
+        return ApiResponse.success(verificationService.verifyByManualInputBatch(requests));
     }
 
     /** FR-013 검증 결과 조회 */
