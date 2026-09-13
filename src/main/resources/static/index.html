@@ -1,14 +1,3904 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>리콜체크 · 멀티모달 매칭 기반 리콜 자동 검증</title>
-<style>
-  :root{
-    --navy:#0f1e3d; --navy-2:#1b3260; --accent:#2f6df6; --line:#e3e7ee;
-    --bg:#f6f8fb; --text:#101828; --muted:#667085;
-    --match:#d92d20; --partial:#f79009; --nomatch:#12b76a; --unknown:#667085;
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>리콜체크 | 우리 아이 제품 안전 확인</title>
+
+  <style>
+
+    :root {
+      --blue: #2563eb;
+      --blue-dark: #1d4ed8;
+      --blue-soft: #eff6ff;
+
+      --navy: #172554;
+      --text: #172033;
+      --muted: #667085;
+      --line: #e6eaf0;
+      --bg: #f7f9fc;
+      --white: #fff;
+
+      --match: #e5484d;
+      --match-bg: #fff1f2;
+
+      --partial: #f59e0b;
+      --partial-bg: #fffbeb;
+
+      --nomatch: #16a34a;
+      --nomatch-bg: #f0fdf4;
+
+      --unknown: #64748b;
+      --unknown-bg: #f1f5f9;
+
+      --radius: 18px;
+    }
+
+
+    * {
+      box-sizing: border-box;
+    }
+
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+
+      font-family:
+              "Pretendard",
+              "Apple SD Gothic Neo",
+              "Malgun Gothic",
+              system-ui,
+              sans-serif;
+
+      letter-spacing: -.2px;
+    }
+
+
+    button,
+    input {
+      font-family: inherit;
+    }
+
+
+    button {
+      cursor: pointer;
+    }
+
+
+    .app {
+      min-height: 100vh;
+    }
+
+
+    /* ==================================================
+       HEADER
+    ================================================== */
+
+    .topbar {
+      height: 68px;
+
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+
+      display: flex;
+      align-items: center;
+
+      padding: 0 32px;
+
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+
+      border: 0;
+      background: transparent;
+
+      padding: 0;
+
+      font-size: 18px;
+      font-weight: 800;
+
+      color: var(--navy);
+    }
+
+
+    .logo:hover {
+      color: var(--blue);
+    }
+
+
+    .logo-mark {
+      width: 34px;
+      height: 34px;
+
+      border-radius: 11px;
+
+      background: var(--blue);
+      color: #fff;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      font-size: 18px;
+    }
+
+
+    .logo-sub {
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 500;
+
+      margin-left: 2px;
+    }
+
+
+    .top-spacer {
+      flex: 1;
+    }
+
+
+    /* ==================================================
+       USER AREA
+    ================================================== */
+
+    .user-area {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+
+    .profile-btn {
+      width: 38px;
+      height: 38px;
+
+      padding: 0;
+
+      border: 0;
+      background: transparent;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      color: #111827;
+
+      border-radius: 8px;
+    }
+
+
+    .profile-btn:hover {
+      background: #f2f4f7;
+    }
+
+
+    .profile-icon {
+      width: 24px;
+      height: 24px;
+
+      display: block;
+    }
+
+
+    .auth-btn {
+      height: 40px;
+
+      padding: 0 14px;
+
+      background: #fff;
+
+      border: 1px solid #d8dee8;
+
+      border-radius: 7px;
+
+      color: #111827;
+
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+
+    .auth-btn:hover {
+      background: #f8fafc;
+    }
+
+
+    .user {
+      display: none;
+    }
+
+
+    /* ==================================================
+       NAV
+    ================================================== */
+
+    .nav {
+      height: 52px;
+
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+
+      display: flex;
+      align-items: stretch;
+
+      padding: 0 20px;
+
+      position: relative;
+      z-index: 40;
+    }
+
+
+    .nav-inner {
+      width: min(960px, 100%);
+
+      margin: 0 auto;
+
+      display: flex;
+      align-items: stretch;
+
+      gap: 4px;
+    }
+
+
+    .nav-item {
+      height: 52px;
+
+      border: 0;
+      border-bottom: 2px solid transparent;
+
+      background: transparent;
+
+      color: #667085;
+
+      padding: 0 22px;
+
+      font-size: 14px;
+      font-weight: 600;
+
+      transition:
+              color .15s ease,
+              background .15s ease;
+    }
+
+
+    .nav-item:hover {
+      color: var(--blue);
+    }
+
+
+    .nav-item.active {
+      color: var(--blue);
+      border-bottom-color: var(--blue);
+    }
+
+
+    /* ==================================================
+       HISTORY DROPDOWN
+    ================================================== */
+
+    .history-menu-wrap {
+      position: relative;
+    }
+
+
+    .history-toggle {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+
+    .history-arrow {
+      font-size: 11px;
+
+      transition:
+              transform .15s ease;
+    }
+
+
+    .history-menu-wrap.open
+    .history-arrow {
+      transform: rotate(180deg);
+    }
+
+
+    .history-dropdown {
+      position: absolute;
+
+      top: 50px;
+      left: 0;
+
+      width: 190px;
+
+      background: #fff;
+
+      border: 1px solid #e1e5eb;
+
+      border-radius: 12px;
+
+      box-shadow:
+              0 12px 30px rgba(15, 23, 42, .12);
+
+      padding: 7px;
+
+      display: none;
+    }
+
+
+    .history-menu-wrap.open
+    .history-dropdown {
+      display: block;
+    }
+
+
+    .history-dropdown button {
+      width: 100%;
+
+      border: 0;
+
+      background: transparent;
+
+      border-radius: 8px;
+
+      padding: 11px 12px;
+
+      text-align: left;
+
+      color: #344054;
+
+      font-size: 13px;
+    }
+
+
+    .history-dropdown button:hover {
+      background: #f2f4f7;
+
+      color: var(--blue);
+    }
+
+
+    /* ==================================================
+       MAIN
+    ================================================== */
+
+    .container {
+      width: min(960px, calc(100% - 32px));
+
+      margin: 0 auto;
+
+      padding: 38px 0 70px;
+    }
+
+
+    .screen {
+      display: none;
+    }
+
+
+    .screen.active {
+      display: block;
+    }
+
+
+    .page-title {
+      margin-bottom: 24px;
+    }
+
+
+    .page-title h1 {
+      margin: 0 0 8px;
+
+      font-size: 28px;
+
+      letter-spacing: -.8px;
+    }
+
+
+    .page-title p {
+      margin: 0;
+
+      color: var(--muted);
+
+      font-size: 14px;
+
+      line-height: 1.6;
+    }
+
+
+    /* ==================================================
+       LOGIN REQUIRED MESSAGE
+    ================================================== */
+
+    .login-required {
+      border: 1px solid #fecdca;
+
+      background: #fef3f2;
+
+      color: #b42318;
+
+      border-radius: 12px;
+
+      padding: 14px 16px;
+
+      font-size: 13px;
+
+      line-height: 1.6;
+
+      margin-top: 12px;
+    }
+
+
+    .login-required strong {
+      font-weight: 700;
+    }
+
+
+    /* ==================================================
+       HERO
+    ================================================== */
+
+    .hero {
+      background:
+              linear-gradient(
+                      135deg,
+                      #eff6ff,
+                      #f8fbff
+              );
+
+      border: 1px solid #dbeafe;
+
+      border-radius: 24px;
+
+      padding: 30px;
+
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+
+      margin-bottom: 20px;
+    }
+
+
+    .hero-copy h2 {
+      margin: 0 0 8px;
+
+      font-size: 22px;
+    }
+
+
+    .hero-copy p {
+      margin: 0;
+
+      color: #64748b;
+
+      line-height: 1.6;
+
+      font-size: 14px;
+    }
+
+
+    .hero-icon {
+      width: 92px;
+      height: 92px;
+
+      border-radius: 28px;
+
+      background: #fff;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      font-size: 48px;
+
+      box-shadow:
+              0 10px 30px rgba(37, 99, 235, .12);
+    }
+
+
+    /* ==================================================
+       CARD
+    ================================================== */
+
+    .card {
+      background: #fff;
+
+      border: 1px solid var(--line);
+
+      border-radius: var(--radius);
+
+      padding: 24px;
+
+      margin-bottom: 16px;
+    }
+
+
+    .card-title {
+      display: flex;
+
+      align-items: center;
+      justify-content: space-between;
+
+      margin-bottom: 18px;
+    }
+
+
+    .card-title h2 {
+      margin: 0;
+
+      font-size: 17px;
+    }
+
+
+    .card-title span {
+      color: var(--muted);
+
+      font-size: 12px;
+    }
+
+
+    /* ==================================================
+       PRODUCT INPUT
+    ================================================== */
+
+    .product-grid {
+      display: grid;
+
+      grid-template-columns:
+        repeat(2, 1fr);
+
+      gap: 14px;
+    }
+
+
+    .field label {
+      display: block;
+
+      color: #667085;
+
+      font-size: 12px;
+      font-weight: 600;
+
+      margin: 0 0 7px;
+    }
+
+
+    .field input {
+      width: 100%;
+      height: 46px;
+
+      border: 1px solid #d8dee8;
+
+      border-radius: 11px;
+
+      padding: 0 13px;
+
+      outline: none;
+
+      font-size: 14px;
+
+      background: #fff;
+    }
+
+
+    .field input:focus {
+      border-color: var(--blue);
+
+      box-shadow:
+              0 0 0 3px
+              rgba(37, 99, 235, .10);
+    }
+
+
+    .primary-btn {
+      width: 100%;
+      height: 50px;
+
+      margin-top: 18px;
+
+      border: 0;
+
+      border-radius: 12px;
+
+      background: var(--blue);
+
+      color: #fff;
+
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+
+    .primary-btn:hover {
+      background: var(--blue-dark);
+    }
+
+
+    .primary-btn:disabled {
+      opacity: .6;
+
+      cursor: not-allowed;
+    }
+
+
+    .secondary-btn {
+      height: 44px;
+
+      padding: 0 16px;
+
+      border: 1px solid #d8dee8;
+
+      background: #fff;
+
+      color: #344054;
+
+      border-radius: 10px;
+
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+
+    /* ==================================================
+       CATEGORY
+    ================================================== */
+
+    .categories {
+      display: flex;
+
+      gap: 8px;
+
+      flex-wrap: wrap;
+    }
+
+
+    .category {
+      border: 1px solid var(--line);
+
+      background: #fff;
+
+      border-radius: 999px;
+
+      padding: 9px 13px;
+
+      color: #475467;
+
+      font-size: 12px;
+    }
+
+
+    /* ==================================================
+       RESULT
+    ================================================== */
+
+    .result-hero {
+      text-align: center;
+
+      background: #fff;
+
+      border: 1px solid var(--line);
+
+      border-radius: 22px;
+
+      padding: 34px 24px 28px;
+
+      margin-bottom: 16px;
+    }
+
+
+    .result-icon {
+      width: 70px;
+      height: 70px;
+
+      margin: 0 auto 14px;
+
+      border-radius: 50%;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      font-size: 30px;
+      font-weight: 800;
+    }
+
+
+    .result-title {
+      font-size: 26px;
+
+      font-weight: 800;
+
+      margin-bottom: 5px;
+    }
+
+
+    .result-sub {
+      color: var(--muted);
+
+      font-size: 14px;
+    }
+
+
+    .score {
+      margin-top: 18px;
+
+      font-size: 40px;
+
+      font-weight: 800;
+
+      color: var(--navy);
+    }
+
+
+    .score-label {
+      color: #98a2b3;
+
+      font-size: 12px;
+
+      margin-top: -2px;
+    }
+
+
+    /* ==================================================
+       JUDGEMENT
+    ================================================== */
+
+    .judgement-states {
+      display: grid;
+
+      grid-template-columns:
+        repeat(4, 1fr);
+
+      gap: 8px;
+
+      max-width: 680px;
+
+      margin: 40px auto 0;
+    }
+
+
+    .judgement-state {
+      border: 1px solid var(--line);
+
+      background: #f8fafc;
+
+      border-radius: 10px;
+
+      padding: 10px 6px;
+
+      font-size: 12px;
+
+      font-weight: 700;
+
+      color: #64748b;
+    }
+
+
+    .judgement-state.active {
+      border-color: #93c5fd;
+
+      background: #eff6ff;
+
+      color: var(--blue);
+    }
+
+
+    .judgement-state.match.active {
+      color: #b42318;
+
+      background: #fff1f2;
+
+      border-color: #fecdd3;
+    }
+
+
+    .judgement-state.partial.active {
+      color: #b54708;
+
+      background: #fffaeb;
+
+      border-color: #fedf89;
+    }
+
+
+    .judgement-state.nomatch.active {
+      color: #027a48;
+
+      background: #ecfdf3;
+
+      border-color: #abefc6;
+    }
+
+
+    .judgement-state.unknown.active {
+      color: #475467;
+
+      background: #f2f4f7;
+
+      border-color: #d0d5dd;
+    }
+
+
+    .state-MATCH .result-icon {
+      color: var(--match);
+
+      background: var(--match-bg);
+    }
+
+
+    .state-PARTIAL .result-icon {
+      color: var(--partial);
+
+      background: var(--partial-bg);
+    }
+
+
+    .state-NO_MATCH .result-icon {
+      color: var(--nomatch);
+
+      background: var(--nomatch-bg);
+    }
+
+
+    .state-UNKNOWN .result-icon {
+      color: var(--unknown);
+
+      background: var(--unknown-bg);
+    }
+
+
+    /* ==================================================
+       RESULT NOTICE
+    ================================================== */
+
+    .result-notice {
+      max-width: 680px;
+
+      margin: 14px auto 0;
+
+      padding: 13px 16px;
+
+      border-radius: 10px;
+
+      background: #f8fafc;
+
+      border: 1px solid var(--line);
+
+      color: #667085;
+
+      font-size: 13px;
+
+      line-height: 1.6;
+
+      text-align: left;
+    }
+
+
+    .result-notice strong {
+      font-weight: 700;
+    }
+
+
+    .result-notice.match {
+      background: #fff1f2;
+
+      border-color: #fecdd3;
+
+      color: #b42318;
+    }
+
+
+    .result-notice.partial {
+      background: #fffbeb;
+
+      border-color: #fedf89;
+
+      color: #b54708;
+    }
+
+
+    .result-notice.nomatch {
+      background: #f0fdf4;
+
+      border-color: #bbf7d0;
+
+      color: #166534;
+    }
+
+
+    .result-notice.unknown {
+      background: #f1f5f9;
+
+      border-color: #cbd5e1;
+
+      color: #475569;
+    }
+
+
+    /* ==================================================
+       RESULT DETAIL
+       세로 배치
+    ================================================== */
+
+    .result-detail-grid {
+      display: block;
+    }
+
+
+    .result-detail-grid .card {
+      margin-bottom: 16px;
+    }
+
+
+    /* ==================================================
+       COMPARE
+    ================================================== */
+
+    .compare {
+      display: grid;
+
+      grid-template-columns:
+        1fr 40px 1fr;
+
+      align-items: center;
+
+      gap: 10px;
+    }
+
+
+    .compare-box {
+      border: 1px solid var(--line);
+
+      border-radius: 14px;
+
+      padding: 16px;
+    }
+
+
+    .compare-box h3 {
+      margin: 0 0 12px;
+
+      font-size: 13px;
+    }
+
+
+    .compare-row {
+      display: flex;
+
+      justify-content: space-between;
+
+      gap: 12px;
+
+      padding: 9px 0;
+
+      border-bottom:
+              1px solid #f0f2f5;
+
+      font-size: 12px;
+    }
+
+
+    .compare-row:last-child {
+      border-bottom: 0;
+    }
+
+
+    .compare-label {
+      color: #98a2b3;
+    }
+
+
+    .compare-value {
+      text-align: right;
+
+      font-weight: 600;
+
+      word-break: break-word;
+    }
+
+
+    .compare-arrow {
+      width: 36px;
+      height: 36px;
+
+      border-radius: 50%;
+
+      background: #eff6ff;
+
+      color: var(--blue);
+
+      display: flex;
+
+      justify-content: center;
+      align-items: center;
+
+      font-weight: 800;
+    }
+
+
+    /* ==================================================
+       RECALL INFO
+    ================================================== */
+
+    .recall-info {
+      background: #f8fafc;
+
+      border-radius: 14px;
+
+      padding: 18px;
+    }
+
+
+    .info-grid {
+      display: grid;
+
+      grid-template-columns:
+        repeat(2, 1fr);
+
+      gap: 0 20px;
+    }
+
+
+    .info-item {
+      padding: 11px 0;
+
+      border-bottom:
+              1px solid #e9edf2;
+    }
+
+
+    .info-label {
+      color: #98a2b3;
+
+      font-size: 11px;
+
+      margin-bottom: 4px;
+    }
+
+
+    .info-value {
+      font-size: 13px;
+
+      font-weight: 600;
+
+      word-break: break-word;
+    }
+
+
+    /* ==================================================
+       EVIDENCE
+    ================================================== */
+
+    .evidence-card #reason {
+      margin-top: 0;
+
+      color: #667085;
+
+      font-size: 13px;
+
+      line-height: 1.7;
+
+      background: #f8fafc;
+
+      border-radius: 12px;
+
+      padding: 16px;
+    }
+
+
+    .evidence {
+      display: grid;
+
+      gap: 10px;
+    }
+
+
+    .evidence-row {
+      display: flex;
+
+      align-items: center;
+
+      gap: 10px;
+
+      padding: 12px 14px;
+
+      background: #f8fafc;
+
+      border-radius: 10px;
+
+      font-size: 13px;
+    }
+
+
+    .evidence-icon {
+      width: 23px;
+      height: 23px;
+
+      border-radius: 50%;
+
+      background: #dcfce7;
+
+      color: #16a34a;
+
+      display: flex;
+
+      align-items: center;
+      justify-content: center;
+
+      font-size: 12px;
+
+      font-weight: 800;
+
+      flex-shrink: 0;
+    }
+
+
+    /* ==================================================
+       ACTION
+    ================================================== */
+
+    .action-row {
+      display: flex;
+
+      gap: 10px;
+
+      margin-top: 16px;
+    }
+
+
+    .action-row button {
+      flex: 1;
+
+      margin-top: 0;
+    }
+
+
+    /* ==================================================
+       HISTORY
+    ================================================== */
+
+    .history-list {
+      display: grid;
+
+      gap: 10px;
+    }
+
+
+    .history-item {
+      background: #fff;
+
+      border: 1px solid var(--line);
+
+      border-radius: 15px;
+
+      padding: 17px;
+
+      display: flex;
+
+      align-items: center;
+
+      gap: 16px;
+    }
+
+
+    .history-product {
+      width: 46px;
+      height: 46px;
+
+      border-radius: 13px;
+
+      background: #eff6ff;
+
+      display: flex;
+
+      align-items: center;
+      justify-content: center;
+
+      font-size: 23px;
+    }
+
+
+    .history-main {
+      flex: 1;
+    }
+
+
+    .history-name {
+      font-size: 14px;
+
+      font-weight: 700;
+
+      margin-bottom: 5px;
+    }
+
+
+    .history-date {
+      color: #98a2b3;
+
+      font-size: 11px;
+    }
+
+
+    .status-pill {
+      border-radius: 999px;
+
+      padding: 7px 11px;
+
+      font-size: 11px;
+
+      font-weight: 700;
+    }
+
+
+    .status-MATCH {
+      color: #b42318;
+
+      background: #fff1f2;
+    }
+
+
+    .status-PARTIAL {
+      color: #b54708;
+
+      background: #fffaeb;
+    }
+
+
+    .status-NO_MATCH {
+      color: #027a48;
+
+      background: #ecfdf3;
+    }
+
+
+    .status-UNKNOWN {
+      color: #475467;
+
+      background: #f2f4f7;
+    }
+
+
+    /* ==================================================
+       PROCEDURE
+    ================================================== */
+
+    .procedure-intro {
+      background:
+              linear-gradient(
+                      135deg,
+                      #eff6ff,
+                      #f8fbff
+              );
+
+      border: 1px solid #dbeafe;
+
+      border-radius: 18px;
+
+      padding: 22px;
+
+      margin-bottom: 16px;
+
+      color: #475467;
+
+      font-size: 13px;
+
+      line-height: 1.7;
+    }
+
+
+    .procedure-list {
+      display: grid;
+
+      gap: 12px;
+    }
+
+
+    .procedure-item {
+      display: grid;
+
+      grid-template-columns: 52px 1fr;
+
+      gap: 14px;
+
+      padding: 18px;
+
+      border: 1px solid var(--line);
+
+      border-radius: 14px;
+
+      background: #fff;
+    }
+
+
+    .procedure-number {
+      width: 44px;
+      height: 44px;
+
+      border-radius: 12px;
+
+      background: #eff6ff;
+
+      color: var(--blue);
+
+      display: flex;
+
+      align-items: center;
+      justify-content: center;
+
+      font-size: 15px;
+
+      font-weight: 800;
+    }
+
+
+    .procedure-content h3 {
+      margin: 0 0 6px;
+
+      font-size: 15px;
+    }
+
+
+    .procedure-content p {
+      margin: 0;
+
+      color: #667085;
+
+      font-size: 13px;
+
+      line-height: 1.7;
+    }
+
+
+    .app-check-list {
+      display: grid;
+
+      grid-template-columns:
+        repeat(3, 1fr);
+
+      gap: 12px;
+    }
+
+
+    .app-check-item {
+      text-align: center;
+
+      border: 1px solid var(--line);
+
+      border-radius: 14px;
+
+      padding: 20px 14px;
+
+      background: #fff;
+    }
+
+
+    .app-check-number {
+      font-size: 28px;
+
+      margin-bottom: 8px;
+    }
+
+
+    .app-check-item strong {
+      display: block;
+
+      font-size: 13px;
+
+      margin-bottom: 6px;
+    }
+
+
+    .app-check-item p {
+      margin: 0;
+
+      color: #98a2b3;
+
+      font-size: 11px;
+
+      line-height: 1.5;
+    }
+
+
+    .official-link {
+      display: inline-flex;
+
+      align-items: center;
+
+      margin-top: 18px;
+
+      padding: 10px 14px;
+
+      border-radius: 9px;
+
+      border: 1px solid #d8dee8;
+
+      background: #fff;
+
+      color: #344054;
+
+      text-decoration: none;
+
+      font-size: 12px;
+
+      font-weight: 600;
+    }
+
+
+    .official-link:hover {
+      background: #f8fafc;
+
+      color: var(--blue);
+    }
+
+
+    /* ==================================================
+       COUPANG
+    ================================================== */
+
+    .coupang-box {
+      text-align: center;
+
+      padding: 36px 20px;
+    }
+
+
+    .coupang-icon {
+      width: 64px;
+      height: 64px;
+
+      border-radius: 18px;
+
+      background: #fff7ed;
+
+      margin: 0 auto 16px;
+
+      display: flex;
+
+      align-items: center;
+      justify-content: center;
+
+      font-size: 30px;
+    }
+
+
+    .coupang-box h2 {
+      margin: 0 0 8px;
+
+      font-size: 20px;
+    }
+
+
+    .coupang-box p {
+      margin: 0;
+
+      color: var(--muted);
+
+      font-size: 13px;
+
+      line-height: 1.7;
+    }
+
+
+    /* ==================================================
+       LOGIN
+    ================================================== */
+
+    .login-box {
+      max-width: 520px;
+
+      margin: 50px auto 0;
+    }
+
+
+    .login-header {
+      text-align: center;
+
+      margin-bottom: 26px;
+    }
+
+
+    .login-header .login-logo {
+      width: 58px;
+      height: 58px;
+
+      margin: 0 auto 14px;
+
+      border-radius: 18px;
+
+      background: var(--blue);
+
+      color: #fff;
+
+      display: flex;
+
+      align-items: center;
+      justify-content: center;
+
+      font-size: 28px;
+
+      font-weight: 800;
+    }
+
+
+    .login-header h1 {
+      margin: 0 0 8px;
+
+      font-size: 28px;
+
+      color: var(--navy);
+    }
+
+
+    .login-header p {
+      margin: 0;
+
+      color: var(--muted);
+
+      font-size: 13px;
+
+      line-height: 1.6;
+    }
+
+
+    /* ==================================================
+       MESSAGE
+    ================================================== */
+
+    .msg {
+      display: none;
+
+      margin-top: 12px;
+
+      padding: 11px 13px;
+
+      border-radius: 9px;
+
+      font-size: 12px;
+    }
+
+
+    .msg.ok {
+      display: block;
+
+      background: #ecfdf3;
+
+      color: #027a48;
+    }
+
+
+    .msg.err {
+      display: block;
+
+      background: #fef3f2;
+
+      color: #b42318;
+    }
+
+
+    /* ==================================================
+       MOBILE
+    ================================================== */
+
+    @media(max-width:700px) {
+
+      .topbar {
+        padding: 0 18px;
+      }
+
+
+      .logo-sub {
+        display: none;
+      }
+
+
+      .container {
+        width:
+                min(
+                        100% - 24px,
+                        960px
+                );
+
+        padding-top: 24px;
+      }
+
+
+      .hero {
+        padding: 22px;
+      }
+
+
+      .hero-icon {
+        width: 70px;
+        height: 70px;
+
+        font-size: 36px;
+      }
+
+
+      .hero-copy h2 {
+        font-size: 18px;
+      }
+
+
+      .product-grid {
+        grid-template-columns: 1fr;
+      }
+
+
+      .compare {
+        grid-template-columns: 1fr;
+      }
+
+
+      .compare-arrow {
+        margin: auto;
+
+        transform: rotate(90deg);
+      }
+
+
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+
+
+      .judgement-states {
+        grid-template-columns:
+          repeat(2, 1fr);
+
+        margin-top: 40px;
+      }
+
+
+      .history-item {
+        padding: 13px;
+      }
+
+
+      .history-product {
+        display: none;
+      }
+
+
+      .nav {
+        padding: 0 10px;
+
+        overflow-x: auto;
+      }
+
+
+      .nav-inner {
+        margin: 0;
+
+        min-width: max-content;
+      }
+
+
+      .nav-item {
+        padding:
+                0 13px;
+
+        font-size: 12px;
+      }
+
+
+      .action-row {
+        flex-direction: column;
+      }
+
+
+      .app-check-list {
+        grid-template-columns: 1fr;
+      }
+
+
+      .procedure-item {
+        grid-template-columns: 44px 1fr;
+      }
+
+
+      .history-dropdown {
+        left: auto;
+        right: 0;
+      }
+
+    }
+
+  </style>
+
+</head>
+
+
+<body>
+
+<div class="app">
+
+
+  <!-- ==================================================
+       HEADER
+  ================================================== -->
+
+  <header class="topbar">
+
+    <button
+            class="logo"
+            onclick="goHome()"
+            title="제품 확인">
+
+      <div class="logo-mark">
+        ✓
+      </div>
+
+      <div>
+
+        리콜체크
+
+        <span class="logo-sub">
+          우리 아이 제품 안전 확인
+        </span>
+
+      </div>
+
+    </button>
+
+
+    <div class="top-spacer"></div>
+
+
+    <div class="user-area">
+
+      <button
+              class="profile-btn"
+              id="profileBtn"
+              onclick="handleProfileClick()"
+              title="로그인">
+
+        <svg
+                class="profile-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg">
+
+          <circle
+                  cx="12"
+                  cy="12"
+                  r="9"
+                  stroke="currentColor"
+                  stroke-width="2"/>
+
+          <circle
+                  cx="12"
+                  cy="9"
+                  r="2.7"
+                  fill="currentColor"/>
+
+          <path
+                  d="M7.5 18C8.4 15.8 10 14.7 12 14.7C14 14.7 15.6 15.8 16.5 18"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"/>
+
+        </svg>
+
+      </button>
+
+
+      <button
+              class="auth-btn"
+              id="authBtn"
+              onclick="handleAuthButton()">
+
+        로그인/회원가입
+
+      </button>
+
+    </div>
+
+  </header>
+
+
+  <!-- ==================================================
+       NAV
+  ================================================== -->
+
+  <nav class="nav">
+
+    <div class="nav-inner">
+
+      <button
+              class="nav-item"
+              id="navProcedure"
+              onclick="goProcedure()">
+
+        리콜절차 안내
+
+      </button>
+
+
+      <button
+              class="nav-item active"
+              id="navVerify"
+              onclick="goHome()">
+
+        제품 확인
+
+      </button>
+
+
+      <div
+              class="history-menu-wrap"
+              id="historyMenuWrap">
+
+        <button
+                class="nav-item history-toggle"
+                id="navHistory"
+                onclick="toggleHistoryMenu(event)">
+
+          검증 이력
+
+          <span class="history-arrow">
+            ▼
+          </span>
+
+        </button>
+
+
+        <div class="history-dropdown">
+
+          <button
+                  onclick="goHistory(); closeHistoryMenu();">
+
+            내 검증 이력
+
+          </button>
+
+
+          <button
+                  onclick="goCoupangHistory(); closeHistoryMenu();">
+
+            쿠팡 구매 이력
+
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </nav>
+
+
+  <main class="container">
+
+
+    <!-- ==================================================
+         LOGIN
+    ================================================== -->
+
+    <section
+            class="screen"
+            id="loginScreen">
+
+      <div class="login-box">
+
+        <div class="login-header">
+
+          <div class="login-logo">
+            ✓
+          </div>
+
+          <h1>
+            리콜체크
+          </h1>
+
+          <p>
+            로그인하고 우리 아이 제품의<br>
+            리콜 여부를 안전하게 확인하세요.
+          </p>
+
+        </div>
+
+
+        <div class="card">
+
+          <div class="field">
+
+            <label>
+              이메일
+            </label>
+
+            <input
+                    id="email"
+                    value="test@test.com">
+
+          </div>
+
+
+          <div
+                  class="field"
+                  style="margin-top:14px">
+
+            <label>
+              비밀번호
+            </label>
+
+            <input
+                    id="password"
+                    type="password"
+                    value="test1234">
+
+          </div>
+
+
+          <div
+                  class="field"
+                  style="margin-top:14px">
+
+            <label>
+              이름
+            </label>
+
+            <input
+                    id="username"
+                    value="테스터">
+
+          </div>
+
+
+          <button
+                  class="primary-btn"
+                  onclick="login()">
+
+            로그인
+
+          </button>
+
+
+          <button
+                  class="secondary-btn"
+                  onclick="signup()"
+                  style="
+                    width:100%;
+                    margin-top:10px;
+                  ">
+
+            회원가입
+
+          </button>
+
+
+          <div
+                  class="msg"
+                  id="authMsg">
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ==================================================
+         제품 확인
+    ================================================== -->
+
+    <section
+            class="screen active"
+            id="verifyScreen">
+
+      <div class="page-title">
+
+        <h1>
+          제품 리콜 여부 확인
+        </h1>
+
+        <p>
+          제품 정보를 입력하면 공식 리콜 정보와 비교하여
+          안전 상태를 알려드립니다.
+        </p>
+
+      </div>
+
+
+      <div class="hero">
+
+        <div class="hero-copy">
+
+          <h2>
+            우리 아이 제품,<br>
+            리콜 여부를 확인하세요.
+          </h2>
+
+          <p>
+            제품 정보를 입력하면 공식 리콜 정보와 비교하여<br>
+            4단계로 안전 상태를 알려드립니다.
+          </p>
+
+        </div>
+
+
+        <div class="hero-icon">
+          🧸
+        </div>
+
+      </div>
+
+
+      <div
+              id="verifyLoginMsg"
+              class="login-required"
+              style="display:none">
+
+        <strong>
+          로그인이 필요합니다.
+        </strong>
+
+        제품 리콜 여부를 확인하려면 로그인해주세요.
+
+      </div>
+
+
+      <div class="card">
+
+        <div class="card-title">
+
+          <h2>
+            제품 정보
+          </h2>
+
+        </div>
+
+
+        <div class="product-grid">
+
+          <div class="field">
+
+            <label>
+              제품명 *
+            </label>
+
+            <input
+                    id="productName"
+                    placeholder="예: 아기 물티슈">
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              브랜드명
+            </label>
+
+            <input
+                    id="brandName"
+                    placeholder="예: ○○베이비">
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              모델명
+            </label>
+
+            <input
+                    id="modelName"
+                    placeholder="예: WT-100C">
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              제조사
+            </label>
+
+            <input
+                    id="makerName"
+                    placeholder="예: ○○생활">
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              바코드
+            </label>
+
+            <input
+                    id="barcodeNum"
+                    placeholder="제품 바코드를 입력하세요">
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              인증번호
+            </label>
+
+            <input
+                    id="certNum"
+                    placeholder="예: HU07-123456">
+
+          </div>
+
+        </div>
+
+
+        <button
+                class="primary-btn"
+                id="verifyBtn"
+                onclick="verify()">
+
+          🔍 리콜 여부 확인하기
+
+        </button>
+
+
+        <div
+                class="msg"
+                id="verifyMsg">
+        </div>
+
+      </div>
+
+
+      <div class="card">
+
+        <div class="card-title">
+
+          <h2>
+            자주 확인하는 제품
+          </h2>
+
+        </div>
+
+
+        <div class="categories">
+
+          <button class="category">
+            🍼 젖병
+          </button>
+
+          <button class="category">
+            🧸 장난감
+          </button>
+
+          <button class="category">
+            🛒 유모차
+          </button>
+
+          <button class="category">
+            🚗 카시트
+          </button>
+
+          <button class="category">
+            🪑 아기 의자
+          </button>
+
+          <button class="category">
+            🛏️ 아기 침대
+          </button>
+
+          <button class="category">
+            👕 유아 의류
+          </button>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ==================================================
+         RESULT
+    ================================================== -->
+
+    <section
+            class="screen"
+            id="resultScreen">
+
+      <div class="page-title">
+
+        <h1>
+          검증 결과
+        </h1>
+
+        <p>
+          입력한 제품과 공식 리콜 정보를 비교한 결과입니다.
+        </p>
+
+      </div>
+
+
+      <!-- ==================================================
+           RESULT HERO
+      ================================================== -->
+
+      <div
+              id="resultHero"
+              class="result-hero state-MATCH">
+
+        <div
+                class="result-icon"
+                id="resultIcon">
+
+          !
+
+        </div>
+
+
+        <div
+                class="result-title"
+                id="resultTitle">
+
+          일치
+
+        </div>
+
+
+        <div
+                class="result-sub"
+                id="resultSub">
+
+          리콜 대상 상품과 일치합니다.
+
+        </div>
+
+
+        <div
+                class="score"
+                id="score">
+
+          96.8%
+
+        </div>
+
+
+        <div class="score-label">
+          종합 유사도
+        </div>
+
+
+        <!-- ==================================================
+             4단계 판정
+        ================================================== -->
+
+        <div class="judgement-states">
+
+          <div
+                  class="judgement-state match"
+                  id="stateMatch">
+
+            🔴 일치
+
+          </div>
+
+
+          <div
+                  class="judgement-state partial"
+                  id="statePartial">
+
+            🟠 부분일치
+
+          </div>
+
+
+          <div
+                  class="judgement-state nomatch"
+                  id="stateNoMatch">
+
+            🟢 불일치
+
+          </div>
+
+
+          <div
+                  class="judgement-state unknown"
+                  id="stateUnknown">
+
+            ⚪ 확인불가
+
+          </div>
+
+        </div>
+
+
+        <!-- ==================================================
+             4단계 판정 바로 아래 안내창
+        ================================================== -->
+
+        <div
+                class="result-notice"
+                id="resultNotice">
+
+          <strong>
+            ⚠ 리콜 대상 제품입니다.
+          </strong>
+
+          <br>
+
+          입력한 제품 정보가 공식 리콜 정보와 일치합니다.
+
+        </div>
+
+      </div>
+
+
+      <!-- ==================================================
+           RESULT DETAIL
+           제품 비교
+           ↓
+           리콜 정보
+           ↓
+           판정 근거
+      ================================================== -->
+
+      <div class="result-detail-grid">
+
+
+        <!-- ==================================================
+             ① 제품 정보 비교
+        ================================================== -->
+
+        <div class="card">
+
+          <div class="card-title">
+
+            <h2>
+              제품 정보 비교
+            </h2>
+
+          </div>
+
+
+          <div class="compare">
+
+
+            <!-- 입력 제품 -->
+
+            <div class="compare-box">
+
+              <h3>
+                내가 입력한 제품
+              </h3>
+
+
+              <div class="compare-row">
+
+                <span class="compare-label">
+                  제품명
+                </span>
+
+                <span
+                        class="compare-value"
+                        id="inputProduct">
+
+                  -
+
+                </span>
+
+              </div>
+
+
+              <div class="compare-row">
+
+                <span class="compare-label">
+                  브랜드
+                </span>
+
+                <span
+                        class="compare-value"
+                        id="inputBrand">
+
+                  -
+
+                </span>
+
+              </div>
+
+
+              <div class="compare-row">
+
+                <span class="compare-label">
+                  모델명
+                </span>
+
+                <span
+                        class="compare-value"
+                        id="inputModel">
+
+                  -
+
+                </span>
+
+              </div>
+
+
+              <div class="compare-row">
+
+                <span class="compare-label">
+                  바코드
+                </span>
+
+                <span
+                        class="compare-value"
+                        id="inputBarcode">
+
+                  -
+
+                </span>
+
+              </div>
+
+            </div>
+
+
+            <div class="compare-arrow">
+              ↔
+            </div>
+
+
+            <!-- 공식 리콜 제품 -->
+
+            <div class="compare-box">
+
+              <h3>
+                공식 리콜 정보
+              </h3>
+
+
+              <div class="compare-row">
+
+                <span class="compare-label">
+                  제품명
+                </span>
+
+                <span
+                        class="compare-value"
+                        id="recallProduct">
+
+                  -
+
+                </span>
+
+              </div>
+
+
+              <div class="compare-row">
+
+                <span class="compare-label">
+                  브랜드
+                </span>
+
+                <span
+                        class="compare-value"
+                        id="recallBrand">
+
+                  -
+
+                </span>
+
+              </div>
+
+
+              <div class="compare-row">
+
+                <span class="compare-label">
+                  모델명
+                </span>
+
+                <span
+                        class="compare-value"
+                        id="recallModel">
+
+                  -
+
+                </span>
+
+              </div>
+
+
+              <div class="compare-row">
+
+                <span class="compare-label">
+                  바코드
+                </span>
+
+                <span
+                        class="compare-value"
+                        id="recallBarcode">
+
+                  -
+
+                </span>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <!-- ==================================================
+             ② 리콜 정보
+        ================================================== -->
+
+        <div class="card">
+
+          <div class="card-title">
+
+            <h2>
+              리콜 정보
+            </h2>
+
+          </div>
+
+
+          <div class="recall-info">
+
+            <div class="info-grid">
+
+
+              <div class="info-item">
+
+                <div class="info-label">
+                  리콜 종류
+                </div>
+
+                <div
+                        class="info-value"
+                        id="recallType">
+
+                  -
+
+                </div>
+
+              </div>
+
+
+              <div class="info-item">
+
+                <div class="info-label">
+                  리콜 방법
+                </div>
+
+                <div
+                        class="info-value"
+                        id="recallMethod">
+
+                  -
+
+                </div>
+
+              </div>
+
+
+              <div class="info-item">
+
+                <div class="info-label">
+                  리콜 사업자
+                </div>
+
+                <div
+                        class="info-value"
+                        id="recallBusiness">
+
+                  -
+
+                </div>
+
+              </div>
+
+
+              <div class="info-item">
+
+                <div class="info-label">
+                  공표일
+                </div>
+
+                <div
+                        class="info-value"
+                        id="recallDate">
+
+                  -
+
+                </div>
+
+              </div>
+
+
+              <div class="info-item">
+
+                <div class="info-label">
+                  제품 결함
+                </div>
+
+                <div
+                        class="info-value"
+                        id="recallDefect">
+
+                  -
+
+                </div>
+
+              </div>
+
+
+              <div class="info-item">
+
+                <div class="info-label">
+                  위해 정보
+                </div>
+
+                <div
+                        class="info-value"
+                        id="recallRisk">
+
+                  -
+
+                </div>
+
+              </div>
+
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <!-- ==================================================
+             ③ 판정 근거
+        ================================================== -->
+
+        <div class="card evidence-card">
+
+          <div class="card-title">
+
+            <h2>
+              판정 근거
+            </h2>
+
+            <span>
+              리콜체크가 이 결과를 판단한 근거입니다.
+            </span>
+
+          </div>
+
+
+          <div id="reason">
+
+            판정 결과에 대한 근거입니다.
+
+          </div>
+
+        </div>
+
+
+      </div>
+
+
+      <!-- ==================================================
+           RESULT ACTION
+      ================================================== -->
+
+      <div class="action-row">
+
+        <button
+                class="secondary-btn"
+                onclick="goHome()">
+
+          ← 다른 제품 확인하기
+
+        </button>
+
+
+        <button
+                class="primary-btn"
+                onclick="goHistory()">
+
+          검증 이력 보기 →
+
+        </button>
+
+      </div>
+
+    </section>
+
+
+    <!-- ==================================================
+         HISTORY
+    ================================================== -->
+
+    <section
+            class="screen"
+            id="historyScreen">
+
+      <div class="page-title">
+
+        <h1>
+          내 검증 이력
+        </h1>
+
+        <p>
+          내가 확인한 제품의 리콜 검증 기록입니다.
+        </p>
+
+      </div>
+
+
+      <div
+              id="historyLoginRequired"
+              class="login-required"
+              style="display:none">
+
+        <strong>
+          로그인이 필요합니다.
+        </strong>
+
+        내 검증 이력을 확인하려면 로그인해주세요.
+
+      </div>
+
+
+      <div
+              id="historyContent"
+              class="card">
+
+        <div class="card-title">
+
+          <h2>
+            최근 검증
+          </h2>
+
+          <span>
+            최근 10건
+          </span>
+
+        </div>
+
+
+        <div
+                class="history-list"
+                id="historyList">
+        </div>
+
+      </div>
+
+
+      <div class="action-row">
+
+        <button
+                class="primary-btn"
+                onclick="goHome()">
+
+          + 새로운 제품 확인하기
+
+        </button>
+
+      </div>
+
+    </section>
+
+
+    <!-- ==================================================
+         COUPANG PURCHASE HISTORY
+    ================================================== -->
+
+    <section
+            class="screen"
+            id="coupangScreen">
+
+      <div class="page-title">
+
+        <h1>
+          쿠팡 구매 이력
+        </h1>
+
+        <p>
+          쿠팡에서 구매한 제품의 리콜 여부를 확인합니다.
+        </p>
+
+      </div>
+
+
+      <div class="card">
+
+        <div
+                id="coupangLoginRequired"
+                class="login-required"
+                style="display:none">
+
+          <strong>
+            로그인이 필요합니다.
+          </strong>
+
+          쿠팡 구매 이력 확인 기능을 이용하려면
+          리콜체크에 로그인해주세요.
+
+        </div>
+
+
+        <div
+                class="coupang-box"
+                id="coupangContent">
+
+          <div class="coupang-icon">
+            🛒
+          </div>
+
+          <h2>
+            쿠팡 구매 제품 리콜 확인
+          </h2>
+
+          <p>
+            쿠팡에서 구매한 제품을 불러와<br>
+            리콜 대상 여부를 확인할 수 있습니다.
+          </p>
+
+          <button
+                  class="primary-btn"
+                  style="max-width:420px"
+                  onclick="openCoupang()">
+
+            쿠팡 구매 이력 확인하기
+
+          </button>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ==================================================
+         RECALL PROCEDURE
+    ================================================== -->
+
+    <section
+            class="screen"
+            id="procedureScreen">
+
+      <div class="page-title">
+
+        <h1>
+          리콜절차 안내
+        </h1>
+
+        <p>
+          제품 리콜이 어떻게 진행되는지 확인하고,
+          리콜체크를 이용해 제품 안전 여부를 확인해보세요.
+        </p>
+
+      </div>
+
+
+      <div class="procedure-intro">
+
+        리콜은 결함이 있는 제품으로 인해 소비자에게 발생할 수 있는
+        위해를 줄이기 위해 제품을 수거·교환·수리·환급하는 등의
+        조치를 진행하는 제도입니다.
+
+        <br><br>
+
+        아래 내용은
+        <strong>제품안전정보센터 Safety Korea</strong>의
+        리콜절차 안내를 참고하여 구성했습니다.
+
+      </div>
+
+
+      <div class="card">
+
+        <div class="card-title">
+
+          <h2>
+            자발적 리콜 절차
+          </h2>
+
+          <span>
+            Safety Korea 참고
+          </span>
+
+        </div>
+
+
+        <div class="procedure-list">
+
+
+          <div class="procedure-item">
+
+            <div class="procedure-number">
+              01
+            </div>
+
+            <div class="procedure-content">
+
+              <h3>
+                제품 리콜 계획서 제출
+              </h3>
+
+              <p>
+                사업자가 제품의 중대한 결함을 확인하고
+                자발적 리콜을 진행하려는 경우
+                제품 수거 등의 계획서를 제출합니다.
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div class="procedure-item">
+
+            <div class="procedure-number">
+              02
+            </div>
+
+            <div class="procedure-content">
+
+              <h3>
+                리콜 정보 제공
+              </h3>
+
+              <p>
+                리콜 계획서 승인이 완료되면
+                제품안전정보센터를 통해 리콜 정보가 제공됩니다.
+                위해 수준이 높은 경우 보도자료가 배포될 수도 있습니다.
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div class="procedure-item">
+
+            <div class="procedure-number">
+              03
+            </div>
+
+            <div class="procedure-content">
+
+              <h3>
+                제품 리콜 결과 보고
+              </h3>
+
+              <p>
+                사업자는 제품 수거 등의 결과를 정리하여
+                결과보고서를 제출하고 리콜 조치가 제대로
+                이루어졌는지 보고합니다.
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div class="procedure-item">
+
+            <div class="procedure-number">
+              04
+            </div>
+
+            <div class="procedure-content">
+
+              <h3>
+                리콜 이행점검
+              </h3>
+
+              <p>
+                리콜 결과보고 이후 실제 리콜 조치가
+                제대로 이행되고 있는지 점검합니다.
+              </p>
+
+            </div>
+
+          </div>
+
+
+        </div>
+
+
+        <a
+                class="official-link"
+                href="https://www.safetykorea.kr/recall/recallProc01"
+                target="_blank"
+                rel="noopener">
+
+          Safety Korea 리콜절차 안내 보기 →
+
+        </a>
+
+      </div>
+
+
+      <div class="card">
+
+        <div class="card-title">
+
+          <h2>
+            리콜체크 이용 방법
+          </h2>
+
+          <span>
+            제품 확인 방법
+          </span>
+
+        </div>
+
+
+        <div class="app-check-list">
+
+
+          <div class="app-check-item">
+
+            <div class="app-check-number">
+              ①
+            </div>
+
+            <strong>
+              제품 정보 입력
+            </strong>
+
+            <p>
+              제품명·브랜드·모델명·바코드 등
+              제품 정보를 입력합니다.
+            </p>
+
+          </div>
+
+
+          <div class="app-check-item">
+
+            <div class="app-check-number">
+              ②
+            </div>
+
+            <strong>
+              공식 정보 비교
+            </strong>
+
+            <p>
+              입력한 제품 정보를
+              공식 리콜 정보와 비교합니다.
+            </p>
+
+          </div>
+
+
+          <div class="app-check-item">
+
+            <div class="app-check-number">
+              ③
+            </div>
+
+            <strong>
+              결과 확인
+            </strong>
+
+            <p>
+              일치·부분일치·불일치·확인불가의
+              4단계 결과를 확인합니다.
+            </p>
+
+          </div>
+
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+  </main>
+
+</div>
+
+
+<script>
+
+  /* ==================================================
+     API / AUTH
+  ================================================== */
+
+  const API = '';
+
+  let token =
+          localStorage.getItem('rc_token') || null;
+
+  let userEmail =
+          localStorage.getItem('rc_email') || null;
+
+
+  /* ==================================================
+     INITIAL
+  ================================================== */
+
+  document.addEventListener(
+          'DOMContentLoaded',
+          function () {
+
+            paintHeader();
+
+            showScreen('verifyScreen');
+
+          }
+  );
+
+
+  /* ==================================================
+     HEADER
+  ================================================== */
+
+  function paintHeader() {
+
+    const authBtn =
+            document.getElementById('authBtn');
+
+    const profileBtn =
+            document.getElementById('profileBtn');
+
+
+    if (token) {
+
+      authBtn.textContent =
+              '로그아웃';
+
+      authBtn.title =
+              '로그아웃';
+
+      profileBtn.title =
+              userEmail
+                      ? userEmail + ' 님'
+                      : '내 검증 이력';
+
+
+    } else {
+
+      authBtn.textContent =
+              '로그인/회원가입';
+
+      authBtn.title =
+              '로그인/회원가입';
+
+      profileBtn.title =
+              '로그인';
+
+    }
+
+
+    updateLoginMessages();
+
+  }
+
+
+  /* ==================================================
+     LOGIN MESSAGE
+  ================================================== */
+
+  function updateLoginMessages() {
+
+    const verifyMsg =
+            document.getElementById(
+                    'verifyLoginMsg'
+            );
+
+
+    const historyMsg =
+            document.getElementById(
+                    'historyLoginRequired'
+            );
+
+
+    const historyContent =
+            document.getElementById(
+                    'historyContent'
+            );
+
+
+    const coupangMsg =
+            document.getElementById(
+                    'coupangLoginRequired'
+            );
+
+
+    const coupangContent =
+            document.getElementById(
+                    'coupangContent'
+            );
+
+
+    if (token) {
+
+      if (verifyMsg) {
+        verifyMsg.style.display = 'none';
+      }
+
+
+      if (historyMsg) {
+        historyMsg.style.display = 'none';
+      }
+
+
+      if (historyContent) {
+        historyContent.style.display = 'block';
+      }
+
+
+      if (coupangMsg) {
+        coupangMsg.style.display = 'none';
+      }
+
+
+      if (coupangContent) {
+        coupangContent.style.display = 'block';
+      }
+
+
+    } else {
+
+      if (verifyMsg) {
+        verifyMsg.style.display = 'none';
+      }
+
+
+      if (historyMsg) {
+        historyMsg.style.display = 'block';
+      }
+
+
+      if (historyContent) {
+        historyContent.style.display = 'none';
+      }
+
+
+      if (coupangMsg) {
+        coupangMsg.style.display = 'block';
+      }
+
+
+      if (coupangContent) {
+        coupangContent.style.display = 'none';
+      }
+
+    }
+
+  }
+
+
+  /* ==================================================
+     PROFILE CLICK
+  ================================================== */
+
+  function handleProfileClick() {
+
+    if (token) {
+
+      goHistory();
+
+    } else {
+
+      showScreen('loginScreen');
+
+    }
+
+  }
+
+
+  /* ==================================================
+     AUTH BUTTON
+  ================================================== */
+
+  function handleAuthButton() {
+
+    if (token) {
+
+      logout();
+
+    } else {
+
+      showScreen('loginScreen');
+
+    }
+
+  }
+
+
+  /* ==================================================
+     MESSAGE
+  ================================================== */
+
+  function show(
+          id,
+          text,
+          ok
+  ) {
+
+    const el =
+            document.getElementById(id);
+
+
+    if (!el) {
+      return;
+    }
+
+
+    el.textContent = text;
+
+
+    el.className =
+            'msg ' +
+            (
+                    ok
+                            ? 'ok'
+                            : 'err'
+            );
+
+  }
+
+
+  /* ==================================================
+     HEADERS
+  ================================================== */
+
+  function headers() {
+
+    const h = {
+      'Content-Type':
+              'application/json'
+    };
+
+
+    if (token) {
+
+      h['Authorization'] =
+              'Bearer ' + token;
+
+    }
+
+
+    return h;
+
+  }
+
+
+  /* ==================================================
+     INPUT VALUE
+  ================================================== */
+
+  function val(id) {
+
+    const el =
+            document.getElementById(id);
+
+
+    if (!el) {
+
+      return null;
+
+    }
+
+
+    const v =
+            el.value.trim();
+
+
+    return v === ''
+            ? null
+            : v;
+
+  }
+
+
+  /* ==================================================
+     API CALL
+  ================================================== */
+
+  async function call(
+          path,
+          method,
+          body
+  ) {
+
+    try {
+
+      const res =
+              await fetch(
+                      API + path,
+                      {
+                        method: method,
+
+                        headers:
+                                headers(),
+
+                        body:
+                                body
+                                        ? JSON.stringify(body)
+                                        : undefined
+                      }
+              );
+
+
+      let json = null;
+
+
+      try {
+
+        json =
+                await res.json();
+
+      } catch (e) {
+
+        json = null;
+
+      }
+
+
+      return {
+        status: res.status,
+        json: json
+      };
+
+
+    } catch (error) {
+
+      console.error(
+              'API 호출 오류:',
+              error
+      );
+
+
+      return {
+        status: 0,
+
+        json: {
+          success: false,
+
+          message:
+                  '서버에 연결할 수 없습니다.'
+        }
+      };
+
+    }
+
+  }
+
+
+  /* ==================================================
+     SCREEN
+  ================================================== */
+
+  function showScreen(id) {
+
+    document
+            .querySelectorAll('.screen')
+            .forEach(
+                    el =>
+                            el.classList.remove(
+                                    'active'
+                            )
+            );
+
+
+    const target =
+            document.getElementById(id);
+
+
+    if (target) {
+
+      target.classList.add(
+              'active'
+      );
+
+    }
+
+
+    document
+            .querySelectorAll('.nav-item')
+            .forEach(
+                    el =>
+                            el.classList.remove(
+                                    'active'
+                            )
+            );
+
+
+    if (id === 'verifyScreen') {
+
+      document
+              .getElementById(
+                      'navVerify'
+              )
+              .classList.add(
+              'active'
+      );
+
+    }
+
+
+    if (id === 'procedureScreen') {
+
+      document
+              .getElementById(
+                      'navProcedure'
+              )
+              .classList.add(
+              'active'
+      );
+
+    }
+
+
+    if (
+            id === 'historyScreen' ||
+            id === 'coupangScreen'
+    ) {
+
+      document
+              .getElementById(
+                      'navHistory'
+              )
+              .classList.add(
+              'active'
+      );
+
+    }
+
+
+    updateLoginMessages();
+
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+
+  }
+
+
+  /* ==================================================
+     HOME
+  ================================================== */
+
+  function goHome() {
+
+    closeHistoryMenu();
+
+    showScreen(
+            'verifyScreen'
+    );
+
+  }
+
+
+  /* ==================================================
+     PROCEDURE
+  ================================================== */
+
+  function goProcedure() {
+
+    closeHistoryMenu();
+
+    showScreen(
+            'procedureScreen'
+    );
+
+  }
+
+
+  /* ==================================================
+     HISTORY DROPDOWN
+  ================================================== */
+
+  function toggleHistoryMenu(event) {
+
+    event.stopPropagation();
+
+
+    const wrap =
+            document.getElementById(
+                    'historyMenuWrap'
+            );
+
+
+    wrap.classList.toggle(
+            'open'
+    );
+
+  }
+
+
+  function closeHistoryMenu() {
+
+    const wrap =
+            document.getElementById(
+                    'historyMenuWrap'
+            );
+
+
+    if (wrap) {
+
+      wrap.classList.remove(
+              'open'
+      );
+
+    }
+
+  }
+
+
+  document.addEventListener(
+          'click',
+          function (event) {
+
+            const wrap =
+                    document.getElementById(
+                            'historyMenuWrap'
+                    );
+
+
+            if (
+                    wrap &&
+                    !wrap.contains(event.target)
+            ) {
+
+              closeHistoryMenu();
+
+            }
+
+          }
+  );
+
+
+  /* ==================================================
+     HISTORY
+  ================================================== */
+
+  function goHistory() {
+
+    closeHistoryMenu();
+
+
+    showScreen(
+            'historyScreen'
+    );
+
+
+    if (!token) {
+
+      return;
+
+    }
+
+
+    loadHistory();
+
+  }
+
+
+  /* ==================================================
+     COUPANG
+  ================================================== */
+
+  function goCoupangHistory() {
+
+    closeHistoryMenu();
+
+    showScreen(
+            'coupangScreen'
+    );
+
+  }
+
+
+  function openCoupang() {
+
+    window.open(
+            'https://mc.coupang.com/ssr/desktop/order/list',
+            '_blank'
+    );
+
+  }
+
+
+  /* ==================================================
+     SIGNUP
+  ================================================== */
+
+  async function signup() {
+
+    const r =
+            await call(
+                    '/api/auth/signup',
+                    'POST',
+                    {
+                      email:
+                              val('email'),
+
+                      password:
+                              val('password'),
+
+                      username:
+                              val('username')
+                    }
+            );
+
+
+    if (
+            r.json &&
+            r.json.success
+    ) {
+
+      show(
+              'authMsg',
+
+              '회원가입 완료. 이제 로그인하세요.',
+
+              true
+      );
+
+    } else {
+
+      show(
+              'authMsg',
+
+              '회원가입 실패 (' +
+              r.status +
+              ') ' +
+              (
+                      r.json?.message ||
+                      ''
+              ),
+
+              false
+      );
+
+    }
+
+  }
+
+
+  /* ==================================================
+     LOGIN
+  ================================================== */
+
+  async function login() {
+
+    const r =
+            await call(
+                    '/api/auth/login',
+                    'POST',
+                    {
+                      email:
+                              val('email'),
+
+                      password:
+                              val('password')
+                    }
+            );
+
+
+    if (
+            r.json &&
+            r.json.success
+    ) {
+
+      token =
+              r.json.data.accessToken;
+
+      userEmail =
+              val('email');
+
+
+      localStorage.setItem(
+              'rc_token',
+              token
+      );
+
+
+      localStorage.setItem(
+              'rc_email',
+              userEmail
+      );
+
+
+      paintHeader();
+
+
+      show(
+              'authMsg',
+              '로그인되었습니다.',
+              true
+      );
+
+
+      setTimeout(
+              function () {
+
+                showScreen(
+                        'verifyScreen'
+                );
+
+              },
+              300
+      );
+
+
+    } else {
+
+      show(
+              'authMsg',
+
+              '로그인 실패 (' +
+              r.status +
+              ') ' +
+              (
+                      r.json?.message ||
+                      ''
+              ),
+
+              false
+      );
+
+    }
+
+  }
+
+
+  /* ==================================================
+     LOGOUT
+  ================================================== */
+
+  function logout() {
+
+    token = null;
+
+    userEmail = null;
+
+
+    localStorage.removeItem(
+            'rc_token'
+    );
+
+
+    localStorage.removeItem(
+            'rc_email'
+    );
+
+
+    paintHeader();
+
+
+    showScreen(
+            'verifyScreen'
+    );
+
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);
@@ -192,126 +4082,692 @@
   </div>
 </div>
 
-<script>
-const API = '';
-let token = localStorage.getItem('rc_token') || null;
-let userEmail = localStorage.getItem('rc_email') || null;
-paintWho();
 
-function paintWho(){
-  document.getElementById('who').textContent = token ? (userEmail + ' 님 · 로그인됨') : '로그인 필요';
-}
-function show(id, text, ok){
-  const el = document.getElementById(id);
-  el.textContent = text;
-  el.className = 'msg ' + (ok ? 'ok' : 'err');
-}
-function headers(){
-  const h = {'Content-Type':'application/json'};
-  if (token) h['Authorization'] = 'Bearer ' + token;
-  return h;
-}
-function val(id){ const v = document.getElementById(id).value.trim(); return v === '' ? null : v; }
+  /* ==================================================
+     VERIFY
+  ================================================== */
 
-async function call(path, method, body){
-  const res = await fetch(API + path, {
-    method: method,
-    headers: headers(),
-    body: body ? JSON.stringify(body) : undefined
-  });
-  let json = null;
-  try { json = await res.json(); } catch (e) {}
-  return { status: res.status, json: json };
-}
+  async function verify() {
 
-async function signup(){
-  const r = await call('/api/auth/signup', 'POST', {
-    email: val('email'), password: val('password'), username: val('username')
-  });
-  if (r.json && r.json.success) show('authMsg', '회원가입 완료. 이제 로그인하세요.', true);
-  else show('authMsg', '실패 (' + r.status + ') ' + (r.json ? r.json.message : ''), false);
-}
+    if (!token) {
 
-async function login(){
-  const r = await call('/api/auth/login', 'POST', {
-    email: val('email'), password: val('password')
-  });
-  if (r.json && r.json.success) {
-    token = r.json.data.accessToken;
-    userEmail = val('email');
-    localStorage.setItem('rc_token', token);
-    localStorage.setItem('rc_email', userEmail);
-    paintWho();
-    show('authMsg', '로그인 성공. 토큰이 발급되었습니다.', true);
-  } else {
-    show('authMsg', '실패 (' + r.status + ') ' + (r.json ? r.json.message : ''), false);
+      const msg =
+              document.getElementById(
+                      'verifyLoginMsg'
+              );
+
+
+      msg.style.display =
+              'block';
+
+
+      msg.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+
+
+      return;
+
+    }
+
+
+    const productName =
+            val('productName');
+
+
+    if (!productName) {
+
+      show(
+              'verifyMsg',
+
+              '제품명을 입력해주세요.',
+
+              false
+      );
+
+
+      return;
+
+    }
+
+
+    const btn =
+            document.getElementById(
+                    'verifyBtn'
+            );
+
+
+    btn.disabled = true;
+
+    btn.textContent =
+            '확인하는 중...';
+
+
+    const r =
+            await call(
+                    '/api/verifications/manual',
+                    'POST',
+                    {
+                      productName:
+                      productName,
+
+                      brandName:
+                              val('brandName'),
+
+                      modelName:
+                              val('modelName'),
+
+                      makerName:
+                              val('makerName'),
+
+                      barcodeNum:
+                              val('barcodeNum'),
+
+                      certNum:
+                              val('certNum')
+                    }
+            );
+
+
+    btn.disabled = false;
+
+    btn.textContent =
+            '🔍 리콜 여부 확인하기';
+
+
+    if (
+            !r.json ||
+            !r.json.success
+    ) {
+
+      show(
+              'verifyMsg',
+
+              '검증 실패 (' +
+              r.status +
+              ') ' +
+              (
+                      r.json?.message ||
+                      '알 수 없는 오류가 발생했습니다.'
+              ),
+
+              false
+      );
+
+
+      return;
+
+    }
+
+
+    const result =
+            r.json.data;
+
+
+    console.log(
+            '검증 결과:',
+            result
+    );
+
+
+    render(result);
+
+
+    if (
+            result &&
+            result.verificationId
+    ) {
+
+      loadEvidence(
+              result.verificationId
+      );
+
+    }
+
+
+    showScreen(
+            'resultScreen'
+    );
+
   }
-}
 
-function logout(){
-  token = null; userEmail = null;
-  localStorage.removeItem('rc_token'); localStorage.removeItem('rc_email');
-  paintWho();
-  show('authMsg', '로그아웃되었습니다.', true);
-}
 
-const LABEL = { MATCH:'일치', PARTIAL:'부분 일치', NO_MATCH:'불일치', UNKNOWN:'확인 불가' };
-const SUBLABEL = {
-  MATCH:'리콜 대상 상품과 일치',
-  PARTIAL:'추가 확인 필요',
-  NO_MATCH:'일치하는 리콜 정보 없음',
-  UNKNOWN:'정보 부족으로 판별 불가'
-};
+  /* ==================================================
+     LABEL
+  ================================================== */
 
-async function verify(){
-  if (!token) { show('verifyMsg', '먼저 로그인하세요.', false); return; }
-  const btn = document.getElementById('verifyBtn');
-  btn.disabled = true; btn.textContent = '검증 중...';
+  const LABEL = {
 
-  const r = await call('/api/verifications/manual', 'POST', {
-    productName: val('productName'), brandName: val('brandName'),
-    modelName: val('modelName'), makerName: val('makerName'),
-    barcodeNum: val('barcodeNum'), certNum: val('certNum')
-  });
+    MATCH:
+            '일치',
 
-  btn.disabled = false; btn.textContent = '검증하기';
+    PARTIAL:
+            '부분일치',
 
-  if (!r.json || !r.json.success) {
-    show('verifyMsg', '실패 (' + r.status + ') ' + (r.json ? r.json.message : ''), false);
-    return;
+    NO_MATCH:
+            '불일치',
+
+    UNKNOWN:
+            '확인불가'
+
+  };
+
+
+  const SUBLABEL = {
+
+    MATCH:
+            '리콜 대상 상품과 일치합니다.',
+
+    PARTIAL:
+            '추가 확인이 필요합니다.',
+
+    NO_MATCH:
+            '일치하는 리콜 정보가 없습니다.',
+
+    UNKNOWN:
+            '정보 부족으로 판별할 수 없습니다.'
+
+  };
+
+
+  /* ==================================================
+     RENDER
+  ================================================== */
+
+  function render(d) {
+
+    if (!d) {
+
+      return;
+
+    }
+
+
+    const fr =
+            d.finalResult ||
+            'UNKNOWN';
+
+
+    setResultState(
+            fr,
+            d.similarityScore
+    );
+
+
+    document.getElementById(
+            'inputProduct'
+    ).textContent =
+            d.productName ||
+            '-';
+
+
+    document.getElementById(
+            'inputBrand'
+    ).textContent =
+            d.brandName ||
+            '-';
+
+
+    document.getElementById(
+            'inputModel'
+    ).textContent =
+            d.modelName ||
+            '-';
+
+
+    document.getElementById(
+            'inputBarcode'
+    ).textContent =
+            d.barcodeNum ||
+            '-';
+
+
+    document.getElementById(
+            'recallProduct'
+    ).textContent =
+            d.recallProductName ||
+            '-';
+
+
+    document.getElementById(
+            'recallBrand'
+    ).textContent =
+            d.recallBrandName ||
+            '-';
+
+
+    document.getElementById(
+            'recallModel'
+    ).textContent =
+            d.recallModelName ||
+            d.recallModel ||
+            '-';
+
+
+    document.getElementById(
+            'recallBarcode'
+    ).textContent =
+            d.recallBarcode ||
+            '-';
+
+
+    document.getElementById(
+            'recallType'
+    ).textContent =
+            d.recallType ||
+            '-';
+
+
+    document.getElementById(
+            'recallMethod'
+    ).textContent =
+            d.recallMethod ||
+            '-';
+
+
+    document.getElementById(
+            'recallBusiness'
+    ).textContent =
+            d.recallBusiness ||
+            '-';
+
+
+    document.getElementById(
+            'recallDate'
+    ).textContent =
+            d.recallDate ||
+            '-';
+
+
+    document.getElementById(
+            'recallDefect'
+    ).textContent =
+            d.recallDefect ||
+            '-';
+
+
+    document.getElementById(
+            'recallRisk'
+    ).textContent =
+            d.recallRisk ||
+            '-';
+
   }
-  show('verifyMsg', '검증 완료 (verificationId = ' + r.json.data.verificationId + ')', true);
-  render(r.json.data);
-  loadEvidence(r.json.data.verificationId);
-}
 
-function render(d){
-  document.getElementById('resultCard').style.display = 'block';
-  const fr = d.finalResult || 'UNKNOWN';
-  const badge = document.getElementById('badge');
-  badge.className = 'badge b-' + fr;
-  badge.textContent = LABEL[fr] + ' · ' + SUBLABEL[fr];
-  document.getElementById('score').textContent =
-    d.similarityScore == null ? '-' : (d.similarityScore * 100).toFixed(1) + '%';
 
-  const rows = [
-    ['제품명', d.recallProductName], ['브랜드명', d.recallBrandName],
-    ['모델명', d.recallModelName], ['제조사', d.makerName],
-    ['리콜 종류', d.recallTypeName], ['리콜 방법', d.recallMeans],
-    ['리콜 사업자', d.recallCmpnyName], ['공표일', fmtDate(d.publishDate)],
-    ['제품 결함', d.harmDscr], ['위해 정보', d.accidentCaseDscr],
-    ['소비자 행동요령', d.publishActionDscr]
-  ].filter(function(x){ return x[1]; });
+  /* ==================================================
+     RESULT STATE
+  ================================================== */
 
-  document.getElementById('resultTable').innerHTML = rows.length
-    ? rows.map(function(x){ return '<tr><th>' + x[0] + '</th><td>' + esc(x[1]) + '</td></tr>'; }).join('')
-    : '<tr><td class="muted">대조된 공식 리콜 정보가 없습니다.</td></tr>';
-}
+  function setResultState(
+          fr,
+          score
+  ) {
 
-async function loadEvidence(id){
-  const r = await call('/api/verifications/' + id + '/evidence', 'GET');
-  if (r.json && r.json.success && r.json.data) {
-    document.getElementById('reason').textContent = '판정 근거 · ' + (r.json.data.reason || '');
+    const hero =
+            document.getElementById(
+                    'resultHero'
+            );
+
+
+    hero.className =
+            'result-hero state-' +
+            fr;
+
+
+    const icons = {
+
+      MATCH: '!',
+
+      PARTIAL: '?',
+
+      NO_MATCH: '✓',
+
+      UNKNOWN: '–'
+
+    };
+
+
+    document.getElementById(
+            'resultIcon'
+    ).textContent =
+            icons[fr] ||
+            '–';
+
+
+    document.getElementById(
+            'resultTitle'
+    ).textContent =
+            LABEL[fr] ||
+            '확인불가';
+
+
+    document.getElementById(
+            'resultSub'
+    ).textContent =
+            SUBLABEL[fr] ||
+            SUBLABEL.UNKNOWN;
+
+
+    document.getElementById(
+            'score'
+    ).textContent =
+            score == null
+                    ? '-'
+                    : (
+                            score * 100
+                    ).toFixed(1) +
+                    '%';
+
+
+    document
+            .querySelectorAll(
+                    '.judgement-state'
+            )
+            .forEach(
+                    el =>
+                            el.classList.remove(
+                                    'active'
+                            )
+            );
+
+
+    const stateMap = {
+
+      MATCH:
+              'stateMatch',
+
+      PARTIAL:
+              'statePartial',
+
+      NO_MATCH:
+              'stateNoMatch',
+
+      UNKNOWN:
+              'stateUnknown'
+
+    };
+
+
+    const activeState =
+            document.getElementById(
+                    stateMap[fr]
+            );
+
+
+    if (activeState) {
+
+      activeState.classList.add(
+              'active'
+      );
+
+    }
+
+
+    /* ==================================================
+       4단계 판정 아래 안내창
+    ================================================== */
+
+    const notice =
+            document.getElementById(
+                    'resultNotice'
+            );
+
+
+    if (!notice) {
+      return;
+    }
+
+
+    if (fr === 'MATCH') {
+
+      notice.className =
+              'result-notice match';
+
+
+      notice.innerHTML =
+              '<strong>⚠ 리콜 대상 제품입니다.</strong><br>' +
+              '제품 사용을 중지하고 판매처 또는 제조사의 ' +
+              '소비자 행동요령을 확인하세요.';
+
+
+    } else if (fr === 'PARTIAL') {
+
+      notice.className =
+              'result-notice partial';
+
+
+      notice.innerHTML =
+              '<strong>🔎 추가 확인이 필요합니다.</strong><br>' +
+              '제품명이나 브랜드는 유사하지만 모델명 또는 바코드가 ' +
+              '충분히 일치하지 않습니다.';
+
+
+    } else if (fr === 'NO_MATCH') {
+
+      notice.className =
+              'result-notice nomatch';
+
+
+      notice.innerHTML =
+              '<strong>✓ 일치하는 리콜 정보가 없습니다.</strong><br>' +
+              '현재 입력한 정보 기준으로 공식 리콜 정보와 일치하지 않습니다. ' +
+              '단, 리콜 대상이 아님을 의미하는 것은 아닙니다.';
+
+
+    } else {
+
+      notice.className =
+              'result-notice unknown';
+
+
+      notice.innerHTML =
+              '<strong>– 확인할 수 없습니다.</strong><br>' +
+              '정보가 부족하거나 공식 데이터를 조회하지 못했습니다. ' +
+              '제품 정보를 추가한 후 다시 확인해주세요.';
+
+    }
+
+  }
+
+
+  /* ==================================================
+     EVIDENCE
+  ================================================== */
+
+  async function loadEvidence(id) {
+
+    if (!id) {
+
+      return;
+
+    }
+
+
+    const r =
+            await call(
+                    '/api/verifications/' +
+                    id +
+                    '/evidence',
+
+                    'GET'
+            );
+
+
+    if (
+            r.json &&
+            r.json.success &&
+            r.json.data
+    ) {
+
+      document.getElementById(
+              'reason'
+      ).textContent =
+              '판정 근거 · ' +
+              (
+                      r.json.data.reason ||
+                      ''
+              );
+
+    }
+
+  }
+
+
+  /* ==================================================
+     HISTORY LOAD
+  ================================================== */
+
+  async function loadHistory() {
+
+    if (!token) {
+
+      return;
+
+    }
+
+
+    const r =
+            await call(
+                    '/api/verifications/me?page=0&size=10',
+                    'GET'
+            );
+
+
+    if (
+            !r.json ||
+            !r.json.success
+    ) {
+
+      return;
+
+    }
+
+
+    const list =
+            document.getElementById(
+                    'historyList'
+            );
+
+
+    if (
+            !r.json.data ||
+            !r.json.data.content ||
+            !r.json.data.content.length
+    ) {
+
+      list.innerHTML =
+              '<div style="' +
+              'text-align:center;' +
+              'color:#98a2b3;' +
+              'padding:30px;' +
+              'font-size:13px' +
+              '">' +
+              '아직 검증 이력이 없습니다.' +
+              '</div>';
+
+
+      return;
+
+    }
+
+
+    list.innerHTML =
+            r.json.data.content
+                    .map(
+                            function (v) {
+
+                              const result =
+                                      v.finalResult ||
+                                      'UNKNOWN';
+
+
+                              return `
+
+              <div class="history-item">
+
+                <div class="history-product">
+                  🧸
+                </div>
+
+                <div class="history-main">
+
+                  <div class="history-name">
+                    ${esc(
+                                      v.inputSummary ||
+                                      '제품 정보'
+                              )}
+                  </div>
+
+                  <div class="history-date">
+                    ${
+                                      (
+                                              v.createdAt ||
+                                              ''
+                                      )
+                                              .replace(
+                                                      'T',
+                                                      ' '
+                                              )
+                                              .substring(
+                                                      0,
+                                                      19
+                                              )
+                              }
+                  </div>
+
+                </div>
+
+                <div
+                  class="status-pill status-${result}">
+
+                  ${
+                                      LABEL[result] ||
+                                      '-'
+                              }
+
+                </div>
+
+              </div>
+
+            `;
+
+                            }
+                    )
+                    .join('');
+
+  }
+
+
+  /* ==================================================
+     ESCAPE
+  ================================================== */
+
+  function esc(s) {
+
+    return String(s)
+            .replace(
+                    /[&<>]/g,
+
+                    function (c) {
+
+                      return {
+
+                        '&':
+                                '&amp;',
+
+                        '<':
+                                '&lt;',
+
+                        '>':
+                                '&gt;'
+
+                      }[c];
+
+                    }
+            );
+
   }
 }
 
@@ -409,5 +4865,6 @@ function toggleCoupangAll(){
   renderCoupangList();
 }
 </script>
+
 </body>
 </html>
