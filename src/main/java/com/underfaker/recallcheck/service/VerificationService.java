@@ -9,14 +9,17 @@ import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
 import com.underfaker.recallcheck.dto.response.MatchEvidenceResponse;
 import com.underfaker.recallcheck.dto.response.VerificationHistoryResponse;
 import com.underfaker.recallcheck.dto.response.VerificationResultResponse;
+import com.underfaker.recallcheck.entity.Extraction;
 import com.underfaker.recallcheck.entity.MatchResult;
 import com.underfaker.recallcheck.entity.Recall;
 import com.underfaker.recallcheck.entity.Verification;
 import com.underfaker.recallcheck.entity.enums.Decision;
 import com.underfaker.recallcheck.entity.enums.FinalResult;
 import com.underfaker.recallcheck.entity.enums.InputType;
+import com.underfaker.recallcheck.entity.enums.VerificationChannel;
 import com.underfaker.recallcheck.exception.BusinessException;
 import com.underfaker.recallcheck.exception.ErrorCode;
+import com.underfaker.recallcheck.repository.ExtractionRepository;
 import com.underfaker.recallcheck.repository.MatchResultRepository;
 import com.underfaker.recallcheck.repository.RecallRepository;
 import com.underfaker.recallcheck.repository.VerificationRepository;
@@ -35,6 +38,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * ★ 전체 흐름 총괄 — 추출 → 매칭 → 판정.
@@ -52,6 +57,7 @@ public class VerificationService {
     private final VerificationRepository verificationRepository;
     private final MatchResultRepository matchResultRepository;
     private final RecallRepository recallRepository;
+    private final ExtractionRepository extractionRepository;
     private final ExtractionService extractionService;
     private final MatchingService matchingService;
 
@@ -91,11 +97,22 @@ public class VerificationService {
      */
     @Transactional
     public VerificationResultResponse verifyByManualInput(ManualInputRequest request) {
+        return verifyByManualInput(request, VerificationChannel.WEB);
+    }
+
+    /**
+     * 9/13 추가 — channel 을 명시하는 버전. "쿠팡 구매 이력 검증"(배치, verifyByManualInputBatch)이
+     * 이 메서드를 EXTENSION 으로 호출한다. 위의 1-인자 버전(웹의 "제품 정보로 리콜 검증" 단건 폼이
+     * 씀)은 WEB 을 넘기는 얇은 래퍼일 뿐, 로직은 완전히 동일하다.
+     */
+    @Transactional
+    public VerificationResultResponse verifyByManualInput(ManualInputRequest request, VerificationChannel channel) {
         Long userId = requireUserId();
 
         Verification verification = verificationRepository.save(Verification.builder()
                 .userId(userId)
                 .inputType(InputType.MANUAL)
+                .channel(channel)
                 .build());
 
         ExtractedProduct product = extractionService.extractFromManualInput(verification.getId(), request);
@@ -141,7 +158,7 @@ public class VerificationService {
         List<VerificationResultResponse> results = new ArrayList<>();
         for (ManualInputRequest request : requests) {
             try {
-                results.add(self.verifyByManualInput(request));
+                results.add(self.verifyByManualInput(request, VerificationChannel.EXTENSION));
             } catch (RuntimeException e) {
                 log.warn("배치 검증 중 1건 실패, 건너뜀 (productName={})", request.productName(), e);
             }
@@ -187,15 +204,36 @@ public class VerificationService {
                 List.of());
     }
 
-    /** FR-015 검증 이력 조회 */
-    public PageResponse<VerificationHistoryResponse> getMyHistory(int page, int size) {
+    /**
+     * FR-015 검증 이력 조회.
+     *
+     * 9/13 추가 — channel 이 null 이면(기존 동작 그대로) 전체, WEB/EXTENSION 을 넘기면 그 화면
+     * 것만. "제품 정보로 리콜 검증" 화면은 channel=WEB, "쿠팡 구매 이력 검증" 화면은
+     * channel=EXTENSION 으로 호출하면 됨.
+     */
+    public PageResponse<VerificationHistoryResponse> getMyHistory(
+            int page, int size, VerificationChannel channel) {
         Long userId = requireUserId();
-        Page<Verification> found = verificationRepository
-                .findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(page, size));
+        Page<Verification> found = channel == null
+                ? verificationRepository.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(page, size))
+                : verificationRepository.findByUserIdAndChannelOrderByCreatedAtDesc(
+                        userId, channel, PageRequest.of(page, size));
 
-        return PageResponse.from(found.map(v -> new VerificationHistoryResponse(
-                v.getId(), v.getInputType(), summarize(v), v.getStatus(),
-                v.getFinalResult(), v.getCreatedAt())));
+        // 9/13 추가 — summarize() 버그 수정(아래 참고) 때문에 필요해진 배치 조회. 페이지당 한 번만
+        // 쿼리해서 verificationId 로 매핑해두고(N+1 방지), 항목 하나당 extraction 을 따로 안 부른다.
+        List<Long> verificationIds = found.getContent().stream().map(Verification::getId).toList();
+        Map<Long, Extraction> extractionByVerificationId = extractionRepository
+                .findByVerificationIdIn(verificationIds).stream()
+                .collect(Collectors.toMap(Extraction::getVerificationId, e -> e, (a, b) -> a));
+
+        return PageResponse.from(found.map(v -> {
+            Extraction extraction = extractionByVerificationId.get(v.getId());
+            return new VerificationHistoryResponse(
+                    v.getId(), v.getInputType(), v.getChannel(),
+                    summarize(v, extraction),
+                    extraction == null ? null : extraction.getMakerName(),
+                    v.getStatus(), v.getFinalResult(), v.getCreatedAt());
+        }));
     }
 
     // ------------------------------------------------------------------ 내부
@@ -226,12 +264,20 @@ public class VerificationService {
         };
     }
 
-    private String summarize(Verification v) {
+    /**
+     * 9/13 수정 — 원래는 직접입력 건이면 무조건 "직접 입력" 고정 문자열만 리턴해서 이력 목록에
+     * 실제 상품명이 하나도 안 나오는 버그였음(품목 검색/쿠팡 이력 화면 둘 다 재현 확인됨).
+     * extraction.product_name 이 있으면 그걸 우선 쓰고, 없을 때만 기존 폴백으로 떨어진다.
+     */
+    private String summarize(Verification v, Extraction extraction) {
         if (v.getInputUrl() != null) {
             return v.getInputUrl();
         }
         if (v.getImagePath() != null) {
             return v.getImagePath();
+        }
+        if (extraction != null && extraction.getProductName() != null) {
+            return extraction.getProductName();
         }
         return "직접 입력";
     }

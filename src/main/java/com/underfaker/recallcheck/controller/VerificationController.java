@@ -8,6 +8,7 @@ import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
 import com.underfaker.recallcheck.dto.response.MatchEvidenceResponse;
 import com.underfaker.recallcheck.dto.response.VerificationHistoryResponse;
 import com.underfaker.recallcheck.dto.response.VerificationResultResponse;
+import com.underfaker.recallcheck.entity.enums.VerificationChannel;
 import com.underfaker.recallcheck.service.VerificationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -67,11 +68,15 @@ public class VerificationController {
         return ApiResponse.success(verificationService.getEvidence(verificationId));
     }
 
-    /** FR-015 내 검증 이력 조회 */
+    /**
+     * FR-015 내 검증 이력 조회.
+     * channel 생략 시 전체, WEB="제품 정보로 리콜 검증"(단건) / EXTENSION="쿠팡 구매 이력 검증"(배치, 확장)만 필터링.
+     */
     @GetMapping("/me")
     public ApiResponse<PageResponse<VerificationHistoryResponse>> getMyHistory(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.success(verificationService.getMyHistory(page, size));
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) VerificationChannel channel) {
+        return ApiResponse.success(verificationService.getMyHistory(page, size, channel));
     }
 }

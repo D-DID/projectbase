@@ -116,6 +116,9 @@ CREATE TABLE `verification` (
     `image_path`        VARCHAR(512)    NULL,
     `status`            ENUM('PENDING','DONE','FAILED') NULL,
     `final_result`      ENUM('MATCH','PARTIAL','NO_MATCH','UNKNOWN') NULL,
+    -- 9/13 추가 — "제품 정보로 리콜 검증"(WEB, 단건 직접입력) vs "쿠팡 구매 이력 검증"
+    -- (EXTENSION, 크롬 확장 배치) 화면 구분용. 기존 행은 전부 웹 단건이었으니 DEFAULT 'WEB'.
+    `channel`           ENUM('WEB','EXTENSION') NOT NULL DEFAULT 'WEB',
     `created_at`        DATETIME        NULL,
     `updated_at`        DATETIME        NULL,
     CONSTRAINT `PK_VERIFICATION` PRIMARY KEY (`verification_id`),
