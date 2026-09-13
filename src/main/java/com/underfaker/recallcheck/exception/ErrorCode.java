@@ -16,6 +16,8 @@ public enum ErrorCode {
     DUPLICATE_EMAIL(HttpStatus.CONFLICT, "A001", "이미 사용 중인 이메일입니다."),
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "A002", "이메일 또는 비밀번호가 올바르지 않습니다."),
     INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "A003", "유효하지 않은 토큰입니다. 다시 로그인해 주세요."),
+    UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "A004", "로그인이 필요합니다. 인증 토큰을 확인해 주세요."),
+    ACCESS_DENIED(HttpStatus.FORBIDDEN, "A005", "접근 권한이 없습니다."),
 
     // 검증 (FR-003 ~ FR-015)
     VERIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "V001", "검증 요청을 찾을 수 없습니다."),

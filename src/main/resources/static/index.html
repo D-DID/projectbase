@@ -50,6 +50,21 @@
     padding:11px 14px;border-radius:8px;font-size:12.5px;line-height:1.6}
   #resultCard{display:none}
   .kv{font-size:13px}
+  .tabbar{display:flex;gap:8px;margin-bottom:2px}
+  .tab{padding:12px 20px;border-radius:10px 10px 0 0;background:#e9edf4;color:var(--muted);
+    font-weight:700;font-size:14px;cursor:pointer;border:1px solid var(--line);border-bottom:none}
+  .tab.active{background:#fff;color:var(--navy)}
+  .stats4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+  .stat{border:1px solid var(--line);border-radius:10px;padding:12px 8px;text-align:center;background:#fbfcfe}
+  .stat .n{font-size:22px;font-weight:800;color:var(--navy)}
+  .stat .l{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .stat.safe .n{color:var(--nomatch)} .stat.partial .n{color:var(--partial)} .stat.recall .n{color:var(--match)}
+  .citem{display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .citem:last-child{border-bottom:none}
+  .citem .cname{font-size:13.5px;font-weight:700}
+  .citem .csub{font-size:12px;color:var(--muted);margin-top:2px}
+  .citem .ctime{font-size:11px;color:#98a2b3;margin-top:2px}
+  .cbadge{font-size:11px;padding:4px 10px;border-radius:999px;color:#fff;font-weight:700;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -63,6 +78,11 @@
 </header>
 
 <div class="wrap">
+
+  <div class="tabbar">
+    <div class="tab active" id="tabWebBtn" onclick="switchTab('web')">제품 정보로 리콜 검증</div>
+    <div class="tab" id="tabCoupangBtn" onclick="switchTab('coupang')">쿠팡 구매 이력 검증</div>
+  </div>
 
   <div class="card" id="authCard">
     <h2>로그인 · 회원가입</h2>
@@ -79,6 +99,8 @@
     </div>
     <div class="msg" id="authMsg"></div>
   </div>
+
+  <div id="webSection">
 
   <div class="card">
     <h2>제품 정보로 리콜 검증</h2>
@@ -123,6 +145,44 @@
     <h2>내 검증 이력</h2>
     <p class="desc">FR-015</p>
     <table id="historyTable"></table>
+  </div>
+
+  </div>
+
+  <div id="coupangSection" style="display:none">
+
+  <div class="card">
+    <h2>쿠팡 구매 이력 검증</h2>
+    <p class="desc">크롬 확장이 쿠팡 주문내역에서 배치로 보낸 검증 결과 (channel=EXTENSION)</p>
+    <div class="row" style="margin-top:0">
+      <button class="ghost" onclick="loadCoupangReport()">새로고침</button>
+    </div>
+    <div class="msg" id="coupangMsg"></div>
+
+    <div class="stats4" id="coupangStats">
+      <div class="stat"><div class="n" id="cStatTotal">-</div><div class="l">전체</div></div>
+      <div class="stat safe"><div class="n" id="cStatSafe">-</div><div class="l">안전</div></div>
+      <div class="stat partial"><div class="n" id="cStatPartial">-</div><div class="l">부분 일치</div></div>
+      <div class="stat recall"><div class="n" id="cStatRecall">-</div><div class="l">리콜</div></div>
+    </div>
+    <table>
+      <tr><th>마지막 검증</th><td id="cLastAt">-</td></tr>
+      <tr><th>오늘 검증</th><td id="cTodayCount">-</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>최근 자동 검증</h2>
+    <div id="coupangList"></div>
+    <div class="row" style="justify-content:center">
+      <button class="ghost" onclick="toggleCoupangAll()" id="coupangToggleBtn">전체 검증 이력 보기</button>
+    </div>
+    <div class="hint">
+      "쿠팡 계정 연결" 상태 표시는 백엔드에 해당 개념이 없어 뺐음 — 로그인 여부(위 상단 로그인 카드)로 대체.
+      상품 아이콘은 카테고리 데이터가 없어 표시 안 함. 통계는 최근 500건 기준.
+    </div>
+  </div>
+
   </div>
 
   <div class="warn">
@@ -277,6 +337,76 @@ function esc(s){
   return String(s).replace(/[&<>]/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];
   });
+}
+
+// ---- 9/13 추가: 쿠팡 구매 이력 검증 탭 (channel=EXTENSION) ----
+let coupangItems = [];
+let coupangShowAll = false;
+
+function switchTab(tab){
+  const isWeb = tab === 'web';
+  document.getElementById('webSection').style.display = isWeb ? 'block' : 'none';
+  document.getElementById('coupangSection').style.display = isWeb ? 'none' : 'block';
+  document.getElementById('tabWebBtn').className = 'tab' + (isWeb ? ' active' : '');
+  document.getElementById('tabCoupangBtn').className = 'tab' + (isWeb ? '' : ' active');
+  if (!isWeb) loadCoupangReport();
+}
+
+async function loadCoupangReport(){
+  if (!token) { show('coupangMsg', '먼저 로그인하세요.', false); return; }
+  const r = await call('/api/verifications/me?channel=EXTENSION&page=0&size=500', 'GET');
+  if (!r.json || !r.json.success) {
+    show('coupangMsg', '이력 조회 실패 (' + r.status + ')', false);
+    return;
+  }
+  document.getElementById('coupangMsg').className = 'msg';
+  coupangItems = r.json.data.content;
+  const total = r.json.data.totalElements;
+
+  const safe = coupangItems.filter(function(v){ return v.finalResult === 'NO_MATCH'; }).length;
+  const partial = coupangItems.filter(function(v){ return v.finalResult === 'PARTIAL'; }).length;
+  const recall = coupangItems.filter(function(v){ return v.finalResult === 'MATCH'; }).length;
+
+  document.getElementById('cStatTotal').textContent = total;
+  document.getElementById('cStatSafe').textContent = safe;
+  document.getElementById('cStatPartial').textContent = partial;
+  document.getElementById('cStatRecall').textContent = recall;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const todayCount = coupangItems.filter(function(v){ return (v.createdAt || '').slice(0, 10) === today; }).length;
+  document.getElementById('cTodayCount').textContent = todayCount + '건';
+  document.getElementById('cLastAt').textContent = coupangItems.length
+    ? (coupangItems[0].createdAt || '').replace('T', ' ').substring(0, 19) : '-';
+
+  renderCoupangList();
+}
+
+function renderCoupangList(){
+  const el = document.getElementById('coupangList');
+  const items = coupangShowAll ? coupangItems : coupangItems.slice(0, 5);
+  if (items.length === 0) {
+    el.innerHTML = '<div class="muted" style="font-size:13px">표시할 항목 없음</div>';
+    return;
+  }
+  el.innerHTML = items.map(function(v){
+    const fr = v.finalResult || 'UNKNOWN';
+    const sub = '쿠팡 상품명' + (v.makerName ? ' · ' + esc(v.makerName) : '');
+    return '<div class="citem">' +
+      '<div class="info" style="flex:1">' +
+        '<div class="cname">' + esc(v.inputSummary || '-') + '</div>' +
+        '<div class="csub">' + sub + '</div>' +
+        '<div class="ctime">' + (v.createdAt || '').replace('T', ' ').substring(0, 19) + '</div>' +
+      '</div>' +
+      '<span class="cbadge b-' + fr + '">' + LABEL[fr] + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+function toggleCoupangAll(){
+  coupangShowAll = !coupangShowAll;
+  document.getElementById('coupangToggleBtn').textContent =
+    coupangShowAll ? '최근 5건만 보기' : '전체 검증 이력 보기';
+  renderCoupangList();
 }
 </script>
 </body>
