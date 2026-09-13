@@ -2,8 +2,11 @@ package com.underfaker.recallcheck.client;
 
 import com.underfaker.recallcheck.client.dto.RecallDetailApiResponse;
 import com.underfaker.recallcheck.client.dto.RecallListApiResponse;
+import com.underfaker.recallcheck.exception.BusinessException;
+import com.underfaker.recallcheck.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -32,6 +35,12 @@ public class SafetyKoreaRecallClient {
     @Qualifier("safetyKoreaRestClient")
     private final RestClient safetyKoreaRestClient;
 
+    @Value("${openapi.safety-korea.recall-list-path}")
+    private String recallListPath;
+
+    @Value("${openapi.safety-korea.recall-detail-path}")
+    private String recallDetailPath;
+
     /**
      * 국내리콜 목록 조회.
      *
@@ -39,13 +48,40 @@ public class SafetyKoreaRecallClient {
      * @param conditionValue 검색어
      */
     public RecallListApiResponse fetchList(String conditionKey, String conditionValue) {
-        // TODO GET /openapi/api/recall/recallList.json, resultCode 가 "2000" 인지 검사
-        throw new UnsupportedOperationException("TODO: fetchList");
+        RecallListApiResponse response = safetyKoreaRestClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path(recallListPath)
+                        .queryParam("conditionKey", conditionKey)
+                        .queryParam("conditionValue", conditionValue)
+                        .build())
+                .retrieve()
+                .body(RecallListApiResponse.class);
+
+        if (response == null) {
+            throw new BusinessException(ErrorCode.OPENAPI_CALL_FAILED, "리콜 목록 응답이 비어 있습니다.");
+        }
+        // 2000 Success, 2004 No Data 는 둘 다 정상 응답이다. 그 외(4000/4001/4005/5000)만 실패로 취급.
+        if (!response.isSuccess() && !response.isNoData()) {
+            throw new BusinessException(ErrorCode.OPENAPI_CALL_FAILED,
+                    "리콜 목록 조회 실패: " + response.resultCode() + " " + response.resultMsg());
+        }
+        return response;
     }
 
     /** recallUid 기준 상세 정보 및 리콜 사진 조회 */
     public RecallDetailApiResponse fetchDetail(Long recallUid) {
-        // TODO GET /openapi/api/recall/recallDetail.json?recallUid=...
-        throw new UnsupportedOperationException("TODO: fetchDetail");
+        RecallDetailApiResponse response = safetyKoreaRestClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path(recallDetailPath)
+                        .queryParam("recallUid", recallUid)
+                        .build())
+                .retrieve()
+                .body(RecallDetailApiResponse.class);
+
+        if (response == null || !response.isSuccess()) {
+            throw new BusinessException(ErrorCode.OPENAPI_CALL_FAILED,
+                    "리콜 상세 조회 실패 (recallUid=" + recallUid + ")");
+        }
+        return response;
     }
 }
