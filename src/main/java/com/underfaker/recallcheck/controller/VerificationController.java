@@ -8,10 +8,13 @@ import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
 import com.underfaker.recallcheck.dto.response.MatchEvidenceResponse;
 import com.underfaker.recallcheck.dto.response.VerificationHistoryResponse;
 import com.underfaker.recallcheck.dto.response.VerificationResultResponse;
+import com.underfaker.recallcheck.entity.enums.VerificationChannel;
 import com.underfaker.recallcheck.service.VerificationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /** FR-003,004,008,013,014,015 — 검증 전체 */
 @RestController
@@ -40,6 +43,19 @@ public class VerificationController {
         return ApiResponse.success(verificationService.verifyByManualInput(request));
     }
 
+    /**
+     * FR-008 사용자 직접 입력 검증(배치) — 크롬 확장이 쿠팡 주문내역 페이지에서 한 번에 여러 건을
+     * 추출했을 때 사용. 9/13 결정: 필드 구조는 기존 /manual 과 동일한 6필드 그대로, 배열로만 받음
+     * (썸네일 이미지 매칭은 아직 이 계약에 안 들어감 — 2단계에서 별도 추가 예정).
+     * 항목 하나가 실패해도 나머지 항목은 계속 처리됨(각 항목 독립 트랜잭션) — 상세는
+     * VerificationService#verifyByManualInputBatch 주석 참고.
+     */
+    @PostMapping("/manual/batch")
+    public ApiResponse<List<VerificationResultResponse>> verifyByManualInputBatch(
+            @Valid @RequestBody List<@Valid ManualInputRequest> requests) {
+        return ApiResponse.success(verificationService.verifyByManualInputBatch(requests));
+    }
+
     /** FR-013 검증 결과 조회 */
     @GetMapping("/{verificationId}")
     public ApiResponse<VerificationResultResponse> getResult(@PathVariable Long verificationId) {
@@ -52,11 +68,15 @@ public class VerificationController {
         return ApiResponse.success(verificationService.getEvidence(verificationId));
     }
 
-    /** FR-015 내 검증 이력 조회 */
+    /**
+     * FR-015 내 검증 이력 조회.
+     * channel 생략 시 전체, WEB="제품 정보로 리콜 검증"(단건) / EXTENSION="쿠팡 구매 이력 검증"(배치, 확장)만 필터링.
+     */
     @GetMapping("/me")
     public ApiResponse<PageResponse<VerificationHistoryResponse>> getMyHistory(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.success(verificationService.getMyHistory(page, size));
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) VerificationChannel channel) {
+        return ApiResponse.success(verificationService.getMyHistory(page, size, channel));
     }
 }

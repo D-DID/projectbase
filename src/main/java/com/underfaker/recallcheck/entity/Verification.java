@@ -2,6 +2,7 @@ package com.underfaker.recallcheck.entity;
 
 import com.underfaker.recallcheck.entity.enums.FinalResult;
 import com.underfaker.recallcheck.entity.enums.InputType;
+import com.underfaker.recallcheck.entity.enums.VerificationChannel;
 import com.underfaker.recallcheck.entity.enums.VerificationStatus;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -42,12 +43,23 @@ public class Verification extends BaseTimeEntity {
     @Column(name = "final_result", length = 20)
     private FinalResult finalResult;
 
+    /**
+     * 9/13 추가 — "제품 정보로 리콜 검증"(WEB, 단건) vs "쿠팡 구매 이력 검증"(EXTENSION, 배치)
+     * 화면 구분용. VerificationChannel 참고.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "channel", nullable = false, length = 20)
+    private VerificationChannel channel;
+
     @Builder
-    public Verification(Long userId, InputType inputType, String inputUrl, String imagePath) {
+    public Verification(Long userId, InputType inputType, String inputUrl, String imagePath,
+                         VerificationChannel channel) {
         this.userId = userId;
         this.inputType = inputType;
         this.inputUrl = inputUrl;
         this.imagePath = imagePath;
+        // channel 을 안 넘기면(기존 URL/이미지 검증 경로) 기본값 WEB — 지금은 전부 웹에서만 들어옴
+        this.channel = channel != null ? channel : VerificationChannel.WEB;
         this.status = VerificationStatus.PENDING;
     }
 
