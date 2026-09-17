@@ -17,14 +17,14 @@ public class IdentityMerger {
 
     public ExtractedProduct merge(List<ExtractedProduct> sources) {
         if (sources == null || sources.isEmpty()) {
-            return new ExtractedProduct(null, null, null, null, null, null, null, 0.0);
+            return new ExtractedProduct(null, null, null, null, null, null, null, null, 0.0);
         }
         List<ExtractedProduct> ordered = sources.stream()
                 .sorted((a, b) -> Double.compare(conf(b), conf(a)))
                 .toList();
 
         String productName = null, brandName = null, modelName = null, makerName = null;
-        String barcodeNum = null, certNum = null;
+        String barcodeNum = null, certNum = null, thumbnailUrl = null;
         StringBuilder rawText = new StringBuilder();
         double confidence = 0.0;
 
@@ -35,6 +35,8 @@ public class IdentityMerger {
             makerName = pick(makerName, s.makerName());
             barcodeNum = pick(barcodeNum, s.barcodeNum());
             certNum = pick(certNum, s.certNum());
+            // 9/17 추가 — 썸네일도 같은 규칙(신뢰도 높은 소스 우선, 비면 다음 소스가 채움)으로 합친다
+            thumbnailUrl = pick(thumbnailUrl, s.thumbnailUrl());
             if (s.rawText() != null && !s.rawText().isBlank()) {
                 rawText.append(s.rawText()).append('\n');
             }
@@ -42,7 +44,7 @@ public class IdentityMerger {
         }
 
         return new ExtractedProduct(productName, brandName, modelName, makerName,
-                barcodeNum, certNum, rawText.toString().trim(), confidence);
+                barcodeNum, certNum, thumbnailUrl, rawText.toString().trim(), confidence);
     }
 
     private String pick(String current, String candidate) {

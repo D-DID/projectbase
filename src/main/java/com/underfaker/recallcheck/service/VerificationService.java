@@ -2,6 +2,7 @@ package com.underfaker.recallcheck.service;
 
 import com.underfaker.recallcheck.common.PageResponse;
 import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
+import com.underfaker.recallcheck.dto.internal.FieldComparison;
 import com.underfaker.recallcheck.dto.internal.MatchCandidate;
 import com.underfaker.recallcheck.dto.request.ImageVerifyRequest;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
@@ -180,7 +181,13 @@ public class VerificationService {
         return toResultFrom(verification, best, recall);
     }
 
-    /** FR-014 판정에 사용된 항목과 유사도 점수 */
+    /**
+     * FR-014 판정에 사용된 항목과 유사도 점수.
+     *
+     * 9/17 수정 — comparisons 가 항상 빈 배열로 나가던 것을 실제 항목별 대조표로 채운다.
+     * 이전엔 여기서 List.of() 를 그대로 내려서, 화면에서는 "종합 87%" 같은 숫자 하나만
+     * 보이고 어느 항목이 왜 맞았는지는 reason 문자열을 읽어야만 알 수 있었다(미구현 상태).
+     */
     public MatchEvidenceResponse getEvidence(Long verificationId) {
         Verification verification = findOwned(verificationId);
         List<MatchResult> results =
@@ -201,7 +208,33 @@ public class VerificationService {
                 best.getReason(),
                 recall == null ? null : recall.getRecallProductName(),
                 recall == null ? null : recall.getPublishDate(),
-                List.of());
+                buildComparisons(verificationId, recall));
+    }
+
+    /**
+     * FR-014 항목별 대조표 조립 (9/17 구현).
+     *
+     * 왜 저장된 걸 읽지 않고 다시 계산하나:
+     * match_result 테이블에는 종합 점수(similarity_score), 일치 항목 이름 문자열(matched_field),
+     * 사람이 읽는 설명(reason)만 들어간다. 항목별 입력값·공표문값·점수·가중치를 담는 행이 없어서
+     * 저장된 값만으로는 대조표를 복원할 수 없다. 그래서 검증 당시의 입력값(extraction)과
+     * 공표문(recall)을 다시 꺼내 MatchingService.compare() 로 같은 계산을 한 번 더 돌린다.
+     *
+     * 한계: 매칭 규칙(가중치·정규화)을 나중에 바꾸면 과거 검증건의 근거도 새 규칙으로 보인다.
+     * 1단계에서는 스키마를 늘리지 않는 쪽이 낫다고 보고 이걸 감수한다 — 항목별 행을 따로
+     * 저장하는 건 2단계에서 match_result_field 테이블을 추가하며 처리할 것.
+     *
+     * @return 후보가 없거나 추출 기록이 없으면 빈 목록 (예외를 던지지 않는다)
+     */
+    private List<FieldComparison> buildComparisons(Long verificationId, Recall recall) {
+        if (recall == null) {
+            return List.of();
+        }
+        ExtractedProduct product = extractionService.loadMerged(verificationId);
+        if (product == null) {
+            return List.of();
+        }
+        return matchingService.compare(product, recall);
     }
 
     /**

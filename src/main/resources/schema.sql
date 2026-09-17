@@ -138,6 +138,11 @@ CREATE TABLE `extraction` (
     `maker_name`        VARCHAR(255)    NULL,
     `barcode_num`       VARCHAR(64)     NULL,
     `cert_num`          VARCHAR(64)     NULL,
+    -- 9/17 추가 — 크롬 확장이 쿠팡 주문내역에서 가져온 항목 썸네일 이미지 URL.
+    -- 1단계에서는 보관만, 2단계 Vision/Lens 이미지 유사도 판정의 입력이 된다.
+    -- 운영 중인 DB 에는 아래를 직접 실행해야 반영된다(ddl-auto=validate):
+    --   ALTER TABLE `extraction` ADD COLUMN `thumbnail_url` VARCHAR(500) NULL AFTER `cert_num`;
+    `thumbnail_url`     VARCHAR(500)    NULL,
     `raw_text`          TEXT            NULL,
     `confidence`        DOUBLE          NULL,
     `created_at`        DATETIME        NULL,
