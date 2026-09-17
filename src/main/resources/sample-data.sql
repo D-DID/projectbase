@@ -75,4 +75,32 @@ INSERT INTO `recall_file` (`recall_uid`, `file_div`, `image_url`) VALUES
 (900002, '전체사진', 'https://example.invalid/sample/900002_full.jpg'),
 (900003, '전체사진', 'https://example.invalid/sample/900003_full.jpg');
 
+-- ---------------------------------------------------------------------------
+-- 9/17 추가 — normalized_* 컬럼 백필 (이 INSERT 로 데이터를 넣었다면 반드시 같이 실행할 것)
+--
+-- 왜 필요한가:
+--   recall 의 normalized_product_name / normalized_model_name / normalized_cert_num 은
+--   Recall 엔티티의 @PrePersist·@PreUpdate 에서 TextNormalizer 로 계산된다. 즉 JPA 를
+--   거쳐 저장할 때만 채워진다. 위 INSERT 처럼 SQL 로 직접 넣으면 이 세 컬럼이 NULL 로 남는다.
+--
+--   그런데 후보조회(RecallQueryService.findCandidates)와 검색(RecallRepository.search)은
+--   전부 normalized_* 컬럼을 기준으로 LIKE 를 건다. NULL LIKE '%물티슈%' 는 NULL 이라
+--   어떤 검색어를 넣어도 0건이 나오고, 검증을 돌려도 "대조할 리콜 후보가 없습니다" 만 뜬다.
+--   9/17 에 실제로 이 증상으로 한참 헤맸다 — 정규화 로직이 틀린 게 아니라 데이터가 빈 것이었다.
+--
+--   국표원 Open API 실연동(RecallSyncService)으로 적재하는 데이터는 JPA 를 타므로
+--   이 문제가 없다. 샘플 8건이 실데이터로 교체되면 아래 UPDATE 도 같이 지우면 된다.
+--
+-- 아래 REPLACE 중첩은 common/TextNormalizer.normalize() 와 같은 규칙이다
+-- (공백·하이픈·콤마·괄호·점·슬래시 제거 후 대문자). 규칙을 바꾸면 양쪽을 같이 고칠 것.
+UPDATE `recall`
+SET
+  `normalized_product_name` = UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(`recall_product_name`,''),' ',''),'-',''),',',''),'(',''),')',''),'.',''),'/','')),
+  `normalized_model_name`   = UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(`recall_model_name`,''),' ',''),'-',''),',',''),'(',''),')',''),'.',''),'/','')),
+  `normalized_cert_num`     = UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(`cert_num`,''),' ',''),'-',''),',',''),'(',''),')',''),'.',''),'/',''))
+WHERE `recall_uid` > 0;
+
 SELECT COUNT(*) AS `적재된 샘플 리콜 건수` FROM `recall` WHERE `recall_uid` >= 900000;
+
+-- 백필이 제대로 됐는지 확인용 — normalized_product_name 이 NULL 인 행이 0 이어야 한다
+SELECT COUNT(*) AS `정규화 안 된 행(0이어야 정상)` FROM `recall` WHERE `normalized_product_name` IS NULL;
