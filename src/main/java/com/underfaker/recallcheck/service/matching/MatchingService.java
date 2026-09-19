@@ -71,8 +71,15 @@ public class MatchingService {
      * 항목별 대조 (FR-012).
      * 양쪽에 값이 있는 항목만 비교 대상에 넣는다.
      * recall 의 모델명·인증번호는 콤마 구분 목록이라 쪼개서 최고 점수를 취한다.
+     *
+     * 9/17 public 으로 변경 — FR-014 판정근거 조회(VerificationService.getEvidence)가
+     * 이 계산을 그대로 다시 쓴다. match_result 에는 항목별 점수가 저장되지 않아서
+     * (종합 점수·matched_field 문자열·reason 만 있음) 조회 시점에 재계산해야 하는데,
+     * 그때 판정 때와 다른 코드로 계산하면 화면에 보이는 근거와 실제 판정이 어긋난다.
+     * 계산 자체는 DB 를 건드리지 않는 순수 함수라 읽기 트랜잭션에서 불러도 안전하다.
      */
-    private List<FieldComparison> compare(ExtractedProduct product, Recall recall) {
+    @Transactional(readOnly = true)
+    public List<FieldComparison> compare(ExtractedProduct product, Recall recall) {
         List<FieldComparison> comparisons = new ArrayList<>();
 
         addListComparison(comparisons, "modelName",
