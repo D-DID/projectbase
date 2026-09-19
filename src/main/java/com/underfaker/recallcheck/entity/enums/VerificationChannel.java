@@ -1,5 +1,6 @@
 package com.underfaker.recallcheck.entity.enums;
 
+
 /**
  * 검증 요청이 어느 화면에서 들어왔는지 (verification.channel)
  *
