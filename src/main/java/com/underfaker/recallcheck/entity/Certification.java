@@ -90,4 +90,15 @@ public class Certification implements Persistable<Long> {
         this.makerCntryName = makerCntryName;
         this.syncedAt = LocalDateTime.now();
     }
+    public void syncFrom(Certification fresh) {
+        this.certNum = fresh.certNum;
+        this.certState = fresh.certState;
+        this.certDate = fresh.certDate;
+        this.productName = fresh.productName;
+        this.brandName = fresh.brandName;
+        this.modelName = fresh.modelName;
+        this.makerName = fresh.makerName;
+        this.makerCntryName = fresh.makerCntryName;
+        this.syncedAt = LocalDateTime.now();
+    }
 }
