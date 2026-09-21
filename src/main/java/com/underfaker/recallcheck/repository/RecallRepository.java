@@ -65,4 +65,23 @@ public interface RecallRepository extends JpaRepository<Recall, Long> {
                          @Param("makerName") String makerName,
                          @Param("certNum") String certNum,
                          Pageable pageable);
+
+    /**
+     * recall_file 행이 하나도 없는 리콜의 uid 목록.
+     *
+     * 본문을 withImages=false 로 먼저 적재한 뒤 사진만 따로 채울 때 쓴다.
+     * Pageable 로 끊어서 여러 번 호출하는 것을 전제로 하고, 최신 공표분부터 처리하도록
+     * recall_uid 내림차순으로 준다(uid 가 클수록 최근 공표다 — 실측 10022507 < 10023006).
+     *
+     * 주의: 상세 API 가 사진을 안 주는 리콜은 몇 번을 돌려도 계속 이 목록에 남는다.
+     *       syncImages() 응답이 0 인데 목록이 안 줄면 그 건들은 원래 사진이 없는 것이다.
+     */
+    @Query("""
+            SELECT r.recallUid FROM Recall r
+            WHERE NOT EXISTS (
+                SELECT 1 FROM RecallFile f WHERE f.recallUid = r.recallUid
+            )
+            ORDER BY r.recallUid DESC
+            """)
+    List<Long> findUidsWithoutFiles(Pageable pageable);
 }
