@@ -43,6 +43,17 @@ openapi.safety-korea.recall-detail-path=/openapi/api/recall/recallDetail.json
 openapi.safety-korea.cert-list-path=/openapi/api/cert/certificationList.json
 openapi.safety-korea.cert-detail-path=/openapi/api/cert/certificationDetail.json
 
+# 9/20 추가 — 리콜 적재 대상 공표일 (yyyyMMdd).
+# RecallSyncService 가 conditionKey=publishDate 로 이 값을 넘긴다.
+# 요청 파라미터가 아니라 여기서 읽으므로, 다른 날짜를 적재하려면 이 값만 바꾸고 재기동하면 된다.
+# 기본값 없음 — 이 줄이 빠지면 앱이 기동되지 않는다(엉뚱한 날짜가 조용히 적재되는 것보다 낫다).
+openapi.safety-korea.recall-publish-date=20260916
+
+# 한 번에 적재할 최대 건수. 0 = 전건.
+# 적재 1건마다 상세 API(recallDetail)를 한 번 더 호출하므로, 공표 건수가 많은 날짜를 그대로 돌리면
+# 트랜잭션 하나 안에서 HTTP 호출이 수백 번 일어난다. 그럴 땐 값을 줘서 끊는 게 안전하다.
+openapi.safety-korea.recall-sync-max=0
+
 # ---------------------------------------------------------------- OCR 모듈 (FR-006)
 ocr.base-url=http://localhost:8000
 
