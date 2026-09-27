@@ -50,3 +50,15 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Google 서비스 계정 키 (9/24) — 개인키가 들어 있다. 저장소 밖에 둘 것 ###
+# 콘솔에서 받으면 기본 이름이 '<프로젝트ID>-<키ID 앞 12자>.json' 이다. 그 모양을 통째로 막는다.
+*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].json
+*service-account*.json
+*credentials*.json
+secrets/
+
+### 크롬 확장 서명 키 등 개인키 (9/27) ###
+# Claude outputs/ext_key.pem 같은 확장 패키징 키가 저장소에 섞여 들어가지 않게 한다.
+*.pem
+*.key

@@ -37,6 +37,13 @@ public class SimilarityCalculator {
     private static final double CONTAINS_BASE = 0.55;
     private static final double CONTAINS_RATIO_WEIGHT = 0.40;
 
+    /**
+     * 식별자(인증번호·품번)에서 부분 포함을 인정할 최소 길이.
+     * 일반 문자열용 4자보다 하나 길게 둔다 — "1250" 같은 숫자 네 자리는 품번 여러 개에 우연히
+     * 들어 있을 수 있다. 잠정치이며 실측 근거는 없다.
+     */
+    private static final int MIN_IDENTIFIER_CONTAINS_LENGTH = 5;
+
     private final MatchingProperties properties;
 
     /**
@@ -63,6 +70,41 @@ public class SimilarityCalculator {
 
         int distance = levenshtein(a, b);
         return Math.max(0.0, 1.0 - ((double) distance / longer));
+    }
+
+    /**
+     * 식별자(인증번호·품번) 전용 유사도 — 완전일치 또는 포함관계일 때만 점수를 준다.
+     *
+     * ── 9/27 추가 ──
+     * 인증번호·품번은 한 글자만 달라도 다른 제품이다. 그런데 similarity() 는 편집거리로
+     * 부분점수를 주기 때문에, 형식이 같은 번호끼리는 무관해도 절반 넘게 나온다.
+     * 실측(검증 577): 입력 인증번호와 공표문 인증번호가 서로 다른데 "인증번호 57%" 가 찍혔고,
+     * 제품명 100% 와 합쳐져 상품명기준 종합 0.806 → MATCH(임계 0.80) 로 올라갔다.
+     * 같은 입력이 리콜 13건 이상에 MATCH 로 붙었다.
+     *
+     * 규칙:
+     *   같으면 1.0
+     *   한쪽이 다른 쪽을 포함하고 짧은 쪽이 5자 이상이면 similarity() 와 같은 포함 점수
+     *     (옵션 접미사 "SG1250M" ↔ "SG1250MW", 앞부분만 적은 "YU101889" ↔ "YU101889-23001" 대응.
+     *      하이픈·공백 차이는 이 메서드에 오기 전에 정규화에서 이미 지워진다)
+     *   그 밖은 0.0 — 편집거리 부분점수를 주지 않는다.
+     *
+     * 0 점이어도 항목은 비교 목록에 남는다(분모에 들어간다). "번호가 다르다"는 것 자체가
+     * 반대 증거이기 때문이다.
+     */
+    public double identifierSimilarity(String a, String b) {
+        if (a == null || b == null || a.isEmpty() || b.isEmpty()) {
+            return 0.0;
+        }
+        if (a.equals(b)) {
+            return 1.0;
+        }
+        int shorter = Math.min(a.length(), b.length());
+        int longer = Math.max(a.length(), b.length());
+        if ((a.contains(b) || b.contains(a)) && shorter >= MIN_IDENTIFIER_CONTAINS_LENGTH) {
+            return CONTAINS_BASE + CONTAINS_RATIO_WEIGHT * ((double) shorter / longer);
+        }
+        return 0.0;
     }
 
     /**

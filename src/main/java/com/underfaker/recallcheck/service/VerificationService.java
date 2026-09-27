@@ -1,9 +1,14 @@
 package com.underfaker.recallcheck.service;
 
+import com.underfaker.recallcheck.client.GoogleVisionClient;
 import com.underfaker.recallcheck.common.PageResponse;
 import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
+import com.underfaker.recallcheck.dto.internal.ExtractionNotes;
 import com.underfaker.recallcheck.dto.internal.FieldComparison;
+import com.underfaker.recallcheck.dto.internal.ImageInsight;
 import com.underfaker.recallcheck.dto.internal.MatchCandidate;
+import com.underfaker.recallcheck.dto.internal.MatchOutcome;
+import com.underfaker.recallcheck.dto.internal.ResultView;
 import com.underfaker.recallcheck.dto.request.ImageVerifyRequest;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
 import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
@@ -38,6 +43,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -61,6 +67,8 @@ public class VerificationService {
     private final ExtractionRepository extractionRepository;
     private final ExtractionService extractionService;
     private final MatchingService matchingService;
+    /** 9/27 — 사진 확인(사용자 클릭)에서만 쓴다. 자동 호출 없음. */
+    private final GoogleVisionClient visionClient;
 
     /**
      * 자기 자신의 프록시 참조. verifyByManualInputBatch() 안에서 verifyByManualInput() 을
@@ -123,7 +131,11 @@ public class VerificationService {
             return toResult(verification, null, null);
         }
 
-        List<MatchCandidate> candidates = matchingService.match(verification.getId(), product);
+        // 9/24 — 이미지 판독을 썼다면 그 결과까지 받아서 extraction 에 남긴다.
+        // 그래야 FR-014 판정근거를 다시 계산할 때 판정 당시와 같은 값이 나온다.
+        MatchOutcome outcome = matchingService.matchWithImage(verification.getId(), product);
+        extractionService.saveImageInsight(verification.getId(), outcome.insight());
+        List<MatchCandidate> candidates = outcome.candidates();
 
         if (candidates.isEmpty()) {
             verification.complete(FinalResult.NO_MATCH);
@@ -176,9 +188,66 @@ public class VerificationService {
         if (results.isEmpty()) {
             return toResult(verification, null, null);
         }
-        MatchResult best = results.get(0);
+        MatchResult best = pickBest(results);
         Recall recall = recallRepository.findById(best.getRecallUid()).orElse(null);
         return toResultFrom(verification, best, recall);
+    }
+
+    /**
+     * 9/27 추가 — 사진으로 찾기. 사용자가 "항목누락" 건의 버튼을 눌렀을 때만 Google Vision 을 부른다.
+     *
+     * 흐름: 썸네일 → Vision Web Detection(추정 이름·웹 문서 제목) → 그 텍스트로 공공데이터 후보를 더 찾고
+     *       전 후보를 이미지판독까지 얹어 다시 채점(MatchingService.matchByImage) → 판정 갱신.
+     * 이미 사진 확인을 한 건(FOUND/NONE)은 Vision 을 다시 부르지 않고 현재 결과를 돌려준다 — 사용량 보호.
+     * 사진으로 찾은 후보는 최대 "의심"이다. 일치는 인증번호·모델명 같은 확정 근거로만 난다.
+     */
+    @Transactional
+    public VerificationResultResponse checkByImage(Long verificationId) {
+        Verification verification = findOwned(verificationId);
+
+        var primary = extractionService.primaryRow(verificationId);
+        ExtractionNotes.ImageCheck done = primary == null ? null : ExtractionNotes.imageCheck(primary.getRawText());
+        if (done == ExtractionNotes.ImageCheck.FOUND || done == ExtractionNotes.ImageCheck.NONE) {
+            return getResult(verificationId);
+        }
+
+        ExtractedProduct product = extractionService.loadMerged(verificationId);
+        if (product == null || product.thumbnailUrl() == null || product.thumbnailUrl().isBlank()) {
+            throw new BusinessException(ErrorCode.IMAGE_CHECK_NO_IMAGE);
+        }
+        if (!visionClient.isAvailable()) {
+            throw new BusinessException(ErrorCode.IMAGE_CHECK_UNAVAILABLE,
+                    "Google Vision 이 설정되지 않았거나 이번 달 사용 상한에 닿았습니다.");
+        }
+
+        ImageInsight insight = visionClient.annotateUrl(product.thumbnailUrl());
+        if (insight.failed()) {
+            // 호출 실패 — 기록하지 않는다(다시 누를 수 있게). 원인은 GoogleVisionClient 로그에 남는다.
+            throw new BusinessException(ErrorCode.IMAGE_CHECK_UNAVAILABLE,
+                    "사진 판독 호출에 실패했습니다. 잠시 후 다시 눌러 주세요.");
+        }
+
+        if (!insight.isUsable()) {
+            // 웹에서 이 사진을 못 찾았다 — 텍스트 결과를 그대로 두고 "사진으로도 못 찾음"만 남긴다.
+            extractionService.markImageCheck(verificationId, ExtractionNotes.ImageCheck.NONE);
+            return getResult(verificationId);
+        }
+
+        extractionService.saveImageInsight(verificationId, insight);
+        extractionService.markImageCheck(verificationId, ExtractionNotes.ImageCheck.FOUND);
+
+        MatchOutcome outcome = matchingService.matchByImage(verificationId, product, insight);
+        List<MatchCandidate> candidates = outcome.candidates();
+        if (candidates.isEmpty()) {
+            verification.complete(FinalResult.NO_MATCH);
+            return toResult(verification, null, null);
+        }
+        MatchCandidate best = candidates.get(0);
+        verification.complete(toFinalResult(best.decision()));
+        Recall recall = best.decision() == Decision.NO_MATCH
+                ? null
+                : recallRepository.findById(best.recallUid()).orElse(null);
+        return toResult(verification, best, recall);
     }
 
     /**
@@ -197,7 +266,7 @@ public class VerificationService {
             return new MatchEvidenceResponse(verification.getId(), null, null, null,
                     "대조할 리콜 후보가 없습니다.", null, null, List.of());
         }
-        MatchResult best = results.get(0);
+        MatchResult best = pickBest(results);
         Recall recall = recallRepository.findById(best.getRecallUid()).orElse(null);
 
         return new MatchEvidenceResponse(
@@ -234,7 +303,11 @@ public class VerificationService {
         if (product == null) {
             return List.of();
         }
-        return matchingService.compare(product, recall);
+        // 9/24 — 판정 때 쓴 이미지 판독 결과를 되살려 같은 규칙으로 재계산한다.
+        // 이전엔 compare(product, recall) 로 이미지 없이 계산해서, 판정 때 있던 imageLabel 행이
+        // 근거 화면에서 빠지고 종합 점수도 달라졌다.
+        ImageInsight insight = extractionService.loadImageInsight(verificationId);
+        return matchingService.evidenceComparisons(product, recall, insight);
     }
 
     /**
@@ -261,11 +334,13 @@ public class VerificationService {
 
         return PageResponse.from(found.map(v -> {
             Extraction extraction = extractionByVerificationId.get(v.getId());
+            ResultView view = viewOf(v, extraction);
             return new VerificationHistoryResponse(
                     v.getId(), v.getInputType(), v.getChannel(),
                     summarize(v, extraction),
                     extraction == null ? null : extraction.getMakerName(),
-                    v.getStatus(), v.getFinalResult(), v.getCreatedAt());
+                    v.getStatus(), v.getFinalResult(), v.getCreatedAt(),
+                    view.resultState(), view.imageCheck(), view.imageCheckAvailable(), view.missingReason());
         }));
     }
 
@@ -287,6 +362,32 @@ public class VerificationService {
             throw new BusinessException(ErrorCode.INVALID_TOKEN);
         }
         return userId;
+    }
+
+    /**
+     * 9/27 — 대표 후보는 판정 등급이 높은 것(일치 > 의심 > 불일치), 같은 등급이면 점수순.
+     * 사진 확인으로 "의심"이 된 후보는 종합 점수가 낮을 수 있어서 점수만 보면 불일치 후보가 대표가 된다.
+     * verification.final_result 와 결과 화면의 대표 리콜이 어긋나지 않게 한다.
+     */
+    private MatchResult pickBest(List<MatchResult> results) {
+        Comparator<MatchResult> byDecision = Comparator.comparingInt(
+                m -> m.getDecision() == null ? Integer.MAX_VALUE : m.getDecision().ordinal());
+        Comparator<MatchResult> byScoreDesc = Comparator.comparingDouble(
+                (MatchResult m) -> m.getSimilarityScore() == null ? 0.0 : m.getSimilarityScore()).reversed();
+        return results.stream()
+                .min(byDecision.thenComparing(byScoreDesc))
+                .orElse(results.get(0));
+    }
+
+    /** 9/27 — 화면 4단계 상태(항목누락 포함)와 사진 확인 버튼 여부 */
+    private ResultView viewOf(Verification v, Extraction extraction) {
+        return ResultView.of(v.getFinalResult(), v.getChannel(),
+                extraction == null ? null : extraction.getRawText(),
+                extraction == null ? null : extraction.getThumbnailUrl());
+    }
+
+    private ResultView viewOf(Verification v) {
+        return viewOf(v, extractionService.primaryRow(v.getId()));
     }
 
     private FinalResult toFinalResult(Decision decision) {
@@ -316,6 +417,7 @@ public class VerificationService {
     }
 
     private VerificationResultResponse toResult(Verification v, MatchCandidate best, Recall r) {
+        ResultView rv = viewOf(v);
         return new VerificationResultResponse(
                 v.getId(), v.getFinalResult(),
                 best == null ? null : best.similarityScore(),
@@ -331,10 +433,12 @@ public class VerificationService {
                 r == null ? null : r.getAccidentCaseDscr(),
                 r == null ? null : r.getPublishActionDscr(),
                 r == null ? null : r.getPublishDate(),
-                v.getCreatedAt());
+                v.getCreatedAt(),
+                rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason());
     }
 
     private VerificationResultResponse toResultFrom(Verification v, MatchResult m, Recall r) {
+        ResultView rv = viewOf(v);
         return new VerificationResultResponse(
                 v.getId(), v.getFinalResult(), m.getSimilarityScore(),
                 r == null ? null : r.getRecallUid(),
@@ -349,6 +453,7 @@ public class VerificationService {
                 r == null ? null : r.getAccidentCaseDscr(),
                 r == null ? null : r.getPublishActionDscr(),
                 r == null ? null : r.getPublishDate(),
-                v.getCreatedAt());
+                v.getCreatedAt(),
+                rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason());
     }
 }

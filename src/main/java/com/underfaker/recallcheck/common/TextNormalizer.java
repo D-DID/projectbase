@@ -64,6 +64,36 @@ public final class TextNormalizer {
                     + "STYLE\\s*NO\\.?|MODEL\\s*(?:NO\\.?|NAME)?|ITEM\\s*NO\\.?)\\s*[)\\]）】]",
             Pattern.CASE_INSENSITIVE);
 
+    /**
+     * HTML 태그.
+     *
+     * ── 9/24 추가 ──
+     * 국표원 공표문 cert_num 에 HTML 이 그대로 실려 온다.
+     * 예: recall_uid 10022559 의 cert_num = "CB131R289-2001&lt;br&gt;(인증모델: KES002)".
+     *
+     * SYMBOLS 에 &lt; 와 &gt; 가 들어 있어서 꺾쇠만 떨어지고 "br" 이라는 글자가 값에 남았다.
+     * 그 결과 normalized_cert_num 이 "CB131R2892001BR인증모델KES002" 가 됐다.
+     * 피해는 두 가지다.
+     *   (1) 점수 왜곡 — 입력이 "CB131R289-2001" 로 정확히 맞아도 SimilarityCalculator 의
+     *       contains 보너스가 0.55 + 0.40 × (13/28) ≈ 0.736 밖에 안 나온다.
+     *       인증번호 가중치가 IDENTIFIED 0.25 라서 완전일치 건이 PARTIAL 로 밀린다.
+     *   (2) 인증번호가 "-" 인 레코드가 "BR인증모델" 이라는 2글자 이상 문자열을 얻어
+     *       isSearchable() 을 통과한다. 덤프 기준 약 26건.
+     *
+     * 기호 제거(SYMBOLS)보다 먼저 태그 단위로 걷어내야 한다.
+     */
+    private static final Pattern HTML_TAG = Pattern.compile("<[^>]*>");
+
+    /**
+     * "(인증모델: KES002)" 같은 부기.
+     *
+     * BRACKETED_LABEL 로는 못 잡는다. 저 패턴은 라벨 바로 뒤에 닫는 괄호가 오는 형태만
+     * 처리하는데("(품번) VDECX01"), 이건 괄호 안에 라벨과 값이 같이 들어 있다.
+     * 값이 아니라 설명이므로 통째로 버린다.
+     */
+    private static final Pattern CERT_MODEL_NOTE = Pattern.compile(
+            "[(\\[（【]\\s*인증\\s*모델\\s*[:：]?[^)\\]）】]*[)\\]）】]");
+
     /** 괄호 없이 맨 앞에 붙은 라벨 — "품번: VDECX01" 형태. 콜론이 있을 때만 떼어 낸다. */
     private static final Pattern LEADING_LABEL = Pattern.compile(
             "^\\s*(?:품번|품명|제품명|상품명|모델명|모델)\\s*[:：]\\s*",
@@ -188,6 +218,8 @@ public final class TextNormalizer {
         if (s.isEmpty() || PLACEHOLDER.matcher(s).matches()) {
             return null;
         }
+        s = HTML_TAG.matcher(s).replaceAll(" ");
+        s = CERT_MODEL_NOTE.matcher(s).replaceAll(" ");
         s = BRACKETED_LABEL.matcher(s).replaceAll(" ");
         s = LEADING_LABEL.matcher(s).replaceAll("");
         s = s.trim();

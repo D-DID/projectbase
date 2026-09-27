@@ -24,6 +24,9 @@ public enum ErrorCode {
     UNSUPPORTED_IMAGE(HttpStatus.BAD_REQUEST, "V002", "지원하지 않는 이미지 형식입니다."),
     PAGE_FETCH_FAILED(HttpStatus.BAD_GATEWAY, "V003", "상품 페이지를 불러오지 못했습니다."),
     EXTRACTION_EMPTY(HttpStatus.OK, "V004", "제품 정보를 추출하지 못했습니다. 직접 입력해 주세요."),
+    // 9/27 — 사진으로 찾기(사용자 클릭 시 Google Vision)
+    IMAGE_CHECK_NO_IMAGE(HttpStatus.BAD_REQUEST, "V005", "상품 사진이 없어 사진으로 찾을 수 없습니다."),
+    IMAGE_CHECK_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "V006", "사진 판독을 지금 사용할 수 없습니다."),
 
     // 외부 연동 (FR-009, FR-016)
     OPENAPI_CALL_FAILED(HttpStatus.BAD_GATEWAY, "E001", "공공데이터 API 호출에 실패했습니다."),

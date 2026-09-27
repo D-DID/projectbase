@@ -3,7 +3,9 @@ package com.underfaker.recallcheck.service.matching;
 import com.underfaker.recallcheck.common.ListingTextCleaner;
 import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
 import com.underfaker.recallcheck.dto.internal.FieldComparison;
+import com.underfaker.recallcheck.dto.internal.ImageInsight;
 import com.underfaker.recallcheck.dto.internal.MatchCandidate;
+import com.underfaker.recallcheck.dto.internal.MatchOutcome;
 import com.underfaker.recallcheck.entity.MatchResult;
 import com.underfaker.recallcheck.entity.Recall;
 import com.underfaker.recallcheck.entity.enums.Decision;
@@ -15,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -44,6 +48,14 @@ import java.util.stream.Collectors;
  * 판매글 상품명은 그대로 쓰지 않는다. "[무료배송] 아트박스 허니 슬라임 100g, 3개" 같은 값이
  * 공표문의 "(제품명) 허니 슬라임" 과 비교되면 길이 차이만으로 점수가 깎인다.
  * ListingTextCleaner 로 정제본을 하나 더 만들어 두 후보 중 잘 맞는 쪽을 쓴다.
+ *
+ * ── 9/24 2단계 이미지 판독 → 9/27 사용자 클릭 방식으로 변경 ──
+ * 텍스트로 1차 대조(matchWithImage)만 자동으로 한다. Google Vision Web Detection 은 결과가
+ * "항목누락"인 건에서 사용자가 "사진으로 찾기"를 누를 때만 돈다(matchByImage). 자세한 건
+ * matchWithImage() 주석 참조.
+ *
+ * ── 9/27 판정 기준 ──
+ * 일치(MATCH)는 100% 확정 근거가 있을 때만 — DecisionResolver.resolve(score, profile, comparisons) 참조.
  */
 @Service
 @RequiredArgsConstructor
@@ -57,43 +69,196 @@ public class MatchingService {
     private final MatchResultRepository matchResultRepository;
 
     /**
+     * 이미지판독 점수가 이보다 낮으면 판정에 넣지 않는다(가중치 0 으로 근거표에만 남긴다).
+     *
+     * ── 9/27 추가 ──
+     * 실측: 슬라임 썸네일의 판독 결과가 bestGuess='honeybee' 등 전부 영어였고, 한글 공표문
+     * "(제품명) 허니 슬라임" 과 글자가 하나도 안 겹쳐 이미지판독 0% → 종합 0.761 → 0.619 로 <b>깎였다</b>.
+     * 0% 의 원인이 "다른 제품"이 아니라 "언어가 다름"이라서 반대 증거로 쓸 수 없다.
+     * 인증번호(식별자 0점 = 반대 증거)와 다르게 다루는 이유다.
+     *
+     * 0.5 는 잠정치다(실측 근거 없음). 포함관계 점수의 하한이 0.55 라서, 판독 텍스트에 공표문 상품명이
+     * 통째로 들어 있거나 거의 같은 경우만 반영되게 잡았다. 효과: 이미지판독은 판정을 크게 깎지 못한다.
+     * 대가: 이미지가 "다른 제품"임을 보여 줘도 그 신호를 버린다.
+     */
+    static final double IMAGE_LABEL_MIN_SCORE = 0.50;
+
+    /**
+     * 상품명 대조에서 모델명 칸 조각을 "쓸 만하다"고 볼 최소 길이(정규화 후).
+     * SimilarityCalculator 의 부분 포함 최소 길이(4)와 맞췄다. 이보다 짧은 조각만 있으면
+     * 품목명 칸을 대신 쓴다. 9/27 추가.
+     */
+    static final int MIN_USEFUL_MODEL_PIECE = 4;
+
+    /** 1차 채점 결과를 들고 다니는 내부 묶음. 2차에서 일부만 교체하려고 둔다. */
+    private record Scored(Recall recall, MatchProfile profile,
+                          List<FieldComparison> comparisons,
+                          double score, Decision decision, String reason) {
+    }
+
+    /**
+     * 사진 판독으로 찾은 후보를 "의심"으로 올릴 이미지판독 점수 하한.
+     *
+     * ── 9/27 추가 (사진 확인 버튼 흐름) ──
+     * 사진 확인은 텍스트로 못 찾은 "항목누락" 건에서 사용자가 누를 때만 돈다. 이때는 가중합에 이미지판독
+     * 0.15 를 얹는 것만으로는 판정이 거의 안 바뀐다(텍스트 점수 0.40 미만이면 사진이 100% 라도 불일치).
+     * 그래서 사진 판독 텍스트(웹 문서 제목·추정 이름)가 공표문 상품명과 이 값 이상 맞으면 그 후보를
+     * 의심(PARTIAL)으로 올린다. <b>일치(MATCH)로는 절대 올리지 않는다</b> — 사진은 식별자가 아니다.
+     *
+     * 0.65 는 잠정치다(실측 근거 없음). 포함관계 점수는 0.55 + 0.40 × (짧은쪽/긴쪽) 이라,
+     * 공표문 상품명이 웹 문서 제목 안에 통째로 들어 있고 제목 길이가 상품명의 네 배 이하이면 넘는다.
+     */
+    static final double IMAGE_SUSPECT_SCORE = 0.65;
+
+    /** 사진 판독 텍스트로 후보를 더 찾을 때 쓸 텍스트 수 · 전체 후보 상한. 대조 비용이 이에 비례한다. */
+    static final int IMAGE_SEARCH_TEXTS = 8;
+    static final int IMAGE_SEARCH_MAX_CANDIDATES = 80;
+
+    /**
+     * 텍스트 1차 검증 — 추출된 상품명·브랜드·모델명·인증번호를 공공데이터와 대조한다.
+     *
      * @param verificationId 검증 요청 식별자
      * @param product        통합된 식별 정보
      * @return 판정된 후보 목록 (점수 내림차순)
      */
     public List<MatchCandidate> match(Long verificationId, ExtractedProduct product) {
-        List<Recall> candidates = recallQueryService.findCandidates(product);
+        return matchWithImage(verificationId, product).candidates();
+    }
 
-        List<MatchCandidate> results = new ArrayList<>();
-        for (Recall recall : candidates) {
-            MatchProfile profile = MatchProfile.of(recall);
-            List<FieldComparison> comparisons = compare(product, recall, profile);
-            if (comparisons.isEmpty()) {
-                continue;
+    /**
+     * 텍스트 1차 검증. 이름은 9/24 호환용으로 남겼다 — <b>9/27 부터 여기서 Vision 을 부르지 않는다</b>.
+     *
+     * ── 9/27 변경 (팀장 결정 — 쿠팡 검증 흐름) ──
+     *   1) 쿠팡 구매이력 → 확장이 상세페이지 '필수 표기 정보'(KC 인증정보·품명 및 모델명·제조자)까지 읽어 온다
+     *   2) 텍스트로 1차 대조 → [일치 / 의심 / 항목누락 / 불일치]
+     *   3) 항목누락이면 화면에 "사진으로 찾기" 버튼
+     *   4) 사용자가 누를 때만 Vision 웹 검색 (matchByImage)
+     * 예전에는 PARTIAL 이 나오면 자동으로 Vision 을 불렀다. 이제는 사용자가 누른 건만 호출하므로
+     * 월 사용량은 버튼 클릭 수와 같다.
+     */
+    public MatchOutcome matchWithImage(Long verificationId, ExtractedProduct product) {
+        List<Scored> scoredList = new ArrayList<>();
+        for (Recall recall : recallQueryService.findCandidates(product)) {
+            Scored scored = score(product, recall, ImageInsight.NONE);
+            if (scored != null) {
+                scoredList.add(scored);
             }
-            double score = similarityCalculator.weightedScore(comparisons);
-            Decision decision = decisionResolver.resolve(score, profile);
-            String matchedField = comparisons.stream()
+        }
+        return new MatchOutcome(saveAndSort(verificationId, scoredList), ImageInsight.NONE);
+    }
+
+    /**
+     * 사진 확인 (사용자가 버튼을 눌렀을 때) — Vision 웹 검색 결과로 후보를 더 찾고 다시 채점한다.
+     *
+     * 후보 = 텍스트 후보 ∪ 판독 텍스트(추정 이름·웹 문서 제목)로 찾은 후보.
+     * 모든 후보에 이미지판독 행을 얹어 채점하고, 이미지판독이 IMAGE_SUSPECT_SCORE 이상인데 판정이 불일치면
+     * 의심으로 올린다. 이 검증의 기존 match_result 는 지우고 새로 저장한다.
+     *
+     * @param insight VerificationService 가 Vision 으로 받은 판독 결과 (사용 불가면 텍스트 결과와 같다)
+     */
+    public MatchOutcome matchByImage(Long verificationId, ExtractedProduct product, ImageInsight insight) {
+        Map<Long, Recall> pool = new LinkedHashMap<>();
+        for (Recall r : recallQueryService.findCandidates(product)) {
+            pool.putIfAbsent(r.getRecallUid(), r);
+        }
+        if (insight != null && insight.isUsable()) {
+            int used = 0;
+            for (String text : insight.textCandidates()) {
+                if (used++ >= IMAGE_SEARCH_TEXTS || pool.size() >= IMAGE_SEARCH_MAX_CANDIDATES) {
+                    break;
+                }
+                for (Recall r : recallQueryService.findCandidates(textOnly(text))) {
+                    if (pool.size() >= IMAGE_SEARCH_MAX_CANDIDATES) {
+                        break;
+                    }
+                    pool.putIfAbsent(r.getRecallUid(), r);
+                }
+            }
+        }
+
+        List<Scored> scoredList = new ArrayList<>();
+        for (Recall recall : pool.values()) {
+            Scored scored = score(product, recall, insight == null ? ImageInsight.NONE : insight);
+            if (scored != null) {
+                scoredList.add(raiseByImage(scored));
+            }
+        }
+        matchResultRepository.deleteByVerificationId(verificationId);
+        return new MatchOutcome(saveAndSort(verificationId, scoredList),
+                insight != null && insight.isUsable() ? insight : ImageInsight.NONE);
+    }
+
+    /** 사진 판독 텍스트 하나를 상품명으로만 가진 검색용 입력 */
+    private static ExtractedProduct textOnly(String text) {
+        return new ExtractedProduct(text, null, null, null, null, null, null, null, 1.0);
+    }
+
+    /** 이미지판독이 충분히 맞으면 불일치를 의심으로 올린다. 일치로는 올리지 않는다. */
+    private Scored raiseByImage(Scored s) {
+        if (s.decision() != Decision.NO_MATCH) {
+            return s;
+        }
+        boolean imageHit = s.comparisons().stream()
+                .anyMatch(c -> c.field().equals("imageLabel") && c.weight() > 0
+                        && c.score() >= IMAGE_SUSPECT_SCORE);
+        if (!imageHit) {
+            return s;
+        }
+        return new Scored(s.recall(), s.profile(), s.comparisons(), s.score(), Decision.PARTIAL,
+                s.reason() + " · 사진 판독으로 의심");
+    }
+
+    private List<MatchCandidate> saveAndSort(Long verificationId, List<Scored> scoredList) {
+        List<MatchCandidate> results = new ArrayList<>();
+        for (Scored s : scoredList) {
+            String matchedField = s.comparisons().stream()
                     .filter(c -> c.score() >= 0.9)
                     .map(FieldComparison::field)
                     .collect(Collectors.joining(","));
-            String reason = buildReason(comparisons, score, profile);
 
             results.add(new MatchCandidate(
-                    recall.getRecallUid(), score, decision, reason, comparisons));
+                    s.recall().getRecallUid(), s.score(), s.decision(), s.reason(), s.comparisons()));
 
             matchResultRepository.save(MatchResult.builder()
                     .verificationId(verificationId)
-                    .recallUid(recall.getRecallUid())
-                    .similarityScore(score)
+                    .recallUid(s.recall().getRecallUid())
+                    .similarityScore(s.score())
                     .matchedField(matchedField.isEmpty() ? null : matchedField)
-                    .decision(decision)
-                    .reason(reason)
+                    .decision(s.decision())
+                    .reason(s.reason())
                     .build());
         }
-
-        results.sort(Comparator.comparingDouble(MatchCandidate::similarityScore).reversed());
+        // 판정 등급이 높은 것 먼저(일치 > 의심 > 불일치), 같은 등급 안에서는 점수순.
+        // 사진으로 의심이 된 후보는 점수가 낮을 수 있어서 점수만으로 정렬하면 불일치 뒤로 밀린다.
+        results.sort(Comparator.comparingInt((MatchCandidate c) -> c.decision().ordinal())
+                .thenComparing(Comparator.comparingDouble(MatchCandidate::similarityScore).reversed()));
         return results;
+    }
+
+    /**
+     * FR-014 판정근거용 항목별 대조.
+     *
+     * 9/27 — 저장된 판독 결과는 이제 사용자가 사진 확인을 눌렀을 때만 생기고, 그때는 모든 후보에
+     * 이미지판독을 얹어 채점했다(matchByImage). 그래서 근거도 판독 결과가 있으면 그대로 얹는다.
+     */
+    @Transactional(readOnly = true)
+    public List<FieldComparison> evidenceComparisons(ExtractedProduct product, Recall recall,
+                                                     ImageInsight insight) {
+        Scored scored = score(product, recall, insight == null ? ImageInsight.NONE : insight);
+        return scored == null ? List.of() : scored.comparisons();
+    }
+
+    /** 후보 하나를 채점한다. 비교할 항목이 하나도 없으면 null. */
+    private Scored score(ExtractedProduct product, Recall recall, ImageInsight insight) {
+        MatchProfile profile = MatchProfile.of(recall);
+        List<FieldComparison> comparisons = compare(product, recall, profile, insight);
+        if (comparisons.isEmpty()) {
+            return null;
+        }
+        double score = similarityCalculator.weightedScore(comparisons);
+        Decision decision = decisionResolver.resolve(score, profile, comparisons);
+        return new Scored(recall, profile, comparisons, score, decision,
+                buildReason(comparisons, score, profile));
     }
 
     /**
@@ -112,6 +277,17 @@ public class MatchingService {
     /** 프로파일을 명시하는 버전 — match() 가 이미 판정한 값을 재사용할 때 쓴다. */
     @Transactional(readOnly = true)
     public List<FieldComparison> compare(ExtractedProduct product, Recall recall, MatchProfile profile) {
+        return compare(product, recall, profile, ImageInsight.NONE);
+    }
+
+    /**
+     * 이미지 판독 결과까지 반영하는 버전.
+     * 판정근거 화면용으로는 이걸 직접 부르지 말고 evidenceComparisons() 를 쓸 것 —
+     * 그쪽이 "1차 판정이 PARTIAL 일 때만 반영" 규칙까지 재현한다.
+     */
+    @Transactional(readOnly = true)
+    public List<FieldComparison> compare(ExtractedProduct product, Recall recall,
+                                         MatchProfile profile, ImageInsight insight) {
         List<FieldComparison> comparisons = new ArrayList<>();
 
         addListComparison(comparisons, "modelName",
@@ -128,10 +304,131 @@ public class MatchingService {
         addComparison(comparisons, "makerName",
                 product.makerName(), recall.resolveMakerName(), profile);
 
-        addComparison(comparisons, "brandName",
-                product.brandName(), recall.getRecallBrandName(), profile);
+        if (product.brandName() == null || product.brandName().isBlank()) {
+            // 9/27 — 쿠팡 구매이력(확장)은 브랜드를 따로 보내지 않는다. 상품명 안에서 찾는다.
+            addBrandFromTitleComparison(comparisons, product.productName(),
+                    recall.getRecallBrandName(), profile);
+        } else {
+            addComparison(comparisons, "brandName",
+                    product.brandName(), recall.getRecallBrandName(), profile);
+        }
+
+        addImageComparison(comparisons, insight, recall, profile);
 
         return comparisons;
+    }
+
+    /**
+     * 이미지 판독 결과 대조.
+     *
+     * Vision Web Detection 이 돌려준 텍스트(bestGuessLabel·webEntities)를 공표문의
+     * 모델명 칸·상품명 칸과 전부 맞춰 보고 <b>최고점 하나</b>를 대표로 쓴다.
+     * 후보를 여럿 두고 최고점을 쓰는 방식은 addProductNameComparison·addListComparison 과 같다.
+     *
+     * 새 유사도 계산기를 만들지 않는다. 판독 결과가 텍스트라서 기존 SimilarityCalculator 가
+     * 그대로 쓰인다 — 이 설계의 요점이다.
+     */
+    private void addImageComparison(List<FieldComparison> out, ImageInsight insight,
+                                    Recall recall, MatchProfile profile) {
+        if (insight == null || !insight.isUsable()) {
+            return;
+        }
+
+        double best = -1.0;
+        String bestInput = null;
+        String bestOfficial = null;
+
+        for (String candidate : insight.textCandidates()) {
+            // 9/25 — 라벨을 " / " 기준으로 쪼개서 조각마다 대조한다(원문 전체도 후보에 남는다).
+            // 쿠팡 썸네일 실측(vendorItemId 80630039672): bestGuess 가
+            //   "Moremo Keratin / 모레모 케라틴 Moremo Keratin Root Touch Up Magic Straight /
+            //    모레모 케라틴 루트 터치 업 매직스트레이트"
+            // 처럼 영문·한글 표기를 슬래시로 이어 붙여 온다. 통째로 비교하면 길이 차이 때문에
+            // 같은 제품 공표문과도 0.647 밖에 안 나왔고, 쪼개면 1.000 이 나왔다(무관 제품 대조군 0.056).
+            for (String piece : fieldNormalizer.splitList(candidate)) {
+                // 9/27 — 페이지 제목은 판매글이라 "[무료배송] … 100g 3개입 특가" 같은 문구가 붙는다.
+                // 상품명 대조(addProductNameComparison)와 같은 정제본을 후보에 더한다.
+                for (String variant : ListingTextCleaner.candidates(piece)) {
+                    String normalizedInput = fieldNormalizer.normalize(variant);
+                    if (normalizedInput == null) {
+                        continue;
+                    }
+                    // 브랜드 칸은 일부러 대조하지 않는다. 이미지 라벨에는 브랜드명("MOREMO")이 거의 항상
+                    // 들어 있어서, 같은 브랜드의 다른 제품 공표문에도 1.000 이 찍힌다. UNIDENTIFIED
+                    // 가중치 0.15 면 PARTIAL 을 MATCH 로 밀어 올릴 수 있는 크기라 오탐 위험이 크다.
+                    for (String official : new String[]{
+                            recall.getRecallModelName(), recall.getRecallProductName()}) {
+                        String normalizedOfficial = fieldNormalizer.normalize(official);
+                        if (normalizedOfficial == null) {
+                            continue;
+                        }
+                        double score = similarityCalculator.similarity(normalizedInput, normalizedOfficial);
+                        if (score > best) {
+                            best = score;
+                            bestInput = variant;
+                            bestOfficial = official;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (bestOfficial == null) {
+            return;
+        }
+        // 9/27 — 겹치는 게 거의 없으면 가중치 0 으로 근거표에만 남긴다(IMAGE_LABEL_MIN_SCORE 참조).
+        double weight = best >= IMAGE_LABEL_MIN_SCORE
+                ? similarityCalculator.weightOf("imageLabel", profile)
+                : 0.0;
+        out.add(new FieldComparison("imageLabel", bestInput, bestOfficial, best, weight));
+    }
+
+    /**
+     * 브랜드 칸이 비었을 때 — 상품명 안에 공표문 브랜드가 <b>단어로</b> 들어 있으면 브랜드 일치로 본다.
+     *
+     * ── 9/27 추가 ──
+     * 확장(background.js toManualInputRequest)은 주문목록에서 상품명·썸네일만 뽑고 brandName 은 늘 null 이다.
+     * 그래서 쿠팡 구매이력 검증에서는 브랜드 대조(상품명기준 가중치 0.20)가 한 번도 돌지 않았다.
+     * 공공데이터 적재분(db/recall-dump.sql, 778건) 중 어린이·유아 391건의 39%(151건)는 공표문에 브랜드가 있다.
+     *
+     * 단어 단위로만 찾는다(부분 문자열 아님). 공표문 브랜드에 "모모", "팡팡", "K2" 같은 2자짜리가 있어서
+     * 부분 문자열로 찾으면 무관한 상품명에도 걸린다. 띄어쓰기가 다른 경우("브라운브레스 키즈")를 위해
+     * 연속한 단어 1~3개를 붙여 본다.
+     *
+     * 못 찾으면 행을 만들지 않는다(0점으로 넣지 않는다). 판매글이 브랜드를 빼고 쓰는 경우가 있어서
+     * "상품명에 브랜드가 없다"는 반대 증거가 되지 못한다.
+     */
+    private void addBrandFromTitleComparison(List<FieldComparison> out, String title,
+                                             String officialBrand, MatchProfile profile) {
+        String brand = fieldNormalizer.normalize(officialBrand);
+        if (brand == null || title == null || title.isBlank()) {
+            return;
+        }
+        String cleaned = ListingTextCleaner.clean(title);
+        if (cleaned == null) {
+            return;
+        }
+        String[] words = cleaned.trim().split("\\s+");
+        for (int i = 0; i < words.length; i++) {
+            StringBuilder joined = new StringBuilder();
+            StringBuilder shown = new StringBuilder();
+            for (int j = i; j < Math.min(words.length, i + 3); j++) {
+                String w = fieldNormalizer.normalize(words[j]);
+                if (w == null) {
+                    break;
+                }
+                joined.append(w);
+                shown.append(j == i ? "" : " ").append(words[j]);
+                if (joined.toString().equals(brand)) {
+                    out.add(new FieldComparison("brandName", shown + " (상품명에서 찾음)", officialBrand, 1.0,
+                            similarityCalculator.weightOf("brandName", profile)));
+                    return;
+                }
+                if (joined.length() >= brand.length()) {
+                    break;
+                }
+            }
+        }
     }
 
     /** 단일 값 대조 */
@@ -167,12 +464,32 @@ public class MatchingService {
         String bestInput = null;
         String bestOfficial = null;
 
+        // 9/27 — 공공데이터(db/recall-dump.sql) 기준으로 두 가지를 바꿨다. 근거·수치는
+        // Claude outputs/APPLIED-20260927.md §7, 재현은 Claude outputs/recall-eval/run-eval.sh.
+        //
+        // (1) 모델명 칸을 조각으로 쪼개서 조각마다도 대조한다(원본 전체도 후보에 남는다).
+        //     어린이·유아 리콜은 모델명 칸에 "(품번) AP VJP1 / (온라인) V배색 점퍼 블랙" 처럼 여러 값이
+        //     한 칸에 들어 있다. 칸 전체와 비교하면 구매 상품명이 그중 한 조각과 똑같아도 길이 차이 때문에
+        //     점수가 바닥이었다(10020278 "베이비잼 남여공용 통샌들" 26%).
+        //
+        // (2) 품목명 칸(recall_product_name)은 모델명 칸에 쓸 만한 조각(정규화 4자 이상)이 없을 때만 쓴다.
+        //     이 칸은 "외의류(아섬)(아동용 섬유제품)" 같은 분류명이라 구매 상품명과 맞아도 식별 근거가 안 된다.
+        //     실측: 어린이·유아 391건에서 이 칸을 빼도 자기 적중은 그대로(388건)였고, 다른 리콜에 붙는
+        //     의심은 114쌍 → 40쌍으로 줄었다. 모델명 칸이 "욕실화" 처럼 짧은 경우(10019660)만 품목명 칸이 답이라
+        //     그때는 남긴다.
+        List<String> officials = new ArrayList<>(fieldNormalizer.splitList(officialModelName));
+        if (officialProductName != null && !officials.contains(officialProductName)
+                && officials.stream().map(fieldNormalizer::normalize)
+                        .noneMatch(o -> o != null && o.length() >= MIN_USEFUL_MODEL_PIECE)) {
+            officials.add(officialProductName);
+        }
+
         for (String inputCandidate : inputCandidates) {
             String normalizedInput = fieldNormalizer.normalize(inputCandidate);
             if (normalizedInput == null) {
                 continue;
             }
-            for (String official : new String[]{officialModelName, officialProductName}) {
+            for (String official : officials) {
                 String normalizedOfficial = fieldNormalizer.normalize(official);
                 if (normalizedOfficial == null) {
                     continue;
@@ -197,6 +514,8 @@ public class MatchingService {
      *
      * 9/20 — 모델명은 저장 시점(Recall.normalizeFields)과 같은 normalizeModelName 규칙을 쓴다.
      * 구버전은 저장은 normalize(), 비교는 normalizeModelName() 이라 규칙이 갈라져 있었다.
+     *
+     * 9/27 — 인증번호·품번꼴 모델명은 편집거리 부분점수를 주지 않는다(isIdentifier 참조).
      */
     private void addListComparison(List<FieldComparison> out, String field,
                                    String input, String officialList,
@@ -213,6 +532,8 @@ public class MatchingService {
             return;
         }
 
+        boolean identifier = isIdentifier(modelStyle, officialList);
+
         double best = -1.0;
         String bestOfficial = null;
         for (String official : officials) {
@@ -222,7 +543,9 @@ public class MatchingService {
             if (normalizedOfficial == null) {
                 continue;
             }
-            double score = similarityCalculator.similarity(normalizedInput, normalizedOfficial);
+            double score = identifier
+                    ? similarityCalculator.identifierSimilarity(normalizedInput, normalizedOfficial)
+                    : similarityCalculator.similarity(normalizedInput, normalizedOfficial);
             if (score > best) {
                 best = score;
                 bestOfficial = official;
@@ -237,13 +560,33 @@ public class MatchingService {
     }
 
     /**
+     * 이 칸을 식별자로 보고 "완전일치·포함만 인정" 규칙으로 잴 것인가.
+     *
+     * ── 9/27 추가 ──
+     * 인증번호 칸은 항상 식별자다.
+     * 모델명 칸은 품번꼴 조각이 하나라도 있으면 식별자로 본다 — 프로파일 판정(MatchProfile.of)과
+     * 같은 hasModelCode() 기준이다. 즉 IDENTIFIED 리콜의 모델명은 엄격 비교, UNIDENTIFIED 리콜의
+     * 모델명 칸("(제품명) 허니 슬라임" 같은 상품명 문장)은 기존 편집거리 비교를 유지한다.
+     *
+     * 조각마다 따로 정하지 않고 칸 단위로 정하는 이유: splitList 는 원본 전체도 후보에 넣는데,
+     * "MS116-1.6A / MS116-2.5A / …" 원본 전체는 20자를 넘어 품번꼴이 아니라서 조각 단위로 정하면
+     * 그 후보 하나만 편집거리로 재어져 부분점수가 새어 나간다.
+     *
+     * 근거는 SimilarityCalculator.identifierSimilarity() 주석 참조(검증 577 오탐).
+     */
+    private boolean isIdentifier(boolean modelStyle, String officialList) {
+        return !modelStyle || MatchProfile.hasModelCode(officialList);
+    }
+
+    /**
      * 판정 근거 문자열.
      * 어떤 프로파일로 쟀는지 같이 남긴다 — 같은 점수라도 임계값이 달라서
      * 결과가 갈리므로, 나중에 로그만 보고 판정을 재현하려면 이 정보가 필요하다.
      */
     private String buildReason(List<FieldComparison> comparisons, double score, MatchProfile profile) {
         String detail = comparisons.stream()
-                .map(c -> String.format("%s %.0f%%", korean(c.field()), c.score() * 100))
+                .map(c -> String.format("%s %.0f%%%s", korean(c.field()), c.score() * 100,
+                        c.weight() == 0.0 ? "(미반영)" : ""))
                 .collect(Collectors.joining(" · "));
         return String.format("[%s] 종합 %.0f%% (%s)", korean(profile), score * 100, detail);
     }
@@ -259,6 +602,7 @@ public class MatchingService {
             case "productName" -> "제품명";
             case "makerName" -> "제조사";
             case "brandName" -> "브랜드";
+            case "imageLabel" -> "이미지판독";
             default -> field;
         };
     }
