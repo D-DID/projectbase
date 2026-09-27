@@ -16,6 +16,12 @@ import jakarta.validation.constraints.Size;
  *
  * 1단계에서는 받아서 extraction 테이블에 보관만 한다. 이 값을 실제 판정에 쓰는 건
  * 2단계 Google Vision/Lens 이미지 유사도 단계다.
+ *
+ * 9/27 추가 — kcStatus, kcText.
+ * 확장(0.4.0)이 쿠팡 상세페이지의 '필수 표기 정보' 표에서 KC 인증정보 칸을 읽어 그 상태를 보낸다.
+ * DISCLOSED(번호 있음, certNum 으로 같이 옴) / REFERENCED("상품 상세페이지 참조" 등 번호 없음) /
+ * NONE(KC 칸 없음) / UNREADABLE(상세페이지를 못 읽음). 웹 직접입력은 null.
+ * REFERENCED·UNREADABLE 이면서 텍스트로 못 찾은 건이 화면의 "항목누락"이 된다(ResultView).
  */
 public record ManualInputRequest(
 
@@ -25,6 +31,8 @@ public record ManualInputRequest(
         @Size(max = 255) String makerName,
         @Size(max = 64) String barcodeNum,
         @Size(max = 64) String certNum,
-        @Size(max = 500) String thumbnailUrl
+        @Size(max = 500) String thumbnailUrl,
+        @Size(max = 20) String kcStatus,
+        @Size(max = 255) String kcText
 ) {
 }

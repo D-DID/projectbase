@@ -1,6 +1,8 @@
 package com.underfaker.recallcheck.service.extraction;
 
 import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
+import com.underfaker.recallcheck.dto.internal.ExtractionNotes;
+import com.underfaker.recallcheck.dto.internal.ImageInsight;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
 import com.underfaker.recallcheck.entity.Extraction;
 import com.underfaker.recallcheck.entity.enums.SourceType;
@@ -54,6 +56,8 @@ public class ExtractionService {
                 .barcodeNum(request.barcodeNum())
                 .certNum(request.certNum())
                 .thumbnailUrl(request.thumbnailUrl())
+                // 9/27 — 확장이 읽은 상세페이지 KC 인증정보 상태. 없으면 null(블록 안 만듦)
+                .rawText(ExtractionNotes.detailBlock(request.kcStatus(), request.kcText()))
                 .confidence(1.0)
                 .build());
 
@@ -82,6 +86,70 @@ public class ExtractionService {
                 .toList();
 
         return sources.isEmpty() ? null : identityMerger.merge(sources);
+    }
+
+    /**
+     * 9/24 추가 — 이번 검증에서 쓴 Google Vision 판독 결과를 남긴다.
+     *
+     * 같은 검증 요청의 첫 추출 행(직접입력이면 MANUAL 행)의 raw_text 에 블록으로 덧붙인다.
+     * 관리 상태 엔티티라 트랜잭션 커밋 때 UPDATE 된다.
+     * 판독 결과가 없거나 추출 행이 없으면 아무것도 하지 않는다 — 판정 자체를 막지 않는다.
+     */
+    public void saveImageInsight(Long verificationId, ImageInsight insight) {
+        if (insight == null || !insight.isUsable()) {
+            return;
+        }
+        List<Extraction> rows = extractionRepository.findByVerificationId(verificationId);
+        if (rows.isEmpty()) {
+            return;
+        }
+        Extraction target = rows.stream()
+                .filter(e -> e.getSource() == SourceType.MANUAL)
+                .findFirst()
+                .orElse(rows.get(0));
+        target.appendRawText(insight.toRawTextBlock());
+        extractionRepository.save(target);
+    }
+
+    /**
+     * 9/27 추가 — 사진 확인(사용자 클릭)을 했다는 표시와 결과를 남긴다.
+     * 같은 건을 다시 눌러도 Vision 을 또 부르지 않게 하는 데 쓴다(FAILED 는 다시 누를 수 있음).
+     */
+    public void markImageCheck(Long verificationId, ExtractionNotes.ImageCheck result) {
+        Extraction target = primaryRow(verificationId);
+        if (target == null) {
+            return;
+        }
+        target.appendRawText(ExtractionNotes.imageCheckBlock(result));
+        extractionRepository.save(target);
+    }
+
+    /** 9/27 — 메모 블록이 붙는 행(직접입력이면 MANUAL 행). 없으면 null. */
+    @Transactional(readOnly = true)
+    public Extraction primaryRow(Long verificationId) {
+        List<Extraction> rows = extractionRepository.findByVerificationId(verificationId);
+        if (rows.isEmpty()) {
+            return null;
+        }
+        return rows.stream()
+                .filter(e -> e.getSource() == SourceType.MANUAL)
+                .findFirst()
+                .orElse(rows.get(0));
+    }
+
+    /**
+     * 9/24 추가 — saveImageInsight 로 남긴 판독 결과를 되살린다. 없으면 ImageInsight.NONE.
+     * FR-014 판정근거를 판정 당시와 같은 값으로 다시 계산할 때 쓴다.
+     */
+    @Transactional(readOnly = true)
+    public ImageInsight loadImageInsight(Long verificationId) {
+        for (Extraction e : extractionRepository.findByVerificationId(verificationId)) {
+            ImageInsight insight = ImageInsight.fromRawText(e.getRawText());
+            if (insight.isUsable()) {
+                return insight;
+            }
+        }
+        return ImageInsight.NONE;
     }
 
     private static ExtractedProduct toExtractedProduct(Extraction e) {

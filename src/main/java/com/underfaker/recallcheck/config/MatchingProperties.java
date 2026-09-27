@@ -36,8 +36,22 @@ public class MatchingProperties {
         private double brandName;
 
         /**
+         * 9/24 추가 — Google Vision Web Detection 판독 결과와 공표문의 텍스트 유사도.
+         *
+         * 2단계 "이미지 유사도" 항목을 이 이름으로 받는다. 노션에 적힌 "Google Vision/Lens
+         * 이미지 유사도"는 그대로는 만들 수 없다 — Vision API 에는 이미지 대 이미지 유사도
+         * 기능이 없고 Lens 는 공개 API 가 없다. 대신 Web Detection 으로 역이미지 검색을 걸어
+         * bestGuessLabel·webEntities 라는 <b>텍스트</b>를 받아, 기존 SimilarityCalculator 로
+         * 공표문과 대조한다. 그래서 항목 이름이 imageSimilarity 가 아니라 imageLabel 이다.
+         */
+        private double imageLabel;
+
+        /**
          * 품번이 신뢰할 만한 경우. 모델명 일치가 거의 확정 신호다.
          * 상품명(productName)은 리콜 쪽이 품목 분류명이라 비중을 낮게 둔다.
+         *
+         * imageLabel 을 0.05 로 둔 이유: 품번이 있으면 이미 강한 단서가 있어서
+         * 역이미지 검색 라벨이 판정을 뒤집을 만한 근거가 못 된다. 보조 표시용에 가깝다.
          */
         static Weight identifiedDefaults() {
             Weight w = new Weight();
@@ -46,6 +60,7 @@ public class MatchingProperties {
             w.productName = 0.10;
             w.makerName = 0.10;
             w.brandName = 0.05;
+            w.imageLabel = 0.05;
             return w;
         }
 
@@ -54,6 +69,10 @@ public class MatchingProperties {
          * modelName 을 0 으로 두지 않고 조금 남긴 이유: 리콜 쪽 모델명 칸에 상품명이 들어 있어
          * 입력 모델명이 우연히 걸릴 때 그게 유의미한 신호이기 때문이다.
          * certNum 은 대개 "-" 라 비교 자체가 안 일어나지만, 있으면 강한 단서라 비중을 남겨 둔다.
+         *
+         * imageLabel 을 0.15 로 둔 이유: 품번이 없는 쪽은 상품명·브랜드 말고 단서가 없어서
+         * 역이미지 검색 라벨이 실제로 정보를 보탠다. IDENTIFIED 의 세 배로 둔다.
+         * 잠정치다 — 라벨링 데이터셋으로 재야 한다.
          */
         static Weight unidentifiedDefaults() {
             Weight w = new Weight();
@@ -62,6 +81,7 @@ public class MatchingProperties {
             w.productName = 0.45;
             w.makerName = 0.10;
             w.brandName = 0.20;
+            w.imageLabel = 0.15;
             return w;
         }
 
@@ -75,6 +95,8 @@ public class MatchingProperties {
         public void setMakerName(double makerName) { this.makerName = makerName; }
         public double getBrandName() { return brandName; }
         public void setBrandName(double brandName) { this.brandName = brandName; }
+        public double getImageLabel() { return imageLabel; }
+        public void setImageLabel(double imageLabel) { this.imageLabel = imageLabel; }
 
         /** 항목명으로 가중치를 고른다. 모르는 항목은 최소값으로 떨어뜨린다. */
         public double of(String field) {
@@ -84,6 +106,7 @@ public class MatchingProperties {
                 case "productName" -> productName;
                 case "makerName" -> makerName;
                 case "brandName" -> brandName;
+                case "imageLabel" -> imageLabel;
                 default -> 0.05;
             };
         }

@@ -62,6 +62,15 @@ public class VerificationController {
         return ApiResponse.success(verificationService.getResult(verificationId));
     }
 
+    /**
+     * 9/27 추가 — 사진으로 찾기. "항목누락" 건에서 사용자가 버튼을 눌렀을 때만 Google Vision 을 부른다.
+     * 이미 확인한 건은 Vision 을 다시 부르지 않고 현재 결과를 돌려준다.
+     */
+    @PostMapping("/{verificationId}/image-check")
+    public ApiResponse<VerificationResultResponse> checkByImage(@PathVariable Long verificationId) {
+        return ApiResponse.success(verificationService.checkByImage(verificationId));
+    }
+
     /** FR-014 판정 근거(항목별 대조·유사도) 조회 */
     @GetMapping("/{verificationId}/evidence")
     public ApiResponse<MatchEvidenceResponse> getEvidence(@PathVariable Long verificationId) {

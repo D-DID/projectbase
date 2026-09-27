@@ -32,6 +32,12 @@ public record VerificationResultResponse(
         /** 공표일 yyyyMMdd */
         String publishDate,
 
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+
+        /* 9/27 — 화면 4단계 상태와 사진 확인 버튼 (dto.internal.ResultView 참조) */
+        String resultState,
+        String imageCheck,
+        Boolean imageCheckAvailable,
+        String missingReason
 ) {
 }

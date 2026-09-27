@@ -72,6 +72,20 @@ public class Extraction {
         this.createdAt = LocalDateTime.now();
     }
 
+    /**
+     * raw_text 끝에 텍스트 블록을 덧붙인다. 기존 내용은 지우지 않는다.
+     *
+     * 9/24 추가 — Google Vision 판독 결과(ImageInsight.toRawTextBlock)를 여기 남긴다.
+     * 새 컬럼 대신 raw_text 를 쓰는 이유는 ImageInsight.RAW_TEXT_BEGIN 주석 참조
+     * (ddl-auto=validate 라 컬럼을 늘리면 ALTER 안 한 DB 에서 기동 실패).
+     */
+    public void appendRawText(String block) {
+        if (block == null || block.isBlank()) {
+            return;
+        }
+        this.rawText = (rawText == null || rawText.isBlank()) ? block : rawText + "\n" + block;
+    }
+
     @Builder
     public Extraction(Long verificationId, SourceType source, String productName, String brandName,
                       String modelName, String makerName, String barcodeNum, String certNum,

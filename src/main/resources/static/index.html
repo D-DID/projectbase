@@ -591,6 +591,21 @@
     }
 
 
+    .field-full {
+      grid-column: 1 / -1;
+    }
+
+
+    .field-hint {
+      margin: 6px 2px 0;
+
+      color: var(--muted);
+
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+
     .field input:focus {
       border-color: var(--blue);
 
@@ -820,6 +835,15 @@
     }
 
 
+    .judgement-state.missing.active {
+      color: #5925dc;
+
+      background: #f4f3ff;
+
+      border-color: #d9d6fe;
+    }
+
+
     .judgement-state.unknown.active {
       color: #475467;
 
@@ -847,6 +871,13 @@
       color: var(--nomatch);
 
       background: var(--nomatch-bg);
+    }
+
+
+    .state-MISSING .result-icon {
+      color: #5925dc;
+
+      background: #f4f3ff;
     }
 
 
@@ -913,6 +944,65 @@
       border-color: #bbf7d0;
 
       color: #166534;
+    }
+
+
+    .result-notice.missing {
+      background: #f4f3ff;
+
+      border-color: #d9d6fe;
+
+      color: #3e1c96;
+    }
+
+
+    /* 9/27 — 사진으로 찾기 버튼 (항목누락 건, 사용자가 누를 때만 Google Vision) */
+    .image-check-btn {
+      display: inline-block;
+
+      margin-top: 10px;
+
+      border: 1px solid #bdb4fe;
+
+      background: #fff;
+
+      color: #5925dc;
+
+      border-radius: 999px;
+
+      padding: 7px 14px;
+
+      font-size: 12px;
+      font-weight: 700;
+
+      cursor: pointer;
+    }
+
+
+    .image-check-btn:disabled {
+      opacity: .6;
+
+      cursor: wait;
+    }
+
+
+    .history-item .image-check-btn {
+      margin: 0 8px 0 0;
+
+      padding: 6px 11px;
+
+      font-size: 11px;
+    }
+
+
+    .image-check-note {
+      display: block;
+
+      margin-top: 8px;
+
+      font-size: 12px;
+
+      opacity: .85;
     }
 
 
@@ -1237,6 +1327,13 @@
       font-size: 11px;
 
       font-weight: 700;
+    }
+
+
+    .status-MISSING {
+      color: #5925dc;
+
+      background: #f4f3ff;
     }
 
 
@@ -1714,7 +1811,364 @@
 
     }
 
-  </style>
+  
+
+    /* ==================================================
+       RESTRUCTURED VERIFICATION FLOW
+    ================================================== */
+
+    .embedded-result {
+      display: none;
+      margin-top: 16px;
+    }
+
+    .embedded-result.show {
+      display: block;
+    }
+
+    .verification-path-note {
+      margin-top: 12px;
+      padding: 11px 13px;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      color: #667085;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .history-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .history-tab {
+      height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: #667085;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .history-tab.active {
+      border-color: #bfdbfe;
+      background: #eff6ff;
+      color: var(--blue);
+    }
+
+    .coupang-result-card {
+      display: none;
+    }
+
+    .coupang-result-card.show {
+      display: block;
+    }
+
+    .coupang-result-summary {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 14px;
+      padding: 16px;
+      background: #f8fafc;
+      border-radius: 12px;
+    }
+
+    .coupang-result-summary strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 14px;
+    }
+
+    .coupang-result-summary span {
+      color: #667085;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    @media(max-width:700px) {
+      .history-tabs {
+        grid-template-columns: 1fr;
+      }
+
+      .coupang-result-summary {
+        grid-template-columns: 1fr;
+      }
+
+      .coupang-result-summary .status-pill {
+        justify-self: start;
+      }
+    }
+
+
+    /* ==================================================
+       EVIDENCE TABLE  (추가 — 항목별 대조 표)
+    ================================================== */
+
+    .evidence-card #evidenceTable {
+      margin-top: 14px;
+    }
+
+    .evidence-table {
+      width: 100%;
+
+      border-collapse: collapse;
+
+      font-size: 12.5px;
+    }
+
+    .evidence-table thead th {
+      text-align: left;
+
+      color: #98a2b3;
+
+      font-size: 11px;
+
+      font-weight: 600;
+
+      padding: 0 10px 8px;
+
+      border-bottom: 1px solid #e9edf2;
+
+      white-space: nowrap;
+    }
+
+    .evidence-table tbody th {
+      text-align: left;
+
+      font-weight: 700;
+
+      color: #344054;
+
+      padding: 11px 10px;
+
+      border-bottom: 1px solid #f2f4f7;
+
+      white-space: nowrap;
+
+      vertical-align: top;
+    }
+
+    .evidence-table tbody td {
+      padding: 11px 10px;
+
+      border-bottom: 1px solid #f2f4f7;
+
+      color: #475467;
+
+      word-break: break-word;
+
+      vertical-align: top;
+    }
+
+    .evidence-weight {
+      display: block;
+
+      margin-top: 3px;
+
+      color: #98a2b3;
+
+      font-size: 10.5px;
+
+      font-weight: 500;
+    }
+
+    .evidence-score {
+      white-space: nowrap;
+
+      width: 108px;
+    }
+
+    .evidence-score b {
+      font-size: 12px;
+
+      color: #344054;
+    }
+
+    .evidence-bar {
+      display: block;
+
+      height: 5px;
+
+      border-radius: 999px;
+
+      background: #eef2f6;
+
+      margin-bottom: 5px;
+
+      overflow: hidden;
+    }
+
+    .evidence-bar i {
+      display: block;
+
+      height: 100%;
+
+      border-radius: 999px;
+
+      background: #2f6fed;
+    }
+
+    .evidence-empty,
+    .history-empty {
+      text-align: center;
+
+      color: #98a2b3;
+
+      padding: 28px 10px;
+
+      font-size: 13px;
+    }
+
+    .history-status {
+      display: inline-block;
+
+      margin-left: 6px;
+
+      padding: 1px 6px;
+
+      border-radius: 6px;
+
+      background: #fff4e5;
+
+      color: #b54708;
+
+      font-size: 10.5px;
+
+      font-weight: 700;
+
+      vertical-align: middle;
+    }
+
+    .history-item {
+      cursor: pointer;
+    }
+
+    @media (max-width: 720px) {
+
+      .evidence-table thead {
+        display: none;
+      }
+
+      .evidence-table tbody th,
+      .evidence-table tbody td {
+        display: block;
+
+        border-bottom: none;
+
+        padding: 2px 0;
+      }
+
+      .evidence-table tbody tr {
+        display: block;
+
+        padding: 10px 0;
+
+        border-bottom: 1px solid #f2f4f7;
+      }
+
+      .evidence-score {
+        width: auto;
+      }
+    }
+
+
+    /* ==================================================
+       9/24 추가 — 쿠팡 화면 보완 (확장 상태 · 최근 목록 · 새로고침)
+    ================================================== */
+
+    .extension-status {
+      display: block;
+
+      width: fit-content;
+
+      max-width: 100%;
+
+      margin: 14px auto 0;
+
+      padding: 7px 12px;
+
+      border-radius: 999px;
+
+      font-size: 12px;
+
+      font-weight: 700;
+    }
+
+    .extension-status.ok {
+      background: #ecfdf3;
+
+      color: #027a48;
+    }
+
+    .extension-status.missing {
+      background: #fef3f2;
+
+      color: #b42318;
+    }
+
+    .extension-status.unknown {
+      background: #f2f4f7;
+
+      color: #667085;
+    }
+
+    .mini-btn {
+      margin-left: 8px;
+
+      padding: 4px 10px;
+
+      border: 1px solid #d0d5dd;
+
+      border-radius: 8px;
+
+      background: #fff;
+
+      color: #344054;
+
+      font-size: 11px;
+
+      font-weight: 700;
+
+      cursor: pointer;
+    }
+
+    .mini-btn:disabled {
+      opacity: .5;
+
+      cursor: default;
+    }
+
+    .coupang-recent-list {
+      margin-top: 14px;
+    }
+
+    .coupang-suspect-list {
+      margin-top: 12px;
+    }
+
+    .coupang-suspect-list:empty {
+      display: none;
+    }
+
+    .coupang-sub-title {
+      margin: 22px 0 0;
+
+      color: #667085;
+
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .category {
+      cursor: pointer;
+    }
+
+</style>
 
 </head>
 
@@ -1830,49 +2284,19 @@
               id="navVerify"
               onclick="goHome()">
 
-        제품 확인
+        품명으로 제품 확인
 
       </button>
 
 
-      <div
-              class="history-menu-wrap"
-              id="historyMenuWrap">
+      <button
+              class="nav-item"
+              id="navCoupang"
+              onclick="goCoupangHistory()">
 
-        <button
-                class="nav-item history-toggle"
-                id="navHistory"
-                onclick="toggleHistoryMenu(event)">
+        쿠팡 구매이력 제품 확인
 
-          검증 이력
-
-          <span class="history-arrow">
-            ▼
-          </span>
-
-        </button>
-
-
-        <div class="history-dropdown">
-
-          <button
-                  onclick="goHistory(); closeHistoryMenu();">
-
-            내 검증 이력
-
-          </button>
-
-
-          <button
-                  onclick="goCoupangHistory(); closeHistoryMenu();">
-
-            쿠팡 구매 이력
-
-          </button>
-
-        </div>
-
-      </div>
+      </button>
 
     </div>
 
@@ -2001,12 +2425,12 @@
       <div class="page-title">
 
         <h1>
-          제품 리콜 여부 확인
+          품명으로 제품 확인
         </h1>
 
         <p>
-          제품 정보를 입력하면 공식 리콜 정보와 비교하여
-          안전 상태를 알려드립니다.
+          제품명·브랜드·모델명 등 제품 정보를 입력하고
+          공식 리콜 정보와 비교하여 안전 상태를 확인합니다.
         </p>
 
       </div>
@@ -2140,6 +2564,28 @@
 
           </div>
 
+
+          <!-- 9/27 추가 — 2단계 이미지 판독(Google Vision)용. 선택 입력. -->
+          <div class="field field-full">
+
+            <label for="thumbnailUrl">
+              상품 이미지 주소 (선택)
+            </label>
+
+            <input
+                    id="thumbnailUrl"
+                    type="url"
+                    inputmode="url"
+                    autocomplete="off"
+                    placeholder="https://… 판매 페이지 상품 사진의 이미지 주소">
+
+            <p class="field-hint">
+              결과 화면의 '사진으로 찾기'를 누르면 이 사진으로 웹을 검색해 한 번 더 확인합니다.
+              사진에서 마우스 오른쪽 버튼 → '이미지 주소 복사'로 넣을 수 있습니다.
+            </p>
+
+          </div>
+
         </div>
 
 
@@ -2206,15 +2652,14 @@
 
       </div>
 
-    </section>
 
 
     <!-- ==================================================
          RESULT
     ================================================== -->
 
-    <section
-            class="screen"
+    <div
+            class="embedded-result"
             id="resultScreen">
 
       <div class="page-title">
@@ -2298,7 +2743,18 @@
                   class="judgement-state partial"
                   id="statePartial">
 
-            🟠 부분일치
+            🟠 의심
+
+          </div>
+
+
+          <!-- 9/27 — 확인불가 자리를 항목누락으로 바꿨다(팀장 결정 4단계: 일치·의심·항목누락·불일치).
+               확인불가(정보가 아예 없음)는 드물어서 범례에서 빼고 제목으로만 보여 준다. -->
+          <div
+                  class="judgement-state missing"
+                  id="stateMissing">
+
+            🟣 항목누락
 
           </div>
 
@@ -2308,15 +2764,6 @@
                   id="stateNoMatch">
 
             🟢 불일치
-
-          </div>
-
-
-          <div
-                  class="judgement-state unknown"
-                  id="stateUnknown">
-
-            ⚪ 확인불가
 
           </div>
 
@@ -2521,12 +2968,12 @@
               <div class="compare-row">
 
                 <span class="compare-label">
-                  바코드
+                  제조사
                 </span>
 
                 <span
                         class="compare-value"
-                        id="recallBarcode">
+                        id="recallMaker">
 
                   -
 
@@ -2663,6 +3110,25 @@
               </div>
 
 
+              <div
+                      class="info-item"
+                      style="grid-column:1/-1">
+
+                <div class="info-label">
+                  소비자 행동요령
+                </div>
+
+                <div
+                        class="info-value"
+                        id="recallAction">
+
+                  -
+
+                </div>
+
+              </div>
+
+
             </div>
 
           </div>
@@ -2695,6 +3161,9 @@
 
           </div>
 
+
+          <div id="evidenceTable"></div>
+
         </div>
 
 
@@ -2720,11 +3189,13 @@
                 class="primary-btn"
                 onclick="goHistory()">
 
-          검증 이력 보기 →
+          내 검증 이력 보기 →
 
         </button>
 
       </div>
+
+    </div>
 
     </section>
 
@@ -2744,11 +3215,10 @@
         </h1>
 
         <p>
-          내가 확인한 제품의 리콜 검증 기록입니다.
+          품명으로 확인한 기록과 쿠팡 구매이력 검증 기록을 분리해서 확인합니다.
         </p>
 
       </div>
-
 
       <div
               id="historyLoginRequired"
@@ -2763,31 +3233,41 @@
 
       </div>
 
+      <div id="historyContent">
 
-      <div
-              id="historyContent"
-              class="card">
+        <div class="history-tabs">
+          <button
+                  class="history-tab active"
+                  id="historyTabManual"
+                  onclick="showHistoryType('manual')">
+            품명 검증 이력
+          </button>
 
-        <div class="card-title">
-
-          <h2>
-            최근 검증
-          </h2>
-
-          <span>
-            최근 10건
-          </span>
-
+          <button
+                  class="history-tab"
+                  id="historyTabCoupang"
+                  onclick="showHistoryType('coupang')">
+            쿠팡 검증 이력
+          </button>
         </div>
 
+        <div class="card" id="manualHistoryCard">
+          <div class="card-title">
+            <h2>품명으로 제품 확인</h2>
+            <span>최근 10건</span>
+          </div>
+          <div class="history-list" id="historyListManual"></div>
+        </div>
 
-        <div
-                class="history-list"
-                id="historyList">
+        <div class="card" id="coupangHistoryCard" style="display:none">
+          <div class="card-title">
+            <h2>쿠팡 구매이력 제품 확인</h2>
+            <span>최근 10건</span>
+          </div>
+          <div class="history-list" id="historyListCoupang"></div>
         </div>
 
       </div>
-
 
       <div class="action-row">
 
@@ -2795,7 +3275,7 @@
                 class="primary-btn"
                 onclick="goHome()">
 
-          + 새로운 제품 확인하기
+          + 품명으로 새 제품 확인하기
 
         </button>
 
@@ -2815,60 +3295,122 @@
       <div class="page-title">
 
         <h1>
-          쿠팡 구매 이력
+          쿠팡 구매이력 제품 확인
         </h1>
 
         <p>
-          쿠팡에서 구매한 제품의 리콜 여부를 확인합니다.
+          쿠팡에서 구매한 제품 중 리콜된 제품을 공공데이터(국가기술표준원 리콜 공표)와 대조해 찾아냅니다.
         </p>
 
       </div>
 
+      <div
+              id="coupangLoginRequired"
+              class="login-required"
+              style="display:none">
+
+        <strong>
+          로그인이 필요합니다.
+        </strong>
+
+        쿠팡 구매이력 검증 결과를 확인하려면 로그인해주세요.
+
+      </div>
 
       <div class="card">
 
-        <div
-                id="coupangLoginRequired"
-                class="login-required"
-                style="display:none">
-
-          <strong>
-            로그인이 필요합니다.
-          </strong>
-
-          쿠팡 구매 이력 확인 기능을 이용하려면
-          리콜체크에 로그인해주세요.
-
-        </div>
-
-
-        <div
-                class="coupang-box"
-                id="coupangContent">
+        <div class="coupang-box" id="coupangContent">
 
           <div class="coupang-icon">
             🛒
           </div>
 
           <h2>
-            쿠팡 구매 제품 리콜 확인
+            구매한 제품 중 리콜 제품 찾기
           </h2>
 
           <p>
-            쿠팡에서 구매한 제품을 불러와<br>
-            리콜 대상 여부를 확인할 수 있습니다.
+            아래 링크를 누르면 쿠팡 주문목록 페이지가 새 창으로 열립니다.<br>
+            UnderFaker 확장 프로그램이 주문한 상품의 이름과 사진을 읽어, 품번·인증번호가 없는 유아제품도
+            리콜 공표문과 대조해 의심 제품을 찾아냅니다.
           </p>
 
-          <button
-                  class="primary-btn"
-                  style="max-width:420px"
-                  onclick="openCoupang()">
+          <div
+                  id="extensionStatus"
+                  class="extension-status unknown">
+            확장 프로그램 확인 중…
+          </div>
 
-            쿠팡 구매 이력 확인하기
+          <a
+                  class="official-link"
+                  href="#"
+                  onclick="openCoupang(); return false;"
+                  style="margin-top:18px">
+            쿠팡 구매 이력 확인하기 ↗
+          </a>
 
-          </button>
+          <br>
+
+          <a
+                  class="official-link"
+                  href="#"
+                  onclick="goCoupangVerificationHistory(); return false;"
+                  style="margin-top:10px">
+            쿠팡 검증이력 확인
+          </a>
+
+          <div class="verification-path-note">
+            따로 누를 버튼은 없습니다. 주문목록 페이지가 열리면 확장이 자동으로 검증을 보내고,
+            결과는 <strong>아래 목록</strong>과 <strong>쿠팡 검증 이력</strong>에 쌓입니다.
+            이 사이트에 먼저 로그인해 두세요. 로그인 전에 쿠팡을 열었다면 로그인하는 순간
+            대기 중이던 항목이 전송됩니다.
+          </div>
 
         </div>
+
+      </div>
+
+      <div class="card coupang-result-card" id="coupangResultCard">
+
+        <div class="card-title">
+          <h2>구매 제품 중 찾은 리콜 의심 제품</h2>
+          <span>
+            확장 프로그램이 보낸 항목 · 이 화면을 보고 있는 동안 자동으로 새로고침
+            <button
+                    type="button"
+                    class="mini-btn"
+                    id="coupangRefreshBtn"
+                    onclick="refreshCoupang()">
+              새로고침
+            </button>
+          </span>
+        </div>
+
+        <div class="coupang-result-summary">
+          <div>
+            <strong id="coupangResultProduct">-</strong>
+            <span id="coupangResultMeta">-</span>
+          </div>
+          <div
+                  id="coupangResultStatus"
+                  class="status-pill status-UNKNOWN">
+            확인불가
+          </div>
+        </div>
+
+        <!-- 9/27 — finder: 찾은 의심 제품 (일치 먼저) -->
+        <div class="history-list coupang-suspect-list" id="coupangSuspectList"></div>
+
+        <!-- 9/27 — 항목누락: KC 인증번호가 없어 텍스트로 못 찾은 제품. 사진으로 찾기 버튼 -->
+        <h3 class="coupang-sub-title" id="coupangMissingTitle" style="display:none">
+          항목누락 — 사진으로 한 번 더 찾아볼 수 있는 제품
+        </h3>
+
+        <div class="history-list coupang-suspect-list" id="coupangMissingList"></div>
+
+        <h3 class="coupang-sub-title">최근 확인한 구매 상품</h3>
+
+        <div class="history-list coupang-recent-list" id="coupangRecentList"></div>
 
       </div>
 
@@ -3121,1472 +3663,7 @@
 </div>
 
 
-<script>
-
-  /* ==================================================
-     API / AUTH
-  ================================================== */
-
-  const API = '';
-
-  let token =
-          localStorage.getItem('rc_token') || null;
-
-  let userEmail =
-          localStorage.getItem('rc_email') || null;
-
-
-  /* ==================================================
-     INITIAL
-  ================================================== */
-
-  document.addEventListener(
-          'DOMContentLoaded',
-          function () {
-
-            paintHeader();
-
-            showScreen('verifyScreen');
-
-          }
-  );
-
-
-  /* ==================================================
-     HEADER
-  ================================================== */
-
-  function paintHeader() {
-
-    const authBtn =
-            document.getElementById('authBtn');
-
-    const profileBtn =
-            document.getElementById('profileBtn');
-
-
-    if (token) {
-
-      authBtn.textContent =
-              '로그아웃';
-
-      authBtn.title =
-              '로그아웃';
-
-      profileBtn.title =
-              userEmail
-                      ? userEmail + ' 님'
-                      : '내 검증 이력';
-
-
-    } else {
-
-      authBtn.textContent =
-              '로그인/회원가입';
-
-      authBtn.title =
-              '로그인/회원가입';
-
-      profileBtn.title =
-              '로그인';
-
-    }
-
-
-    updateLoginMessages();
-
-  }
-
-
-  /* ==================================================
-     LOGIN MESSAGE
-  ================================================== */
-
-  function updateLoginMessages() {
-
-    const verifyMsg =
-            document.getElementById(
-                    'verifyLoginMsg'
-            );
-
-
-    const historyMsg =
-            document.getElementById(
-                    'historyLoginRequired'
-            );
-
-
-    const historyContent =
-            document.getElementById(
-                    'historyContent'
-            );
-
-
-    const coupangMsg =
-            document.getElementById(
-                    'coupangLoginRequired'
-            );
-
-
-    const coupangContent =
-            document.getElementById(
-                    'coupangContent'
-            );
-
-
-    if (token) {
-
-      if (verifyMsg) {
-        verifyMsg.style.display = 'none';
-      }
-
-
-      if (historyMsg) {
-        historyMsg.style.display = 'none';
-      }
-
-
-      if (historyContent) {
-        historyContent.style.display = 'block';
-      }
-
-
-      if (coupangMsg) {
-        coupangMsg.style.display = 'none';
-      }
-
-
-      if (coupangContent) {
-        coupangContent.style.display = 'block';
-      }
-
-
-    } else {
-
-      if (verifyMsg) {
-        verifyMsg.style.display = 'none';
-      }
-
-
-      if (historyMsg) {
-        historyMsg.style.display = 'block';
-      }
-
-
-      if (historyContent) {
-        historyContent.style.display = 'none';
-      }
-
-
-      if (coupangMsg) {
-        coupangMsg.style.display = 'block';
-      }
-
-
-      if (coupangContent) {
-        coupangContent.style.display = 'none';
-      }
-
-    }
-
-  }
-
-
-  /* ==================================================
-     PROFILE CLICK
-  ================================================== */
-
-  function handleProfileClick() {
-
-    if (token) {
-
-      goHistory();
-
-    } else {
-
-      showScreen('loginScreen');
-
-    }
-
-  }
-
-
-  /* ==================================================
-     AUTH BUTTON
-  ================================================== */
-
-  function handleAuthButton() {
-
-    if (token) {
-
-      logout();
-
-    } else {
-
-      showScreen('loginScreen');
-
-    }
-
-  }
-
-
-  /* ==================================================
-     MESSAGE
-  ================================================== */
-
-  function show(
-          id,
-          text,
-          ok
-  ) {
-
-    const el =
-            document.getElementById(id);
-
-
-    if (!el) {
-      return;
-    }
-
-
-    el.textContent = text;
-
-
-    el.className =
-            'msg ' +
-            (
-                    ok
-                            ? 'ok'
-                            : 'err'
-            );
-
-  }
-
-
-  /* ==================================================
-     HEADERS
-  ================================================== */
-
-  function headers() {
-
-    const h = {
-      'Content-Type':
-              'application/json'
-    };
-
-
-    if (token) {
-
-      h['Authorization'] =
-              'Bearer ' + token;
-
-    }
-
-
-    return h;
-
-  }
-
-
-  /* ==================================================
-     INPUT VALUE
-  ================================================== */
-
-  function val(id) {
-
-    const el =
-            document.getElementById(id);
-
-
-    if (!el) {
-
-      return null;
-
-    }
-
-
-    const v =
-            el.value.trim();
-
-
-    return v === ''
-            ? null
-            : v;
-
-  }
-
-
-  /* ==================================================
-     API CALL
-  ================================================== */
-
-  async function call(
-          path,
-          method,
-          body
-  ) {
-
-    try {
-
-      const res =
-              await fetch(
-                      API + path,
-                      {
-                        method: method,
-
-                        headers:
-                                headers(),
-
-                        body:
-                                body
-                                        ? JSON.stringify(body)
-                                        : undefined
-                      }
-              );
-
-
-      let json = null;
-
-
-      try {
-
-        json =
-                await res.json();
-
-      } catch (e) {
-
-        json = null;
-
-      }
-
-
-      return {
-        status: res.status,
-        json: json
-      };
-
-
-    } catch (error) {
-
-      console.error(
-              'API 호출 오류:',
-              error
-      );
-
-
-      return {
-        status: 0,
-
-        json: {
-          success: false,
-
-          message:
-                  '서버에 연결할 수 없습니다.'
-        }
-      };
-
-    }
-
-  }
-
-
-  /* ==================================================
-     SCREEN
-  ================================================== */
-
-  function showScreen(id) {
-
-    document
-            .querySelectorAll('.screen')
-            .forEach(
-                    el =>
-                            el.classList.remove(
-                                    'active'
-                            )
-            );
-
-
-    const target =
-            document.getElementById(id);
-
-
-    if (target) {
-
-      target.classList.add(
-              'active'
-      );
-
-    }
-
-
-    document
-            .querySelectorAll('.nav-item')
-            .forEach(
-                    el =>
-                            el.classList.remove(
-                                    'active'
-                            )
-            );
-
-
-    if (id === 'verifyScreen') {
-
-      document
-              .getElementById(
-                      'navVerify'
-              )
-              .classList.add(
-              'active'
-      );
-
-    }
-
-
-    if (id === 'procedureScreen') {
-
-      document
-              .getElementById(
-                      'navProcedure'
-              )
-              .classList.add(
-              'active'
-      );
-
-    }
-
-
-    if (
-            id === 'historyScreen' ||
-            id === 'coupangScreen'
-    ) {
-
-      document
-              .getElementById(
-                      'navHistory'
-              )
-              .classList.add(
-              'active'
-      );
-
-    }
-
-
-    updateLoginMessages();
-
-
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
-
-  }
-
-
-  /* ==================================================
-     HOME
-  ================================================== */
-
-  function goHome() {
-
-    closeHistoryMenu();
-
-    showScreen(
-            'verifyScreen'
-    );
-
-  }
-
-
-  /* ==================================================
-     PROCEDURE
-  ================================================== */
-
-  function goProcedure() {
-
-    closeHistoryMenu();
-
-    showScreen(
-            'procedureScreen'
-    );
-
-  }
-
-
-  /* ==================================================
-     HISTORY DROPDOWN
-  ================================================== */
-
-  function toggleHistoryMenu(event) {
-
-    event.stopPropagation();
-
-
-    const wrap =
-            document.getElementById(
-                    'historyMenuWrap'
-            );
-
-
-    wrap.classList.toggle(
-            'open'
-    );
-
-  }
-
-
-  function closeHistoryMenu() {
-
-    const wrap =
-            document.getElementById(
-                    'historyMenuWrap'
-            );
-
-
-    if (wrap) {
-
-      wrap.classList.remove(
-              'open'
-      );
-
-    }
-
-  }
-
-
-  document.addEventListener(
-          'click',
-          function (event) {
-
-            const wrap =
-                    document.getElementById(
-                            'historyMenuWrap'
-                    );
-
-
-            if (
-                    wrap &&
-                    !wrap.contains(event.target)
-            ) {
-
-              closeHistoryMenu();
-
-            }
-
-          }
-  );
-
-
-  /* ==================================================
-     HISTORY
-  ================================================== */
-
-  function goHistory() {
-
-    closeHistoryMenu();
-
-
-    showScreen(
-            'historyScreen'
-    );
-
-
-    if (!token) {
-
-      return;
-
-    }
-
-
-    loadHistory();
-
-  }
-
-
-  /* ==================================================
-     COUPANG
-  ================================================== */
-
-  function goCoupangHistory() {
-
-    closeHistoryMenu();
-
-    showScreen(
-            'coupangScreen'
-    );
-
-  }
-
-
-  function openCoupang() {
-
-    window.open(
-            'https://mc.coupang.com/ssr/desktop/order/list',
-            '_blank'
-    );
-
-  }
-
-
-  /* ==================================================
-     SIGNUP
-  ================================================== */
-
-  async function signup() {
-
-    const r =
-            await call(
-                    '/api/auth/signup',
-                    'POST',
-                    {
-                      email:
-                              val('email'),
-
-                      password:
-                              val('password'),
-
-                      username:
-                              val('username')
-                    }
-            );
-
-
-    if (
-            r.json &&
-            r.json.success
-    ) {
-
-      show(
-              'authMsg',
-
-              '회원가입 완료. 이제 로그인하세요.',
-
-              true
-      );
-
-    } else {
-
-      show(
-              'authMsg',
-
-              '회원가입 실패 (' +
-              r.status +
-              ') ' +
-              (
-                      r.json?.message ||
-                      ''
-              ),
-
-              false
-      );
-
-    }
-
-  }
-
-
-  /* ==================================================
-     LOGIN
-  ================================================== */
-
-  async function login() {
-
-    const r =
-            await call(
-                    '/api/auth/login',
-                    'POST',
-                    {
-                      email:
-                              val('email'),
-
-                      password:
-                              val('password')
-                    }
-            );
-
-
-    if (
-            r.json &&
-            r.json.success
-    ) {
-
-      token =
-              r.json.data.accessToken;
-
-      userEmail =
-              val('email');
-
-
-      localStorage.setItem(
-              'rc_token',
-              token
-      );
-
-
-      localStorage.setItem(
-              'rc_email',
-              userEmail
-      );
-
-
-      paintHeader();
-
-
-      show(
-              'authMsg',
-              '로그인되었습니다.',
-              true
-      );
-
-
-      setTimeout(
-              function () {
-
-                showScreen(
-                        'verifyScreen'
-                );
-
-              },
-              300
-      );
-
-
-    } else {
-
-      show(
-              'authMsg',
-
-              '로그인 실패 (' +
-              r.status +
-              ') ' +
-              (
-                      r.json?.message ||
-                      ''
-              ),
-
-              false
-      );
-
-    }
-
-  }
-
-
-  /* ==================================================
-     LOGOUT
-  ================================================== */
-
-  function logout() {
-
-    token = null;
-
-    userEmail = null;
-
-
-    localStorage.removeItem(
-            'rc_token'
-    );
-
-
-    localStorage.removeItem(
-            'rc_email'
-    );
-
-
-    paintHeader();
-
-
-    showScreen(
-            'verifyScreen'
-    );
-
-  }
-  /* ==================================================
-     VERIFY
-  ================================================== */
-
-  async function verify() {
-
-    if (!token) {
-
-      const msg =
-              document.getElementById(
-                      'verifyLoginMsg'
-              );
-
-
-      msg.style.display =
-              'block';
-
-
-      msg.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center'
-      });
-
-
-      return;
-
-    }
-
-
-    const productName =
-            val('productName');
-
-
-    if (!productName) {
-
-      show(
-              'verifyMsg',
-
-              '제품명을 입력해주세요.',
-
-              false
-      );
-
-
-      return;
-
-    }
-
-
-    const btn =
-            document.getElementById(
-                    'verifyBtn'
-            );
-
-
-    btn.disabled = true;
-
-    btn.textContent =
-            '확인하는 중...';
-
-
-    const r =
-            await call(
-                    '/api/verifications/manual',
-                    'POST',
-                    {
-                      productName:
-                      productName,
-
-                      brandName:
-                              val('brandName'),
-
-                      modelName:
-                              val('modelName'),
-
-                      makerName:
-                              val('makerName'),
-
-                      barcodeNum:
-                              val('barcodeNum'),
-
-                      certNum:
-                              val('certNum')
-                    }
-            );
-
-
-    btn.disabled = false;
-
-    btn.textContent =
-            '🔍 리콜 여부 확인하기';
-
-
-    if (
-            !r.json ||
-            !r.json.success
-    ) {
-
-      show(
-              'verifyMsg',
-
-              '검증 실패 (' +
-              r.status +
-              ') ' +
-              (
-                      r.json?.message ||
-                      '알 수 없는 오류가 발생했습니다.'
-              ),
-
-              false
-      );
-
-
-      return;
-
-    }
-
-
-    const result =
-            r.json.data;
-
-
-    console.log(
-            '검증 결과:',
-            result
-    );
-
-
-    render(result);
-
-
-    if (
-            result &&
-            result.verificationId
-    ) {
-
-      loadEvidence(
-              result.verificationId
-      );
-
-    }
-
-
-    showScreen(
-            'resultScreen'
-    );
-
-  }
-
-
-  /* ==================================================
-     LABEL
-  ================================================== */
-
-  const LABEL = {
-
-    MATCH:
-            '일치',
-
-    PARTIAL:
-            '부분일치',
-
-    NO_MATCH:
-            '불일치',
-
-    UNKNOWN:
-            '확인불가'
-
-  };
-
-
-  const SUBLABEL = {
-
-    MATCH:
-            '리콜 대상 상품과 일치합니다.',
-
-    PARTIAL:
-            '추가 확인이 필요합니다.',
-
-    NO_MATCH:
-            '일치하는 리콜 정보가 없습니다.',
-
-    UNKNOWN:
-            '정보 부족으로 판별할 수 없습니다.'
-
-  };
-
-
-  /* ==================================================
-     RENDER
-  ================================================== */
-
-  function render(d) {
-
-    if (!d) {
-
-      return;
-
-    }
-
-
-    const fr =
-            d.finalResult ||
-            'UNKNOWN';
-
-
-    setResultState(
-            fr,
-            d.similarityScore
-    );
-
-
-    document.getElementById(
-            'inputProduct'
-    ).textContent =
-            d.productName ||
-            '-';
-
-
-    document.getElementById(
-            'inputBrand'
-    ).textContent =
-            d.brandName ||
-            '-';
-
-
-    document.getElementById(
-            'inputModel'
-    ).textContent =
-            d.modelName ||
-            '-';
-
-
-    document.getElementById(
-            'inputBarcode'
-    ).textContent =
-            d.barcodeNum ||
-            '-';
-
-
-    document.getElementById(
-            'recallProduct'
-    ).textContent =
-            d.recallProductName ||
-            '-';
-
-
-    document.getElementById(
-            'recallBrand'
-    ).textContent =
-            d.recallBrandName ||
-            '-';
-
-
-    document.getElementById(
-            'recallModel'
-    ).textContent =
-            d.recallModelName ||
-            d.recallModel ||
-            '-';
-
-
-    document.getElementById(
-            'recallBarcode'
-    ).textContent =
-            d.recallBarcode ||
-            '-';
-
-
-    document.getElementById(
-            'recallType'
-    ).textContent =
-            d.recallType ||
-            '-';
-
-
-    document.getElementById(
-            'recallMethod'
-    ).textContent =
-            d.recallMethod ||
-            '-';
-
-
-    document.getElementById(
-            'recallBusiness'
-    ).textContent =
-            d.recallBusiness ||
-            '-';
-
-
-    document.getElementById(
-            'recallDate'
-    ).textContent =
-            d.recallDate ||
-            '-';
-
-
-    document.getElementById(
-            'recallDefect'
-    ).textContent =
-            d.recallDefect ||
-            '-';
-
-
-    document.getElementById(
-            'recallRisk'
-    ).textContent =
-            d.recallRisk ||
-            '-';
-
-  }
-
-
-  /* ==================================================
-     RESULT STATE
-  ================================================== */
-
-  function setResultState(
-          fr,
-          score
-  ) {
-
-    const hero =
-            document.getElementById(
-                    'resultHero'
-            );
-
-
-    hero.className =
-            'result-hero state-' +
-            fr;
-
-
-    const icons = {
-
-      MATCH: '!',
-
-      PARTIAL: '?',
-
-      NO_MATCH: '✓',
-
-      UNKNOWN: '–'
-
-    };
-
-
-    document.getElementById(
-            'resultIcon'
-    ).textContent =
-            icons[fr] ||
-            '–';
-
-
-    document.getElementById(
-            'resultTitle'
-    ).textContent =
-            LABEL[fr] ||
-            '확인불가';
-
-
-    document.getElementById(
-            'resultSub'
-    ).textContent =
-            SUBLABEL[fr] ||
-            SUBLABEL.UNKNOWN;
-
-
-    document.getElementById(
-            'score'
-    ).textContent =
-            score == null
-                    ? '-'
-                    : (
-                            score * 100
-                    ).toFixed(1) +
-                    '%';
-
-
-    document
-            .querySelectorAll(
-                    '.judgement-state'
-            )
-            .forEach(
-                    el =>
-                            el.classList.remove(
-                                    'active'
-                            )
-            );
-
-
-    const stateMap = {
-
-      MATCH:
-              'stateMatch',
-
-      PARTIAL:
-              'statePartial',
-
-      NO_MATCH:
-              'stateNoMatch',
-
-      UNKNOWN:
-              'stateUnknown'
-
-    };
-
-
-    const activeState =
-            document.getElementById(
-                    stateMap[fr]
-            );
-
-
-    if (activeState) {
-
-      activeState.classList.add(
-              'active'
-      );
-
-    }
-
-
-    /* ==================================================
-       4단계 판정 아래 안내창
-    ================================================== */
-
-    const notice =
-            document.getElementById(
-                    'resultNotice'
-            );
-
-
-    if (!notice) {
-      return;
-    }
-
-
-    if (fr === 'MATCH') {
-
-      notice.className =
-              'result-notice match';
-
-
-      notice.innerHTML =
-              '<strong>⚠ 리콜 대상 제품입니다.</strong><br>' +
-              '제품 사용을 중지하고 판매처 또는 제조사의 ' +
-              '소비자 행동요령을 확인하세요.';
-
-
-    } else if (fr === 'PARTIAL') {
-
-      notice.className =
-              'result-notice partial';
-
-
-      notice.innerHTML =
-              '<strong>🔎 추가 확인이 필요합니다.</strong><br>' +
-              '제품명이나 브랜드는 유사하지만 모델명 또는 바코드가 ' +
-              '충분히 일치하지 않습니다.';
-
-
-    } else if (fr === 'NO_MATCH') {
-
-      notice.className =
-              'result-notice nomatch';
-
-
-      notice.innerHTML =
-              '<strong>✓ 일치하는 리콜 정보가 없습니다.</strong><br>' +
-              '현재 입력한 정보 기준으로 공식 리콜 정보와 일치하지 않습니다. ' +
-              '단, 리콜 대상이 아님을 의미하는 것은 아닙니다.';
-
-
-    } else {
-
-      notice.className =
-              'result-notice unknown';
-
-
-      notice.innerHTML =
-              '<strong>– 확인할 수 없습니다.</strong><br>' +
-              '정보가 부족하거나 공식 데이터를 조회하지 못했습니다. ' +
-              '제품 정보를 추가한 후 다시 확인해주세요.';
-
-    }
-
-  }
-
-
-  /* ==================================================
-     EVIDENCE
-  ================================================== */
-
-  async function loadEvidence(id) {
-
-    if (!id) {
-
-      return;
-
-    }
-
-
-    const r =
-            await call(
-                    '/api/verifications/' +
-                    id +
-                    '/evidence',
-
-                    'GET'
-            );
-
-
-    if (
-            r.json &&
-            r.json.success &&
-            r.json.data
-    ) {
-
-      document.getElementById(
-              'reason'
-      ).textContent =
-              '판정 근거 · ' +
-              (
-                      r.json.data.reason ||
-                      ''
-              );
-
-    }
-
-  }
-
-
-  /* ==================================================
-     HISTORY LOAD
-  ================================================== */
-
-  async function loadHistory() {
-
-    if (!token) {
-
-      return;
-
-    }
-
-
-    const r =
-            await call(
-                    '/api/verifications/me?page=0&size=10',
-                    'GET'
-            );
-
-
-    if (
-            !r.json ||
-            !r.json.success
-    ) {
-
-      return;
-
-    }
-
-
-    const list =
-            document.getElementById(
-                    'historyList'
-            );
-
-
-    if (
-            !r.json.data ||
-            !r.json.data.content ||
-            !r.json.data.content.length
-    ) {
-
-      list.innerHTML =
-              '<div style="' +
-              'text-align:center;' +
-              'color:#98a2b3;' +
-              'padding:30px;' +
-              'font-size:13px' +
-              '">' +
-              '아직 검증 이력이 없습니다.' +
-              '</div>';
-
-
-      return;
-
-    }
-
-
-    list.innerHTML =
-            r.json.data.content
-                    .map(
-                            function (v) {
-
-                              const result =
-                                      v.finalResult ||
-                                      'UNKNOWN';
-
-
-                              return `
-
-              <div class="history-item">
-
-                <div class="history-product">
-                  🧸
-                </div>
-
-                <div class="history-main">
-
-                  <div class="history-name">
-                    ${esc(
-                                      v.inputSummary ||
-                                      '제품 정보'
-                              )}
-                  </div>
-
-                  <div class="history-date">
-                    ${
-                                      (
-                                              v.createdAt ||
-                                              ''
-                                      )
-                                              .replace(
-                                                      'T',
-                                                      ' '
-                                              )
-                                              .substring(
-                                                      0,
-                                                      19
-                                              )
-                              }
-                  </div>
-
-                </div>
-
-                <div
-                  class="status-pill status-${result}">
-
-                  ${
-                                      LABEL[result] ||
-                                      '-'
-                              }
-
-                </div>
-
-              </div>
-
-            `;
-
-                            }
-                    )
-                    .join('');
-
-  }
-
-
-  /* ==================================================
-     ESCAPE
-  ================================================== */
-
-  function esc(s) {
-
-    return String(s)
-            .replace(
-                    /[&<>]/g,
-
-                    function (c) {
-
-                      return {
-
-                        '&':
-                                '&amp;',
-
-                        '<':
-                                '&lt;',
-
-                        '>':
-                                '&gt;'
-
-                      }[c];
-
-                    }
-            );
-
-  }
-</script>
+<script src="js/app.js"></script>
 
 </body>
 </html>
