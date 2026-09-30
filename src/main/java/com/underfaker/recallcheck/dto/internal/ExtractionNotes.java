@@ -78,6 +78,12 @@ public final class ExtractionNotes {
         return parseKcStatus(field(rawText, DETAIL_BEGIN, DETAIL_END, "kc:"));
     }
 
+    /** 9/30 — 이력 응답용. [detail] 블록이 없으면(웹 직접입력 등) null */
+    public static String kcStatusName(String rawText) {
+        KcStatus s = kcStatus(rawText);
+        return s == null ? null : s.name();
+    }
+
     public static String kcText(String rawText) {
         return field(rawText, DETAIL_BEGIN, DETAIL_END, "kcText:");
     }

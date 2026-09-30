@@ -26,8 +26,9 @@
       --partial: #f59e0b;
       --partial-bg: #fffbeb;
 
-      --nomatch: #16a34a;
-      --nomatch-bg: #f0fdf4;
+      /* 9/30 — 불일치는 초록 대신 회색. 초록은 '안전'으로 읽혀서(불일치 ≠ 리콜 아님) */
+      --nomatch: #475467;
+      --nomatch-bg: #f2f4f7;
 
       --unknown: #64748b;
       --unknown-bg: #f1f5f9;
@@ -827,11 +828,11 @@
 
 
     .judgement-state.nomatch.active {
-      color: #027a48;
+      color: #344054;
 
-      background: #ecfdf3;
+      background: #f2f4f7;
 
-      border-color: #abefc6;
+      border-color: #d0d5dd;
     }
 
 
@@ -939,11 +940,11 @@
 
 
     .result-notice.nomatch {
-      background: #f0fdf4;
+      background: #f8fafc;
 
-      border-color: #bbf7d0;
+      border-color: #d0d5dd;
 
-      color: #166534;
+      color: #344054;
     }
 
 
@@ -1352,9 +1353,9 @@
 
 
     .status-NO_MATCH {
-      color: #027a48;
+      color: #344054;
 
-      background: #ecfdf3;
+      background: #f2f4f7;
     }
 
 
@@ -2763,7 +2764,7 @@
                   class="judgement-state nomatch"
                   id="stateNoMatch">
 
-            🟢 불일치
+            ⚪ 불일치
 
           </div>
 
@@ -3644,7 +3645,7 @@
             </strong>
 
             <p>
-              일치·부분일치·불일치·확인불가의
+              일치·의심·항목누락·불일치의
               4단계 결과를 확인합니다.
             </p>
 

@@ -34,6 +34,12 @@ public record VerificationHistoryResponse(
         String resultState,
         String imageCheck,
         Boolean imageCheckAvailable,
-        String missingReason
+        String missingReason,
+
+        /* 9/30 — 확장이 쿠팡 상세페이지에서 읽은 KC 인증정보 상태(DISCLOSED/REFERENCED/NONE/UNREADABLE).
+           웹 직접입력·9/27 이전 건은 null. 쿠팡 결과 화면이 "KC 인증 대상 제품이 몇 개였는지"를 보여 주는 데 쓴다.
+           kcText 는 판매자가 KC 칸에 적은 원문(예: "해당없음(14세 이상)") — 근거 표시용 */
+        String kcStatus,
+        String kcText
 ) {
 }
