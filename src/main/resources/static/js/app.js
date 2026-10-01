@@ -735,7 +735,7 @@ const SUBLABEL = {
   MATCH: '리콜 대상 제품과 일치합니다 (인증번호·모델명 등 100% 일치).',
   PARTIAL: '리콜 제품과 닮았습니다. 확인이 필요합니다.',
   MISSING: '확인에 필요한 정보(KC 인증번호 등)가 없습니다.',
-  NO_MATCH: '일치하는 리콜 정보가 없습니다.',
+  NO_MATCH: '일치하는 리콜 공표문을 찾지 못했습니다. 안전하다는 뜻은 아닙니다.',
   UNKNOWN: '정보 부족으로 판별할 수 없습니다.'
 };
 
@@ -850,7 +850,8 @@ function setResultState(fr, score, d) {
   const hero = document.getElementById('resultHero');
   if (hero) hero.className = 'result-hero state-' + fr;
 
-  const icons = { MATCH: '!', PARTIAL: '?', MISSING: '…', NO_MATCH: '✓', UNKNOWN: '–' };
+  /* 9/30 — 불일치 아이콘 ✓ → ≠ . 체크 표시는 '안전 확인'으로 읽힌다(불일치 = 공표문과 안 맞음일 뿐) */
+  const icons = { MATCH: '!', PARTIAL: '?', MISSING: '…', NO_MATCH: '≠', UNKNOWN: '–' };
 
   text('resultIcon', icons[fr] || '–');
   text('resultTitle', LABEL[fr] || '확인불가');
@@ -903,9 +904,9 @@ function setResultState(fr, score, d) {
   } else if (fr === 'NO_MATCH') {
     notice.className = 'result-notice nomatch';
     notice.innerHTML =
-            '<strong>✓ 일치하는 리콜 정보가 없습니다.</strong><br>' +
+            '<strong>일치하는 리콜 공표문을 찾지 못했습니다.</strong><br>' +
             '현재 입력한 정보 기준으로 공식 리콜 정보와 일치하지 않습니다. ' +
-            '단, 리콜 대상이 아님을 의미하는 것은 아닙니다.';
+            '단, 안전하다는 뜻이 아니며 리콜 대상이 아님을 의미하지도 않습니다.';
 
   } else {
     notice.className = 'result-notice unknown';
@@ -1150,6 +1151,22 @@ async function loadHistoryChannel(channel, targetId) {
 }
 
 
+/* 9/30 — 이력 한 줄에 판매자가 적은 KC 인증정보를 짧게 붙인다(오픈마켓이라 판매자 표기가 제각각이다) */
+function kcHint(v) {
+  if (!v || !v.kcStatus) return '';
+  const t = v.kcText ? String(v.kcText).slice(0, 30) : '';
+  switch (v.kcStatus) {
+    case 'DISCLOSED': return 'KC 번호 있음';
+    case 'REFERENCED':
+      /* 9/30 — 확장이 쿠팡 카테고리로 어린이제품이라 보고 올린 건(판매자는 '해당없음'·KC 칸 없음) */
+      if (/카테고리상 어린이제품/.test(v.kcText || '')) return 'KC 번호 없음 (어린이제품 카테고리)';
+      return 'KC 번호 없음' + (t ? ' (' + t + ')' : '');
+    case 'UNREADABLE': return 'KC 정보 못 읽음';
+    case 'NONE': return t ? 'KC: ' + t : 'KC 표기 없음';
+    default: return '';
+  }
+}
+
 function renderHistoryList(targetId, items) {
 
   const list = document.getElementById(targetId);
@@ -1168,7 +1185,8 @@ function renderHistoryList(targetId, items) {
 
     const sub = [
       fmtDateTime(v.createdAt),
-      v.makerName || ''
+      v.makerName || '',
+      kcHint(v)
     ].filter(Boolean).join(' · ');
 
     const statusNote =
@@ -1374,6 +1392,12 @@ function summarizeCoupang(items) {
           .sort((a, b) => rank[stateOf(a)] - rank[stateOf(b)]);
   /* 9/27 — 항목누락: 텍스트로 못 찾았고 KC 인증번호도 없는 건. 사진으로 찾기 버튼 대상 */
   const missing = done.filter(v => stateOf(v) === 'MISSING');
+  /* 9/30 — 서버 이력 응답의 kcStatus(확장이 쿠팡 고시에서 읽은 KC 인증정보 상태).
+     KC 대상 = 번호 있음·번호 없음(참조)·못 읽음. NONE = KC 칸이 없거나 '해당없음'. 없으면(구 기록·웹) 모름 */
+  const KC_TARGET = { DISCLOSED: 1, REFERENCED: 1, UNREADABLE: 1 };
+  const kcKnown = done.filter(v => !!v.kcStatus);
+  const kcTarget = kcKnown.filter(v => KC_TARGET[v.kcStatus]).length;
+  const kcNone = kcKnown.filter(v => v.kcStatus === 'NONE').length;
 
   return {
     unique: unique,
@@ -1384,6 +1408,9 @@ function summarizeCoupang(items) {
     match: suspects.filter(v => stateOf(v) === 'MATCH').length,
     partial: suspects.filter(v => stateOf(v) === 'PARTIAL').length,
     missing: missing.length,
+    kcKnown: kcKnown.length,
+    kcTarget: kcTarget,
+    kcNone: kcNone,
     pending: unique.filter(v => v.status === 'PENDING').length,
     failed: unique.filter(v => v.status === 'FAILED').length
   };
@@ -1412,7 +1439,12 @@ function updateCoupangResultCard(f) {
 
   if (!f || !f.total) {
     text('coupangResultProduct', '아직 쿠팡에서 넘어온 검증이 없습니다');
-    if (meta) meta.textContent = '쿠팡 주문목록 페이지를 열면 확장 프로그램이 자동으로 보냅니다.';
+    /* 9/30 — 주문목록을 못 읽었을 때의 대안(직접 입력)을 같이 안내한다 */
+    if (meta) {
+      meta.textContent = '쿠팡 주문목록 페이지를 열면 확장 프로그램이 자동으로 보냅니다. ' +
+              '열었는데도 넘어오지 않으면 확장 프로그램 설치·로그인을 확인하고, 그래도 안 되면 ' +
+              "위 '품명으로 제품 확인'에서 제품명을 직접 입력해 확인하세요.";
+    }
     if (pill) pill.style.display = 'none';
     return;
   }
@@ -1458,11 +1490,32 @@ function updateCoupangResultCard(f) {
       pill.textContent = '항목누락 ' + f.missing + '개';
     }
     return;
+  } else if (f.kcKnown && !f.kcTarget) {
+    /* 9/30 — KC 인증 대상으로 표기된 제품이 하나도 없을 때. '찾지 못함'만 보이면 고장인지 정상인지 구분이 안 된다. */
+    text('coupangResultProduct',
+            '구매한 제품 ' + f.done + '개 중 KC 인증 대상으로 표기된 제품이 없습니다');
+    if (meta) {
+      meta.textContent = extra.concat([
+        /* 9/30 — 근거: 제4차 어린이제품 안전관리 기본계획(2025.1, 국가기술표준원) — 어린이제품안전법은
+           13세 이하 어린이제품 대상이며 약사법·식품위생법·화장품법 등 타법 소관 품목은 제외 */
+        '판매자 표기(필수 표기 정보)상 KC 인증 대상이 아닌 제품입니다(KC 칸 없음·"해당없음"·식품·화장품·의약외품 고시).',
+        '식품·화장품·의약외품은 식품위생법·화장품법·약사법 소관이라 국가기술표준원 리콜 대상이 아닙니다.',
+        '찾지 못했다고 안전하다는 뜻은 아닙니다.'
+      ]).join(' ');
+    }
+    if (pill) {
+      pill.className = 'status-pill status-UNKNOWN';
+      pill.textContent = 'KC 대상 0개';
+    }
+    return;
   } else {
     text('coupangResultProduct',
             '구매한 제품 ' + f.done + '개에서 리콜 의심 제품을 찾지 못했습니다');
     if (meta) {
-      meta.textContent = extra.concat([
+      const kcNote = f.kcKnown
+              ? ['KC 인증 대상 ' + f.kcTarget + '개 · 대상 아님 ' + f.kcNone + '개를 대조했습니다.']
+              : [];
+      meta.textContent = extra.concat(kcNote).concat([
         '찾지 못했다고 안전하다는 뜻은 아닙니다. 공표문과 상품명이 크게 다르면 찾지 못할 수 있습니다.'
       ]).join(' · ');
     }

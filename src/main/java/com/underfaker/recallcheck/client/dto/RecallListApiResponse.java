@@ -57,7 +57,13 @@ public record RecallListApiResponse(
             /** 위해 정보 */
             @JsonProperty("accidentCaseDscr") String accidentCaseDscr,
             /** 소비자 행동요령 (v2.0 추가 항목) */
-            @JsonProperty("publishActionDscr") String publishActionDscr
+            @JsonProperty("publishActionDscr") String publishActionDscr,
+            /**
+             * 품목 분류 경로 — "어린이용품&gt;완구" 형태. 10/1 추가.
+             * 옛 공표분(실측: 2012년 건)은 categoryName 이 null 로 오고 이 값만 있다.
+             * 저장 시 categoryName 이 비었을 때 대신 쓴다(RecallUpsertService.toEntity).
+             */
+            @JsonProperty("productItemName") String productItemName
     ) {
     }
 }

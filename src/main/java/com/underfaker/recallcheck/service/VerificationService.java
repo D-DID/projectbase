@@ -335,12 +335,15 @@ public class VerificationService {
         return PageResponse.from(found.map(v -> {
             Extraction extraction = extractionByVerificationId.get(v.getId());
             ResultView view = viewOf(v, extraction);
+            // 9/30 — KC 인증정보 상태를 같이 내려 준다(쿠팡 결과 화면의 "KC 인증 대상 N개" 안내용)
+            String rawText = extraction == null ? null : extraction.getRawText();
             return new VerificationHistoryResponse(
                     v.getId(), v.getInputType(), v.getChannel(),
                     summarize(v, extraction),
                     extraction == null ? null : extraction.getMakerName(),
                     v.getStatus(), v.getFinalResult(), v.getCreatedAt(),
-                    view.resultState(), view.imageCheck(), view.imageCheckAvailable(), view.missingReason());
+                    view.resultState(), view.imageCheck(), view.imageCheckAvailable(), view.missingReason(),
+                    ExtractionNotes.kcStatusName(rawText), ExtractionNotes.kcText(rawText));
         }));
     }
 
