@@ -1,0 +1,218 @@
+{
+  "info": {
+    "name": "UnderFaker 리콜 과거분 적재 (2012~)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "국표원 리콜 과거분 적재.\n공표일 조회(/recalls/range)는 2023-07-12 이후만 돌려준다(10/1 실측). 그 이전은 품목명 조회(/recalls/keywords)로만 나온다.\n사용법: 컬렉션 Variables 에서 adminToken(관리자 로그인 accessToken)·adminId 를 채우고 Run collection.\nupsert 라 여러 번 돌려도 중복 없음. 토큰은 Postman 에만 넣고 이 파일에 저장해서 커밋하지 말 것."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{adminToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "let j = {};",
+          "try { j = pm.response.json(); } catch (e) {}",
+          "pm.test(pm.info.requestName + ' — 응답 성공', () => pm.expect(j.success).to.eql(true));",
+          "const d = j.data || {};",
+          "if (d.failedDates !== undefined) {",
+          "  pm.test(pm.info.requestName + ' — 실패한 날짜 없음', () => pm.expect(d.failedDates.length).to.eql(0));",
+          "  console.log(pm.info.requestName, '| 조회', d.fetched, '| 적재', d.saved, '| 저장실패', d.failed, '| 공표 있던 날', d.daysWithData, '| 실패한 날짜', d.failedDates.join(','));",
+          "}",
+          "if (d.keywordsQueried !== undefined) {",
+          "  pm.test(pm.info.requestName + ' — 조회 실패 키워드 없음', () => pm.expect(d.failedKeywords.length).to.eql(0));",
+          "  pm.test(pm.info.requestName + ' — 남은 키워드 없음(maxCalls 충분)', () => pm.expect(d.pendingKeywords.length).to.eql(0));",
+          "  console.log(pm.info.requestName, '| 호출', d.keywordsQueried, '(생략', d.keywordsSkipped + ')', '| 조회', d.fetched, '| 고유', d.unique, '| 신규', d.inserted, '| 갱신', d.updated, '| 저장실패', d.failed);",
+          "  console.log('공표일 범위', d.oldestPublishDate, '~', d.newestPublishDate, '| 연도별 신규', JSON.stringify(d.insertedByYear));",
+          "  console.log('상한(1,000건) 걸린 키워드', d.cappedKeywords.join(','), '| 조회 실패', d.failedKeywords.join(','), '| 남은 키워드', d.pendingKeywords.length);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01. 최신분 보충 — 공표일(2026-09-17~오늘)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "description": "공표일 조회. 2023-07-12 이후만 나온다. 덤프 기준일(9/16) 이후 공표분을 채운다.",
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/sync/recalls/range?adminId={{adminId}}&from=20260917&to={{today}}&withImages=false",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "sync",
+            "recalls",
+            "range"
+          ],
+          "query": [
+            {
+              "key": "adminId",
+              "value": "{{adminId}}"
+            },
+            {
+              "key": "from",
+              "value": "20260917"
+            },
+            {
+              "key": "to",
+              "value": "{{today}}"
+            },
+            {
+              "key": "withImages",
+              "value": "false"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// 오늘 날짜(yyyyMMdd). 한국 시간 기준.",
+              "const kst = new Date(Date.now() + 9 * 3600 * 1000);",
+              "pm.variables.set('today', kst.toISOString().slice(0, 10).replace(/-/g, ''));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02. 과거분 — 품목명 키워드 적재(2012~)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "description": "품목명(recallProductName) 부분 일치로 2023-07-12 이전 공표분까지 받는다.\nkeywords 를 안 넘기면 어린이제품 34품목 + 전기·생활용품 키워드 + DB 에 있는 품목명으로 시작해서,\n받은 품목명으로 키워드를 넓혀 가며 끝까지 훑는다. 수 분 걸린다 — Postman 요청 타임아웃을 0(무제한)으로 둘 것.",
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/sync/recalls/keywords?adminId={{adminId}}&maxCalls=600&withImages=false",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "sync",
+            "recalls",
+            "keywords"
+          ],
+          "query": [
+            {
+              "key": "adminId",
+              "value": "{{adminId}}"
+            },
+            {
+              "key": "maxCalls",
+              "value": "600"
+            },
+            {
+              "key": "withImages",
+              "value": "false"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "03. 보충 — 흔한 글자로 넓게 훑기",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "description": "02 가 못 닿은 품목명을 찾는다. 흔한 글자(용·기·품 …)로 넓게 조회하고 받은 품목명으로 다시 넓혀 간다.\n10/1 실측: 213회 호출, 신규 110건. fromDb=false — DB 품목명은 02 에서 이미 훑었다.",
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/sync/recalls/keywords?adminId={{adminId}}&keywords=기타,제품,용품,기기,부품,세트,용,기,품,제,구,류,장,자,이,스,트&fromDb=false&maxCalls=600&withImages=false",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "sync",
+            "recalls",
+            "keywords"
+          ],
+          "query": [
+            {
+              "key": "adminId",
+              "value": "{{adminId}}"
+            },
+            {
+              "key": "keywords",
+              "value": "기타,제품,용품,기기,부품,세트,용,기,품,제,구,류,장,자,이,스,트"
+            },
+            {
+              "key": "fromDb",
+              "value": "false"
+            },
+            {
+              "key": "maxCalls",
+              "value": "600"
+            },
+            {
+              "key": "withImages",
+              "value": "false"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "04. 적재 이력 확인",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "description": "api_sync_log 최근 5건. 02·03 의 result_code 가 2000 이면 실패·남은 키워드 없이 끝난 것이다.",
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/sync/logs?page=0&size=5",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "sync",
+            "logs"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "0"
+            },
+            {
+              "key": "size",
+              "value": "5"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "adminId",
+      "value": "1"
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    }
+  ]
+}
