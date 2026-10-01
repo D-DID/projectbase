@@ -3,6 +3,7 @@ package com.underfaker.recallcheck.service.sync;
 import com.underfaker.recallcheck.client.SafetyKoreaRecallClient;
 import com.underfaker.recallcheck.client.dto.RecallListApiResponse;
 import com.underfaker.recallcheck.common.PageResponse;
+import com.underfaker.recallcheck.dto.response.KeywordSyncResponse;
 import com.underfaker.recallcheck.dto.response.RangeSyncResponse;
 import com.underfaker.recallcheck.dto.response.SyncLogResponse;
 import com.underfaker.recallcheck.entity.ApiSyncLog;
@@ -25,7 +26,11 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Pattern;
 
 /**
@@ -52,6 +57,12 @@ import java.util.regex.Pattern;
  * <b>목록 API 는 페이징이 없고 1회 응답 상한이 1,000건이다.</b> 그래서 conditionKey=all 로
  * 전건을 한 번에 받는 건 불가능하고(4,249 > 1,000), 공표일로 쪼개 받는 것 말고는 방법이 없다.
  * 공표가 없는 날은 2004(No Data)로 즉시 응답하므로 빈 날짜를 훑는 비용은 크지 않다.
+ *
+ * ── 10/1 정정 ──
+ * "공표일로 쪼개 받는 것 말고는 방법이 없다"는 틀렸다. 공표일 조회는 2023-07-12 이후만
+ * 돌려준다(실측: 2022-01 전체 0건, 2023-07 은 12·14·24일 5건). 그 이전은 공표일로는
+ * 안 나오지만 품목명 조회(recallProductName=완구)에는 2012-03-05 공표분까지 나온다.
+ * 과거분은 syncByKeywords() 로 채운다. 기간 적재(syncRange)는 2023-07-12 이후 보충용이다.
  */
 @Slf4j
 @Service
@@ -191,6 +202,178 @@ public class RecallSyncService {
 
         return new RangeSyncResponse(from, to, daysScanned, daysWithData, fetched, saved, failed,
                 withImages, syncLog.getId(), startedAt, LocalDateTime.now(), failedDates);
+    }
+
+    // ------------------------------------------------------------------ 품목명 키워드 적재 (10/1 추가)
+
+    /** 목록 API 1회 응답 상한. 이만큼 왔으면 잘렸다고 본다. */
+    private static final int LIST_CAP = 1000;
+
+    /**
+     * 어린이제품 안전관리 대상 34품목(제4차 어린이제품 안전관리 기본계획 붙임3, 2025.1)을
+     * 부분 일치용으로 줄인 말. recall_product_name 이 "기타완구(완구)", "중의류(아섬)(아동용 섬유제품)"
+     * 처럼 오므로 품목명의 핵심 명사만 넣는다. 붙임3의 "기타 어린이제품"은 어린이·유아·아동으로 받는다.
+     */
+    static final List<String> CHILD_SEEDS = List.of(
+            // 안전인증 4
+            "물놀이", "놀이기구", "보호장치", "비비탄",
+            // 안전확인 16
+            "섬유제품", "보호용품", "보호장구", "안전모", "합성수지", "완구", "학용품",
+            "삼륜차", "자전거", "보행기", "유모차", "캐리어", "침대", "의자",
+            "온열팩", "주머니난로", "구명복", "스케이트보드",
+            // 공급자적합성확인 14
+            "가죽제품", "안경테", "선글라스", "물안경", "운동화", "롤러스케이트",
+            "스키", "스노보드", "킥보드", "장신구", "쇼핑카트", "가구", "우산", "양산",
+            // 기타 어린이제품
+            "어린이", "유아", "아동");
+
+    /**
+     * 어린이제품 밖의 KC 대상(전기용품·생활용품) 중 리콜이 잦은 품목. 최근 3년 DB 에 없는
+     * 옛 품목을 찾아내는 출발점이다. 여기서 받은 품목명이 다시 키워드가 되므로(expand)
+     * 빠짐없이 적을 필요는 없다.
+     */
+    static final List<String> GENERAL_SEEDS = List.of(
+            "전기", "전지", "충전", "어댑터", "전원", "조명", "램프", "등기구", "전선", "멀티탭",
+            "콘센트", "스위치", "히터", "난로", "장판", "매트", "온수", "찜질", "드라이어", "선풍기",
+            "가습기", "제습기", "냉장", "냉동", "세탁", "청소기", "레인지", "밥솥", "오븐", "커피",
+            "믹서", "분쇄", "모니터", "컴퓨터", "텔레비전", "오디오", "스피커", "이어폰", "휴대",
+            "무선", "자동차", "타이어", "헬멧", "압력", "냄비", "프라이팬", "라이터", "가스", "버너",
+            "캠핑", "텐트", "사다리", "의류", "신발", "가방", "운동", "전동", "공구", "스쿠터",
+            "보일러", "에어컨", "공기청정", "정수기", "비데", "면도기", "헤어", "안마", "마사지");
+
+    /**
+     * FR-016 품목명 키워드 적재 — 공표일로는 안 나오는 2023-07-12 이전 공표분을 채운다.
+     *
+     * 동작:
+     *   1. keywords 를 대기열에 넣는다. 비었으면 CHILD_SEEDS + GENERAL_SEEDS.
+     *      fromDb=true 면 DB 에 이미 있는 품목명에서 뽑은 키워드도 넣는다.
+     *   2. 하나씩 recallProductName 부분 일치로 조회해 건별로 upsert 한다.
+     *      같은 리콜이 여러 키워드에 걸리므로 이번 실행에서 이미 저장한 recallUid 는 건너뛴다.
+     *   3. expand=true 면 받은 행의 품목명에서 새 키워드를 뽑아 대기열 끝에 붙인다.
+     *      1,000건 상한에 걸린 넓은 키워드("전기")도 이 단계에서 잘게 나뉘어 다시 훑어진다.
+     *   4. 상한에 안 걸린 키워드를 포함하는 긴 키워드는 부르지 않는다(KeywordQueue 주석).
+     *
+     * 몇 번을 다시 돌려도 결과가 같다(upsert). 중간에 끊겨도 저장된 건은 남는다.
+     *
+     * @param keywords   조회할 품목명 조각들. null/빈 목록이면 기본 목록.
+     * @param expand     받은 품목명으로 키워드를 넓혀 갈지(기본 true)
+     * @param fromDb     DB 에 있는 품목명도 출발 키워드로 쓸지(기본 true)
+     * @param prune      이미 다 받은 키워드를 포함하는 키워드를 생략할지(기본 true)
+     * @param maxCalls   이번 실행에서 부를 목록 API 최대 횟수. 남은 건 pendingKeywords 로 돌려준다.
+     * @param withImages 상세 API 로 사진까지 채울지. 기본 false — 사진은 /recalls/images 로 따로.
+     */
+    public KeywordSyncResponse syncByKeywords(Long adminId, List<String> keywords, boolean expand,
+                                              boolean fromDb, boolean prune, int maxCalls,
+                                              boolean withImages) {
+        if (maxCalls <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "maxCalls 는 1 이상이어야 합니다.");
+        }
+
+        KeywordQueue queue = new KeywordQueue(prune);
+        List<String> seeds = (keywords == null || keywords.isEmpty())
+                ? concat(CHILD_SEEDS, GENERAL_SEEDS) : keywords;
+        for (String k : seeds) {
+            queue.offer(KeywordQueue.cleanUserKeyword(k));
+        }
+        if (fromDb) {
+            for (String name : recallRepository.findDistinctProductNames()) {
+                queue.offer(KeywordQueue.keywordOf(name));
+            }
+        }
+
+        ApiSyncLog syncLog = ApiSyncLog.start(adminId, ApiType.RECALL);
+        LocalDateTime startedAt = LocalDateTime.now();
+
+        Set<Long> seen = new HashSet<>();
+        Map<String, Integer> insertedByYear = new TreeMap<>();
+        List<String> capped = new ArrayList<>();
+        List<String> failedKeywords = new ArrayList<>();
+        List<KeywordSyncResponse.KeywordResult> results = new ArrayList<>();
+        int calls = 0, withData = 0, fetched = 0, inserted = 0, updated = 0, failed = 0;
+        String oldest = null, newest = null;
+
+        String keyword;
+        while (calls < maxCalls && (keyword = queue.next()) != null) {
+            calls++;
+            RecallListApiResponse response;
+            try {
+                response = recallClient.fetchList(SafetyKoreaRecallClient.KEY_PRODUCT_NAME, keyword);
+            } catch (RuntimeException e) {
+                log.warn("[RecallSync] 키워드 '{}' 목록 조회 실패: {}", keyword, e.getMessage());
+                failedKeywords.add(keyword);
+                results.add(new KeywordSyncResponse.KeywordResult(keyword, 0, 0, false, "ERROR"));
+                sleepQuietly();
+                continue;
+            }
+
+            List<RecallListApiResponse.Item> items =
+                    response.resultData() == null ? List.of() : response.resultData();
+            boolean isCapped = items.size() >= LIST_CAP;
+            if (isCapped) {
+                capped.add(keyword);
+                log.warn("[RecallSync] 키워드 '{}' 가 {}건 상한에 걸렸다 — 결과 품목명으로 잘게 다시 훑는다",
+                        keyword, LIST_CAP);
+            } else {
+                queue.markComplete(keyword);
+            }
+
+            int newHere = 0;
+            for (RecallListApiResponse.Item item : items) {
+                if (expand) {
+                    queue.offer(KeywordQueue.keywordOf(item.recallProductName()));
+                }
+                Long uid = item.recallUid();
+                if (uid == null || !seen.add(uid)) {
+                    continue;
+                }
+                String date = item.publishDate();
+                if (date != null && PUBLISH_DATE.matcher(date).matches()) {
+                    if (oldest == null || date.compareTo(oldest) < 0) oldest = date;
+                    if (newest == null || date.compareTo(newest) > 0) newest = date;
+                }
+                boolean existed = recallRepository.existsById(uid);
+                if (!recallUpsertService.upsert(item, withImages)) {
+                    failed++;
+                } else if (existed) {
+                    updated++;
+                } else {
+                    inserted++;
+                    newHere++;
+                    String year = (date != null && date.length() >= 4) ? date.substring(0, 4) : "unknown";
+                    insertedByYear.merge(year, 1, Integer::sum);
+                }
+            }
+
+            fetched += items.size();
+            if (!items.isEmpty()) {
+                withData++;
+                results.add(new KeywordSyncResponse.KeywordResult(
+                        keyword, items.size(), newHere, isCapped, response.resultCode()));
+            }
+            log.info("[RecallSync] 키워드 {}/{} '{}' — 조회 {}건, 신규 {}건 (누적 신규 {}건)",
+                    calls, maxCalls, keyword, items.size(), newHere, inserted);
+            sleepQuietly();
+        }
+
+        List<String> pending = queue.remaining();
+        syncLog.finish(shortCode(failedKeywords.isEmpty() && pending.isEmpty() ? "2000" : "2000-P"),
+                inserted + updated);
+        apiSyncLogRepository.save(syncLog);
+
+        log.info("[RecallSync] 키워드 적재 완료 — 호출 {}회(생략 {}), 조회 {}건, 고유 {}건, 신규 {}건, 갱신 {}건, 실패 {}건, "
+                        + "공표일 {}~{}, 상한 {}개, 조회실패 {}개, 남은 키워드 {}개",
+                calls, queue.skipped(), fetched, seen.size(), inserted, updated, failed,
+                oldest, newest, capped.size(), failedKeywords.size(), pending.size());
+
+        return new KeywordSyncResponse(calls, withData, queue.skipped(), fetched, seen.size(),
+                inserted, updated, failed, oldest, newest, insertedByYear, capped, failedKeywords,
+                pending, withImages, syncLog.getId(), startedAt, LocalDateTime.now(), results);
+    }
+
+    private static List<String> concat(List<String> a, List<String> b) {
+        List<String> out = new ArrayList<>(a);
+        out.addAll(b);
+        return out;
     }
 
     /**

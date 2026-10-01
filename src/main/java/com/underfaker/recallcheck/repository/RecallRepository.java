@@ -84,4 +84,11 @@ public interface RecallRepository extends JpaRepository<Recall, Long> {
             ORDER BY r.recallUid DESC
             """)
     List<Long> findUidsWithoutFiles(Pageable pageable);
+
+    /**
+     * 적재된 품목 분류명(recall_product_name) 목록 — 중복 제거.
+     * 10/1 추가. 품목명 키워드 적재(RecallSyncService.syncByKeywords)가 출발 키워드로 쓴다.
+     */
+    @Query("SELECT DISTINCT r.recallProductName FROM Recall r WHERE r.recallProductName IS NOT NULL")
+    List<String> findDistinctProductNames();
 }

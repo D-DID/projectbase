@@ -122,25 +122,47 @@ public class RecallUpsertService {
         return saved;
     }
 
+    /**
+     * API 응답 → 엔티티.
+     *
+     * 10/1 수정 두 가지 (2012년 공표분까지 품목명으로 받으면서 생긴 것):
+     *   (1) categoryName 이 null 인 옛 공표분은 productItemName("어린이용품&gt;완구")으로 채운다.
+     *       category_name 은 매칭에 안 쓰고 화면 표시·어린이제품 구분(MatchProfile.isChildCategory)에만 쓴다.
+     *   (2) 문자열을 컬럼 길이에 맞춰 자른다. 옛 공표문은 모델명 나열·설명이 길어서 VARCHAR 를 넘기면
+     *       "Data too long" 으로 그 행이 통째로 저장 실패한다. 행을 잃는 것보다 뒤를 자르는 편이 낫다.
+     *       길이는 Recall 엔티티의 @Column(length) 와 같아야 한다.
+     */
     private Recall toEntity(RecallListApiResponse.Item item) {
+        String category = (item.categoryName() == null || item.categoryName().isBlank())
+                ? item.productItemName() : item.categoryName();
         return Recall.builder()
                 .recallUid(item.recallUid())
-                .recallProductName(item.recallProductName())
-                .recallBrandName(item.recallBrandName())
-                .recallModelName(item.recallModelName())
+                .recallProductName(fit(item.recallProductName(), 255, item))
+                .recallBrandName(fit(item.recallBrandName(), 255, item))
+                .recallModelName(fit(item.recallModelName(), 1000, item))
                 .recallModelCnt(item.recallModelCnt())
-                .barcodeNum(item.barcodeNum())
-                .certNum(item.certNum())
-                .categoryName(item.categoryName())
-                .recallTypeName(item.recallTypeName())
-                .recallMeans(item.recallMeans())
-                .recallCmpnyName(item.recallCmpnyName())
-                .makerName(item.makerName())
-                .makingCntryName(item.makingCntryName())
+                .barcodeNum(fit(item.barcodeNum(), 64, item))
+                .certNum(fit(item.certNum(), 255, item))
+                .categoryName(fit(category, 255, item))
+                .recallTypeName(fit(item.recallTypeName(), 100, item))
+                .recallMeans(fit(item.recallMeans(), 255, item))
+                .recallCmpnyName(fit(item.recallCmpnyName(), 255, item))
+                .makerName(fit(item.makerName(), 255, item))
+                .makingCntryName(fit(item.makingCntryName(), 255, item))
                 .publishDate(item.publishDate())
                 .harmDscr(item.harmDscr())
                 .accidentCaseDscr(item.accidentCaseDscr())
                 .publishActionDscr(item.publishActionDscr())
                 .build();
+    }
+
+    /** 컬럼 길이(max)를 넘으면 자르고 로그를 남긴다. 한글도 VARCHAR(n) 은 글자 수 기준이다(MySQL utf8mb4). */
+    static String fit(String value, int max, RecallListApiResponse.Item item) {
+        if (value == null || value.length() <= max) {
+            return value;
+        }
+        log.debug("[RecallUpsert] 컬럼 길이 {} 초과로 자름 (recallUid={}, 원래 {}자)",
+                max, item.recallUid(), value.length());
+        return value.substring(0, max);
     }
 }
