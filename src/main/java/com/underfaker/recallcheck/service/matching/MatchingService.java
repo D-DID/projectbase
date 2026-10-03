@@ -1,9 +1,11 @@
 package com.underfaker.recallcheck.service.matching;
 
+import com.underfaker.recallcheck.common.KcCertNumbers;
 import com.underfaker.recallcheck.common.ListingTextCleaner;
 import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
 import com.underfaker.recallcheck.dto.internal.FieldComparison;
 import com.underfaker.recallcheck.dto.internal.ImageInsight;
+import com.underfaker.recallcheck.dto.internal.KcLookup;
 import com.underfaker.recallcheck.dto.internal.MatchCandidate;
 import com.underfaker.recallcheck.dto.internal.MatchOutcome;
 import com.underfaker.recallcheck.entity.MatchResult;
@@ -315,8 +317,91 @@ public class MatchingService {
 
         addImageComparison(comparisons, insight, recall, profile);
 
+        // 비교할 다른 항목이 하나도 없는데 반영 안 되는 인증 모델명 행만 생기면, 대조 대상이 아니던 리콜이
+        // 0점 후보로 저장된다(10/3 리뷰). 그래서 반영될 때(완전일치)나 다른 항목이 있을 때만 싣는다.
+        addCertModelComparison(comparisons, KcLookup.fromRawText(product.rawText()), recall, profile);
+
         return comparisons;
     }
+
+    /**
+     * 10/3 추가 — KC 인증 DB 모델명 대조(KC인증 연동).
+     *
+     * 검증 때 인증번호로 조회한 인증 DB 모델명([kc-lookup] 블록)을 공표문 모델명 칸과 잰다. 재는 규칙은
+     * 모델명 칸과 같다(addListComparison 의 modelStyle). 다만 <b>정확히 같을 때만</b> 모델명 가중치로 반영하고,
+     * 아니면 가중치 0 으로 근거표에만 남긴다 — 이미지판독 하한(IMAGE_LABEL_MIN_SCORE)과 같은 방식이다.
+     *
+     * 왜 한쪽만 반영하나: KC 번호 하나에 모델이 여러 개 묶이고, 인증 DB 는 대표 모델 하나만 준다(10/3 실측:
+     * 리콜 번호 2,100개 중 107개가 모델 2개 이상, B361R3583-1003 은 인증 "테디웨딩베어" / 리콜 "허스키미니").
+     * 대표 모델명이 다르다는 건 "다른 제품"의 증거가 아니라서 판정을 깎으면 진짜 리콜을 놓친다.
+     * 같으면 "그 번호로 인증받은 바로 그 모델이 리콜됐다"는 뜻이라 인증번호 완전일치와 같은 급의 근거다
+     * (DecisionResolver.IDENTIFIER_FIELDS).
+     *
+     * 오탐을 막는 조건 두 가지(10/3 리뷰):
+     *   1) 공표문 인증번호 칸에 <b>다른</b> 번호가 있으면 반영하지 않는다 — 다른 번호로 인증받은 제품이다.
+     *      칸이 비었거나 "-"·"공급자적합성" 같은 값이면, 또는 우리 번호가 들어 있으면 반영한다.
+     *   2) 품번꼴이 아닌 모델명(상품명 문장)은 공표문 모델명 칸 <b>전체</b>와 같을 때만 인정한다 —
+     *      "곰인형 / 토끼인형" 같은 칸의 조각 하나와 짧은 일반명이 우연히 같아지는 걸 막는다.
+     *   3) 품번꼴이 아닌 모델명이 {@value #CERT_MODEL_MIN_NAME_LENGTH}글자 미만이면 반영하지 않는다(10/3 실조회 20건 점검) —
+     *      B364R116-9002 의 인증 모델명이 "물총", 리콜 공표문 모델명도 "물총"인 건이 있었다. 이런 일반명은
+     *      번호 없는 다른 회사 "물총" 리콜과도 같아지므로 확정 근거가 못 된다.
+     */
+    private void addCertModelComparison(List<FieldComparison> out, KcLookup kc,
+                                        Recall recall, MatchProfile profile) {
+        String certModel = kc == null ? null : kc.modelNameForMatching();
+        if (certModel == null) {
+            return;
+        }
+        String normalizedCert = fieldNormalizer.normalizeModelName(certModel);
+        boolean identifier = isIdentifier(true, recall.getRecallModelName());
+        List<String> officials = identifier
+                ? fieldNormalizer.splitList(recall.getRecallModelName())
+                : (recall.getRecallModelName() == null ? List.of() : List.of(recall.getRecallModelName()));
+        if (normalizedCert == null || officials.isEmpty()) {
+            return;
+        }
+        double best = -1.0;
+        String bestOfficial = null;
+        for (String official : officials) {
+            String normalizedOfficial = fieldNormalizer.normalizeModelName(official);
+            if (normalizedOfficial == null) {
+                continue;
+            }
+            double score = identifier
+                    ? similarityCalculator.identifierSimilarity(normalizedCert, normalizedOfficial)
+                    : similarityCalculator.similarity(normalizedCert, normalizedOfficial);
+            if (score > best) {
+                best = score;
+                bestOfficial = official;
+            }
+        }
+        if (bestOfficial == null) {
+            return;
+        }
+        boolean sameCertFamily = sameCertFamily(kc.certNum(), recall.getCertNum());
+        boolean specificName = identifier || normalizedCert.length() >= CERT_MODEL_MIN_NAME_LENGTH;
+        double weight = best >= DecisionResolver.EXACT && sameCertFamily && specificName
+                ? similarityCalculator.weightOf("modelName", profile) : 0.0;
+        if (weight == 0.0 && out.isEmpty()) {
+            return;
+        }
+        out.add(new FieldComparison(CERT_MODEL_FIELD, certModel, bestOfficial, best, weight));
+    }
+
+    /** 공표문 인증번호 칸에 번호가 없거나(플레이스홀더) 우리 번호가 들어 있으면 true. 다른 번호만 있으면 false. */
+    static boolean sameCertFamily(String ourCertNum, String recallCertCell) {
+        List<String> recallNumbers = KcCertNumbers.extract(recallCertCell);
+        if (recallNumbers.isEmpty()) {
+            return true;
+        }
+        return ourCertNum != null && recallNumbers.stream().anyMatch(n -> n.equalsIgnoreCase(ourCertNum.trim()));
+    }
+
+    /** 품번꼴이 아닌 인증 모델명을 근거로 쓸 최소 글자 수(정규화 후). "물총"·"내의" 같은 일반명을 거른다. */
+    static final int CERT_MODEL_MIN_NAME_LENGTH = 4;
+
+    /** 근거표 항목 이름 — 인증 DB 모델명 대조 */
+    public static final String CERT_MODEL_FIELD = "certModelName";
 
     /**
      * 이미지 판독 결과 대조.
@@ -603,6 +688,7 @@ public class MatchingService {
             case "makerName" -> "제조사";
             case "brandName" -> "브랜드";
             case "imageLabel" -> "이미지판독";
+            case CERT_MODEL_FIELD -> "인증 모델명";
             default -> field;
         };
     }

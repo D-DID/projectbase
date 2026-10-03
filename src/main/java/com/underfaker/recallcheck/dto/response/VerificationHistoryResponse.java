@@ -40,6 +40,11 @@ public record VerificationHistoryResponse(
            웹 직접입력·9/27 이전 건은 null. 쿠팡 결과 화면이 "KC 인증 대상 제품이 몇 개였는지"를 보여 주는 데 쓴다.
            kcText 는 판매자가 KC 칸에 적은 원문(예: "해당없음(14세 이상)") — 근거 표시용 */
         String kcStatus,
-        String kcText
+        String kcText,
+
+        /* 10/3 — KC 인증 DB 조회 결과(FOUND/NOT_FOUND/UNAVAILABLE)와 인증상태 원문("적합"·"기간만료" 등).
+           인증번호가 없었거나 10/3 이전 검증이면 null */
+        String kcLookup,
+        String kcCertState
 ) {
 }

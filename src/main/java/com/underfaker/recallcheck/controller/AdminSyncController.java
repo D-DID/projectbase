@@ -122,10 +122,24 @@ public class AdminSyncController {
         return ApiResponse.success(recallSyncService.syncImages(limit));
     }
 
-    /** FR-016 KC인증 데이터 동기화 실행 */
+    /**
+     * FR-016 KC인증 캐시 갱신 (10/3 변경 — KC인증 연동).
+     *
+     * 판정은 검증 때 인증번호로 바로 조회하므로(KcLookupService) 여기서 미리 적재할 필요는 없다.
+     * 이 엔드포인트는 캐시를 새로 받을 때 쓴다 — 인증상태(적합 → 취소·사용금지)가 바뀌었을 수 있어서.
+     *
+     * <pre>
+     * POST /api/admin/sync/certifications?adminId=1&amp;certNums=CB067R2225-4001,B361R3583-1003   ← 지정한 번호
+     * POST /api/admin/sync/certifications?adminId=1&amp;max=100                                  ← 7일 넘은 캐시 100건
+     * </pre>
+     * recordCount = 인증 DB 에서 찾아 갱신한 건수. resultCode 2000-P = 일부 조회 실패(로그에 번호가 남는다).
+     */
     @PostMapping("/certifications")
-    public ApiResponse<SyncLogResponse> syncCertifications(@RequestParam Long adminId) {
-        return ApiResponse.success(certificationSyncService.sync(adminId));
+    public ApiResponse<SyncLogResponse> syncCertifications(
+            @RequestParam Long adminId,
+            @RequestParam(required = false) List<String> certNums,
+            @RequestParam(defaultValue = "100") int max) {
+        return ApiResponse.success(certificationSyncService.sync(adminId, certNums, max));
     }
 
     /** FR-017 동기화 실행 이력 조회 */

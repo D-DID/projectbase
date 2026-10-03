@@ -38,6 +38,9 @@ public record VerificationResultResponse(
         String resultState,
         String imageCheck,
         Boolean imageCheckAvailable,
-        String missingReason
+        String missingReason,
+
+        /* 10/3 — KC 인증 DB 조회 결과(KC인증 연동). 인증번호를 안 넣었거나 10/3 이전 검증이면 null */
+        KcCertResponse kc
 ) {
 }

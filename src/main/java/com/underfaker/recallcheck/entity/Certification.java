@@ -90,6 +90,11 @@ public class Certification implements Persistable<Long> {
         this.makerCntryName = makerCntryName;
         this.syncedAt = LocalDateTime.now();
     }
+    /** 10/3 — 관리자 갱신에서 인증 DB 에 더는 없는 번호로 확인된 행. 다음 갱신 대상 맨 앞에 계속 걸리지 않게 시각만 갱신한다. */
+    public void markChecked() {
+        this.syncedAt = LocalDateTime.now();
+    }
+
     public void syncFrom(Certification fresh) {
         this.certNum = fresh.certNum;
         this.certState = fresh.certState;
