@@ -60,24 +60,48 @@ class KcCertMatchingTest {
         Recall recall = pinkFootRecall("CB067R2225-4001");
 
         Decision before = decide(seller, recall);
-        Decision after = decide(PINK_FOOT_CERT.fillBlanks(seller), recall);
+        Decision after = decide(PINK_FOOT_CERT.applyTo(seller), recall);
 
         assertNotEquals(Decision.MATCH, before);   // 원문 그대로는 인증번호·모델명 확정 근거가 없다
         assertEquals(Decision.MATCH, after);
     }
 
     @Test
-    void 리콜_공표문에_인증번호가_없어도_인증DB_모델명으로_일치() {
+    void 리콜_공표문에_인증번호가_없어도_인증DB_모델명이_같으면_일치() {
         // 리콜 4,092건 중 948건(23%)은 인증번호 칸이 "-"·"공급자적합성" 등이라 번호로는 못 잡는다(10/3 실측).
         ExtractedProduct seller = new ExtractedProduct("핑크풋 슬라임 대용량 3종 세트", null, null, null, null,
                 "CB067R2225-4001", null, null, 1.0);
         Recall recallWithoutCert = pinkFootRecall("-");
 
         Decision before = decide(seller, recallWithoutCert);
-        Decision after = decide(PINK_FOOT_CERT.fillBlanks(seller), recallWithoutCert);
+        Decision after = decide(PINK_FOOT_CERT.applyTo(seller), recallWithoutCert);
 
         assertNotEquals(Decision.MATCH, before);
         assertEquals(Decision.MATCH, after);   // 인증 DB 모델명 "핑크풋 슬라임" = 공표문 모델명
+    }
+
+    @Test
+    void 인증DB_대표_모델명이_리콜_모델명과_다르면_판정을_깎지_않는다() {
+        // 10/3 실측: B361R3583-1003 — 인증 DB 대표 모델 "테디웨딩베어", 같은 번호의 리콜(uid 2855) 모델 "허스키미니".
+        // KC 번호 하나에 모델이 여러 개다. 대표 모델명이 다르다는 건 "다른 제품"의 증거가 아니다.
+        KcLookup teddy = new KcLookup(KcLookup.Status.FOUND, "B361R3583-1003", "기간만료", "20110826",
+                "완구", null, "테디웨딩베어", "-", "중국", "API");
+        Recall husky = Recall.builder()
+                .recallUid(2855L).recallProductName("완구(비작동완구)").recallModelName("허스키미니")
+                .certNum("-").publishDate("20130103").build();   // 번호 칸을 비워 인증 모델명 효과만 본다
+        ExtractedProduct seller = new ExtractedProduct("허스키미니 강아지 인형", null, null, null, null,
+                "B361R3583-1003", null, null, 1.0);
+
+        MatchProfile profile = MatchProfile.of(husky);
+        List<FieldComparison> withKc = matching.compare(teddy.applyTo(seller), husky, profile);
+        double before = calculator.weightedScore(matching.compare(seller, husky, profile));
+        double after = calculator.weightedScore(withKc);
+
+        assertEquals(before, after, 1e-9);                       // 점수 그대로
+        assertEquals(decide(seller, husky), decide(teddy.applyTo(seller), husky));
+        FieldComparison certRow = withKc.stream()
+                .filter(c -> c.field().equals(MatchingService.CERT_MODEL_FIELD)).findFirst().orElseThrow();
+        assertEquals(0.0, certRow.weight());                     // 근거표엔 남되 반영 안 함
     }
 
     @Test
@@ -87,9 +111,48 @@ class KcCertMatchingTest {
         Recall recall = pinkFootRecall("-");
 
         Decision before = decide(seller, recall);
-        Decision after = decide(KcLookup.notFound("XX00000-00000").fillBlanks(seller), recall);
+        Decision after = decide(KcLookup.notFound("XX00000-00000").applyTo(seller), recall);
 
         assertEquals(before, after);
         assertNotEquals(Decision.MATCH, after);
+    }
+
+    @Test
+    void 공표문에_다른_인증번호가_있으면_인증_모델명이_같아도_일치로_올리지_않는다() {
+        // 10/3 리뷰: 우리 번호 CB067R2225-4001 의 대표 모델명과 같은 이름이지만, 다른 번호로 인증받은 리콜
+        ExtractedProduct seller = new ExtractedProduct("핑크풋 슬라임 대용량 3종 세트", null, null, null, null,
+                "CB067R2225-4001", null, null, 1.0);
+        Recall otherCert = pinkFootRecall("CB099R0001-1001");
+
+        Decision before = decide(seller, otherCert);
+        Decision after = decide(PINK_FOOT_CERT.applyTo(seller), otherCert);
+
+        assertEquals(before, after);
+        assertNotEquals(Decision.MATCH, after);
+    }
+
+    @Test
+    void 상품명_문장_칸의_조각과만_같으면_인정하지_않는다() {
+        // 10/3 리뷰: UNIDENTIFIED 공표문 "곰인형 / 토끼인형" 조각과 짧은 일반명 "곰인형" 이 우연히 같아지는 경우
+        KcLookup bear = new KcLookup(KcLookup.Status.FOUND, "B111R111-1111", "적합", null, "완구", null,
+                "곰인형", "-", null, "API");
+        Recall sentence = Recall.builder().recallUid(9L).recallProductName("완구")
+                .recallModelName("곰인형 / 토끼인형").certNum("-").publishDate("20200101").build();
+        ExtractedProduct seller = new ExtractedProduct("포근한 곰인형", null, null, null, null,
+                "B111R111-1111", null, null, 1.0);
+
+        assertEquals(decide(seller, sentence), decide(bear.applyTo(seller), sentence));
+        assertNotEquals(Decision.MATCH, decide(bear.applyTo(seller), sentence));
+    }
+
+    @Test
+    void 대조할_항목이_없던_리콜에_반영_안되는_행만_생기지_않는다() {
+        // 10/3 리뷰: 다른 항목이 하나도 없는데 가중치 0 인 인증 모델명 행만 있으면 0점 후보가 저장된다
+        ExtractedProduct seller = new ExtractedProduct(null, null, null, null, null, "B361R3583-1003", null, null, 1.0);
+        KcLookup teddy = new KcLookup(KcLookup.Status.FOUND, "B361R3583-1003", "기간만료", null, "완구", null,
+                "테디웨딩베어", "-", null, "API");
+        Recall husky = Recall.builder().recallUid(2855L).recallModelName("허스키미니").publishDate("20130103").build();
+
+        assertEquals(List.of(), matching.compare(teddy.applyTo(seller), husky, MatchProfile.of(husky)));
     }
 }

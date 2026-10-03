@@ -20,43 +20,50 @@ class KcLookupTest {
     }
 
     @Test
-    void 비어있는_모델명을_채운다_제조사_하이픈은_채우지_않는다() {
+    void 모델명_제조사_칸은_채우지_않고_블록만_싣는다() {
+        // KC 번호 하나에 모델이 여러 개라 대표 모델명으로 빈칸을 채우지 않는다(10/3 실측 후 변경)
         ExtractedProduct in = product("핑크풋 슬라임 대용량 3종", null, null, "CB067R2225-4001");
-        ExtractedProduct out = PINK_FOOT.fillBlanks(in);
-        assertEquals("핑크풋 슬라임", out.modelName());
-        assertNull(out.makerName());                       // "-" 는 값이 아니다
-        assertNull(out.brandName());                       // "" 도 값이 아니다
-        assertEquals("핑크풋 슬라임 대용량 3종", out.productName()); // 품목명 "완구"로 덮지 않는다
-        assertEquals("CB067R2225-4001", out.certNum());
-        assertEquals("모델명", PINK_FOOT.filledFields(in));
+        ExtractedProduct out = PINK_FOOT.applyTo(in);
+        assertNull(out.modelName());
+        assertNull(out.makerName());
+        assertEquals("핑크풋 슬라임 대용량 3종", out.productName());
+        assertEquals("핑크풋 슬라임", KcLookup.fromRawText(out.rawText()).modelNameForMatching());
     }
 
     @Test
-    void 이미_입력한_값은_덮지_않는다() {
-        ExtractedProduct in = product("슬라임", "PF-100", "핑크풋", "CB067R2225-4001");
-        ExtractedProduct out = PINK_FOOT.fillBlanks(in);
-        assertEquals("PF-100", out.modelName());
-        assertEquals("핑크풋", out.makerName());
-        assertEquals("", PINK_FOOT.filledFields(in));
+    void 블록은_한번만_붙는다_판정근거_재계산과_같은_결과() {
+        ExtractedProduct once = PINK_FOOT.applyTo(product("슬라임", null, null, "CB067R2225-4001"));
+        ExtractedProduct twice = KcLookup.applyFromRawText(once);
+        assertEquals(once, twice);
+        assertEquals(1, once.rawText().split("\\[kc-lookup\\]", -1).length - 1);
     }
 
     @Test
-    void FOUND_가_아니면_입력_그대로() {
+    void FOUND_가_아니면_번호는_그대로_블록만_싣는다() {
         ExtractedProduct in = product("슬라임", null, null, "KC 인증번호: XX00000-00000");
-        assertSame(in, KcLookup.notFound("XX00000-00000").fillBlanks(in));
-        assertSame(in, KcLookup.unavailable("XX00000-00000").fillBlanks(in));
+        ExtractedProduct out = KcLookup.notFound("XX00000-00000").applyTo(in);
+        assertEquals("KC 인증번호: XX00000-00000", out.certNum());
+        assertNull(KcLookup.fromRawText(out.rawText()).modelNameForMatching());
+        assertEquals("KC 인증번호: XX00000-00000",
+                KcLookup.unavailable("XX00000-00000").applyTo(in).certNum());
     }
 
     @Test
     void 번호가_하나면_정리된_번호로_바꾼다() {
         ExtractedProduct messy = product("핑크풋 슬라임", null, null, "KC 인증번호: CB067R2225-4001 (어린이제품)");
-        assertEquals("CB067R2225-4001", PINK_FOOT.fillBlanks(messy).certNum());
+        assertEquals("CB067R2225-4001", PINK_FOOT.applyTo(messy).certNum());
     }
 
     @Test
     void 번호가_여럿이면_원문을_둔다() {
         String raw = "CB067R2225-4001, CB067R2225-4002";
-        assertEquals(raw, PINK_FOOT.fillBlanks(product("슬라임", null, null, raw)).certNum());
+        assertEquals(raw, PINK_FOOT.applyTo(product("슬라임", null, null, raw)).certNum());
+    }
+
+    @Test
+    void 인증_모델명이_하이픈이면_대조에_쓰지_않는다() {
+        KcLookup dash = new KcLookup(KcLookup.Status.FOUND, "A11-1001", "적합", null, null, null, "-", "-", null, "API");
+        assertNull(dash.modelNameForMatching());
     }
 
     @Test
@@ -85,9 +92,9 @@ class KcLookupTest {
 
     @Test
     void 판정근거_재계산용_applyFromRawText() {
-        ExtractedProduct merged = new ExtractedProduct("슬라임", null, null, null, null, "CB067R2225-4001",
-                null, "[detail]\nkc: DISCLOSED\n[/detail]\n" + PINK_FOOT.toBlock(), 1.0);
-        assertEquals("핑크풋 슬라임", KcLookup.applyFromRawText(merged).modelName());
+        ExtractedProduct merged = new ExtractedProduct("슬라임", null, null, null, null,
+                "KC 인증번호: CB067R2225-4001", null, "[detail]\nkc: DISCLOSED\n[/detail]\n" + PINK_FOOT.toBlock(), 1.0);
+        assertEquals("CB067R2225-4001", KcLookup.applyFromRawText(merged).certNum());
         ExtractedProduct noBlock = product("슬라임", null, null, null);
         assertSame(noBlock, KcLookup.applyFromRawText(noBlock));
     }

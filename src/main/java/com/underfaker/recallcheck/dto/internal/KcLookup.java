@@ -10,18 +10,16 @@ import java.util.Set;
  * KC 인증번호로 인증 DB(certification 캐시 + KC 목록 API)를 조회한 결과 (10/3 추가, KC인증 연동).
  *
  * <h3>판정에 어떻게 쓰이나</h3>
- * {@link #fillBlanks(ExtractedProduct)} — 사용자가 비워 둔 <b>모델명·제조사·브랜드</b>를 인증 DB 값으로 채운다.
- * 판매글에는 KC 번호만 있고 모델명이 없는 경우가 많은데, 인증 DB 에는 그 번호로 인증받은 모델명이 있다.
- * 10/3 실측: CB067R2225-4001 → 모델명 "핑크풋 슬라임" → 9/16 공표 리콜 "핑크풋 슬라임"과 모델명 완전일치.
- * 이미 입력된 값은 덮어쓰지 않는다(IdentityMerger 와 같은 "비면 채운다" 규칙).
- * 품목명(productName)은 채우지 않는다 — "완구" 같은 분류어라 후보 검색에 넣으면 무관한 리콜이 수백 건 걸린다.
- * 일치(MATCH)는 여전히 DecisionResolver 의 확정 근거(인증번호·모델명 완전일치)로만 난다.
+ * 인증 DB 모델명을 리콜 공표문 모델명과 대조하는 "인증 모델명" 근거로 쓴다(MatchingService.addCertModelComparison).
+ * 정확히 같으면 확정 근거(일치), 다르면 가중치 0 — 판정을 깎지 않는다. 같은 모델명으로 후보 리콜도 찾는다.
+ * 10/3 실측: CB067R2225-4001 → 인증 모델명 "핑크풋 슬라임" = 9/16 공표 리콜 모델명 → 일치.
+ * 모델명 칸을 직접 채우지 않는 이유는 applyTo 주석 참조(KC 번호 하나에 모델 여러 개).
  *
  * <h3>왜 raw_text 블록으로 저장하나</h3>
  * extraction.source 가 MySQL ENUM('URL','IMAGE','MANUAL') 이라 'KC' 행을 새로 넣으면 INSERT 가 실패하고,
  * 컬럼을 늘리면 ddl-auto=validate 로 ALTER 안 한 팀원 DB 에서 앱이 안 뜬다. 그래서 [detail]·[vision] 블록과
  * 같은 방식으로 MANUAL 행의 raw_text 에 남긴다. 판정근거(FR-014)를 나중에 다시 계산할 때도 이 블록을 읽어
- * 판정 당시와 같은 값으로 채운다(ExtractionService.loadMerged).
+ * 판정 당시와 같은 입력으로 다시 계산한다(ExtractionService.loadMerged → applyFromRawText).
  *
  * <pre>
  * [kc-lookup]
@@ -93,46 +91,45 @@ public record KcLookup(
     }
 
     /**
-     * 판정 입력을 인증 DB 조회 결과로 보강한다. FOUND 가 아니면 입력을 그대로 돌려준다.
+     * 판정 입력에 이 조회 결과를 싣는다.
      *
-     * 1) 비어 있는 모델명·제조사·브랜드를 인증 DB 값으로 채운다. 이미 값이 있으면 그대로 둔다.
-     * 2) 인증번호 칸 원문에 번호가 <b>딱 하나</b>면 그 정리된 번호로 바꾼다. 판매자가
-     *    "KC 인증번호: CB067R2225-4001 (어린이제품)" 처럼 적으면 원문 그대로는 리콜 공표문 인증번호와 비교·검색이 안 된다.
-     *    번호가 여럿이면 원문을 둔다 — 찾은 번호 하나로 바꾸면 나머지 번호로만 공표된 리콜을 놓친다(10/3 리뷰).
-     *    FOUND 일 때만 바꾼다 — 인증 DB 에 없는 번호는 정리가 맞았다는 보장이 없다.
+     * 1) raw_text 에 [kc-lookup] 블록을 붙인다(없을 때만). MatchingService·RecallQueryService 가 이 블록에서
+     *    인증 DB 모델명을 읽어 "인증 모델명" 근거와 후보 검색에 쓴다.
+     * 2) FOUND 이고 인증번호 칸 원문에 번호가 <b>딱 하나</b>면 그 정리된 번호로 바꾼다. 판매자가
+     *    "KC 인증번호: CB067R2225-4001 (어린이제품)" 처럼 적으면 원문 그대로는 공표문 인증번호와 비교·검색이 안 된다.
+     *    번호가 여럿이면 원문을 둔다 — 찾은 번호 하나로 바꾸면 나머지 번호로만 공표된 리콜을 놓친다.
      *
-     * 원문은 extraction.cert_num 에 그대로 남는다(여기서 바꾸는 건 판정 입력뿐). 같은 입력이면 같은 결과라서
-     * 판정근거 재계산(applyFromRawText)에서 다시 적용해도 판정 때와 같다.
+     * <b>모델명·제조사 칸은 채우지 않는다(10/3 실조회 후 변경).</b> KC 번호 하나에 모델이 여러 개 묶인다 —
+     * 리콜 데이터에서 번호 2,100개 중 107개가 모델 2개 이상(예: B362A237-7001A 에 큐브 4종),
+     * B361R3583-1003 은 인증 DB 대표 모델 "테디웨딩베어" / 리콜 공표 모델 "허스키미니".
+     * 대표 모델명으로 빈칸을 채우면 다른 모델일 때 "모델명 불일치"가 반대 증거가 되어 진짜 리콜을 놓칠 수 있다.
+     * 그래서 인증 모델명은 MatchingService 에서 <b>정확히 같을 때만</b> 확정 근거로 쓰고, 다르면 가중치 0 으로 근거표에만 남긴다.
+     *
+     * 원문은 extraction.cert_num 에 그대로 남는다. 같은 입력이면 같은 결과라 판정근거 재계산(applyFromRawText)에서
+     * 다시 적용해도 판정 때와 같다.
      */
-    public ExtractedProduct fillBlanks(ExtractedProduct p) {
-        if (p == null || !isFound()) {
-            return p;
+    public ExtractedProduct applyTo(ExtractedProduct p) {
+        if (p == null) {
+            return null;
         }
-        List<String> numbersInInput = KcCertNumbers.extract(p.certNum());
-        String certNumForMatching = (numbersInInput.size() == 1 && certNum != null
-                && numbersInInput.get(0).equalsIgnoreCase(certNum)) ? certNum : p.certNum();
-        return new ExtractedProduct(
-                p.productName(),
-                pick(p.brandName(), brandName),
-                pick(p.modelName(), modelName),
-                pick(p.makerName(), makerName),
-                p.barcodeNum(),
-                certNumForMatching,
-                p.thumbnailUrl(),
-                p.rawText(),
-                p.confidence());
+        String raw = p.rawText();
+        if (fromRawText(raw) == null) {
+            raw = (raw == null || raw.isBlank()) ? toBlock() : raw + "\n" + toBlock();
+        }
+        String certNumForMatching = p.certNum();
+        if (isFound()) {
+            List<String> numbersInInput = KcCertNumbers.extract(p.certNum());
+            if (numbersInInput.size() == 1 && certNum != null && numbersInInput.get(0).equalsIgnoreCase(certNum)) {
+                certNumForMatching = certNum;
+            }
+        }
+        return new ExtractedProduct(p.productName(), p.brandName(), p.modelName(), p.makerName(),
+                p.barcodeNum(), certNumForMatching, p.thumbnailUrl(), raw, p.confidence());
     }
 
-    /** 인증 DB 에서 실제로 채운 항목 이름들(화면 안내용). 채운 게 없으면 빈 문자열. */
-    public String filledFields(ExtractedProduct before) {
-        if (before == null || !isFound()) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder();
-        if (isBlank(before.modelName()) && meaningful(modelName)) sb.append("모델명,");
-        if (isBlank(before.makerName()) && meaningful(makerName)) sb.append("제조사,");
-        if (isBlank(before.brandName()) && meaningful(brandName)) sb.append("브랜드,");
-        return sb.length() == 0 ? "" : sb.substring(0, sb.length() - 1);
+    /** 판정에 쓸 인증 DB 모델명. FOUND 이고 실제 값일 때만, 아니면 null. */
+    public String modelNameForMatching() {
+        return isFound() && meaningful(modelName) ? modelName.trim() : null;
     }
 
     // ------------------------------------------------------------------ raw_text 블록
@@ -198,13 +195,13 @@ public record KcLookup(
                 modelName, makerName, makerCntryName, source);
     }
 
-    /** raw_text 에 블록이 있으면 그 값으로 빈 항목을 채운다(판정근거 재계산용). 없으면 그대로. */
+    /** raw_text 에 블록이 있으면 판정 때와 같게 적용한다(판정근거 재계산용). 없으면 그대로. */
     public static ExtractedProduct applyFromRawText(ExtractedProduct p) {
         if (p == null) {
             return null;
         }
         KcLookup kc = fromRawText(p.rawText());
-        return kc == null ? p : kc.fillBlanks(p);
+        return kc == null ? p : kc.applyTo(p);
     }
 
     // ------------------------------------------------------------------ 내부
@@ -216,17 +213,6 @@ public record KcLookup(
         }
         String t = s.trim();
         return !t.isEmpty() && !PLACEHOLDERS.contains(t.toUpperCase(Locale.ROOT));
-    }
-
-    private static String pick(String current, String candidate) {
-        if (!isBlank(current)) {
-            return current;
-        }
-        return meaningful(candidate) ? candidate.trim() : current;
-    }
-
-    private static boolean isBlank(String s) {
-        return s == null || s.isBlank();
     }
 
     private static Status parseStatus(String v) {

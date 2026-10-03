@@ -15,7 +15,6 @@ import com.underfaker.recallcheck.dto.internal.KcLookup;
  * @param certDate        인증일 yyyyMMdd
  * @param modelName       인증받은 모델명
  * @param makerName       제조사("-" 그대로 올 수 있음)
- * @param filledFromCert  인증 DB 값으로 비어 있던 항목을 채워 판정에 썼는지 (예: "모델명")
  */
 public record KcCertResponse(
         String status,
@@ -27,18 +26,16 @@ public record KcCertResponse(
         String modelName,
         String makerName,
         String makerCntryName,
-        String source,
-        String filledFromCert
+        String source
 ) {
 
-    public static KcCertResponse of(KcLookup kc, String filledFromCert) {
+    public static KcCertResponse of(KcLookup kc) {
         if (kc == null) {
             return null;
         }
         return new KcCertResponse(
                 kc.status() == null ? null : kc.status().name(),
                 kc.certNum(), kc.certState(), kc.stateNeedsAttention(), kc.certDate(),
-                kc.productName(), kc.modelName(), kc.makerName(), kc.makerCntryName(), kc.source(),
-                filledFromCert == null || filledFromCert.isBlank() ? null : filledFromCert);
+                kc.productName(), kc.modelName(), kc.makerName(), kc.makerCntryName(), kc.source());
     }
 }

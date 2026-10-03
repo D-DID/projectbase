@@ -149,12 +149,12 @@ public class VerificationService {
 
         ExtractedProduct product = extractionService.extractFromManualInput(verification.getId(), request);
 
-        // 10/3 — KC인증 연동. 인증 DB 에서 찾았으면 비어 있는 모델명·제조사를 채운다.
-        // 판매글엔 KC 번호만 있고 모델명이 없는 경우가 많은데, 인증 DB 의 모델명이 리콜 공표문 모델명과 맞으면
-        // 확정 근거(모델명 완전일치)가 생긴다. 조회 결과는 raw_text 에 남겨 판정근거 재계산 때도 같은 값을 쓴다.
+        // 10/3 — KC인증 연동. 조회 결과를 판정 입력에 싣는다(KcLookup.applyTo). 매칭은 인증 DB 모델명을
+        // 리콜 공표문 모델명과 대조해 정확히 같을 때만 확정 근거로 쓴다(다르면 판정을 깎지 않는다).
+        // 조회 결과는 raw_text 에 남겨 판정근거 재계산 때도 같은 값을 쓴다.
         if (kc != null) {
             extractionService.saveKcLookup(verification.getId(), kc);
-            product = kc.fillBlanks(product);
+            product = kc.applyTo(product);
         }
 
         if (product.isEmpty()) {
@@ -462,23 +462,10 @@ public class VerificationService {
         return kc == null || !kc.isFound() ? null : kc.certState();
     }
 
-    /**
-     * 10/3 — 결과 화면용 KC 인증 DB 조회 결과. 사용자가 직접 넣은 값(MANUAL 행)과 비교해
-     * 인증 DB 로 채운 항목(예: 모델명)을 함께 알려 준다.
-     */
+    /** 10/3 — 결과 화면용 KC 인증 DB 조회 결과. 조회하지 않았으면(번호 없음·이전 검증) null. */
     private KcCertResponse kcOf(Verification v) {
         Extraction primary = extractionService.primaryRow(v.getId());
-        if (primary == null) {
-            return null;
-        }
-        KcLookup kc = KcLookup.fromRawText(primary.getRawText());
-        if (kc == null) {
-            return null;
-        }
-        ExtractedProduct typed = new ExtractedProduct(primary.getProductName(), primary.getBrandName(),
-                primary.getModelName(), primary.getMakerName(), primary.getBarcodeNum(), primary.getCertNum(),
-                primary.getThumbnailUrl(), null, primary.getConfidence());
-        return KcCertResponse.of(kc, kc.filledFields(typed));
+        return primary == null ? null : KcCertResponse.of(KcLookup.fromRawText(primary.getRawText()));
     }
 
     private VerificationResultResponse toResult(Verification v, MatchCandidate best, Recall r) {

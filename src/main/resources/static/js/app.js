@@ -753,7 +753,8 @@ const FIELD_LABEL = {
   productName: '제품명',
   makerName: '제조사',
   brandName: '브랜드',
-  imageLabel: '이미지판독'
+  imageLabel: '이미지판독',
+  certModelName: '인증 모델명'   /* 10/3 — KC 인증 DB 모델명 대조. 완전일치일 때만 판정에 반영 */
 };
 
 /* comparisons[].field → 입력 비교 박스의 element id */
@@ -934,9 +935,7 @@ function kcCertHtml(d) {
     const state = esc(kc.certState || '상태 정보 없음');
     warn = !!kc.needsAttention;
     body = (warn ? '⚠ 인증상태 <strong>' + state + '</strong>' : '인증상태 ' + state) + ' — ' + facts;
-    if (kc.filledFromCert) {
-      body += '<br>비어 있던 항목(' + esc(kc.filledFromCert) + ')을 인증 정보로 채워 리콜 공표문과 대조했습니다.';
-    }
+    body += '<br>인증 모델명이 리콜 공표문 모델명과 같을 때만 판정 근거로 씁니다(아래 판정 근거의 \'인증 모델명\').';
     if (!warn) body += '<br>인증 여부는 리콜·안전 여부와 별개입니다.';
   } else if (kc.status === 'NOT_FOUND') {
     warn = true;
