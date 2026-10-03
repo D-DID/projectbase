@@ -916,7 +916,37 @@ function setResultState(fr, score, d) {
             '제품 정보를 추가한 후 다시 확인해주세요.';
   }
 
+  notice.innerHTML += kcCertHtml(d);
   notice.innerHTML += imageCheckHtml(d);
+}
+
+/* 10/3 — KC인증 연동. 입력한 KC 인증번호로 KC 인증 DB(제품안전정보센터)를 조회한 결과.
+   리콜 판정(일치/의심/불일치)과는 별개 정보다 — 인증이 '적합'이어도 안전하다는 뜻이 아니다(9/30 원칙).
+   서버 VerificationResultResponse.kc (KcCertResponse). 인증번호를 안 넣었으면 null 이라 아무것도 안 그린다. */
+function kcCertHtml(d) {
+  const kc = d && d.kc;
+  if (!kc || !kc.status) return '';
+  let body;
+  let warn = false;
+  if (kc.status === 'FOUND') {
+    const facts = [kc.certNum, kc.modelName, kc.certDate ? fmtDate(kc.certDate) + ' 인증' : null]
+            .filter(Boolean).map(esc).join(' · ');
+    const state = esc(kc.certState || '상태 정보 없음');
+    warn = !!kc.needsAttention;
+    body = (warn ? '⚠ 인증상태 <strong>' + state + '</strong>' : '인증상태 ' + state) + ' — ' + facts;
+    if (kc.filledFromCert) {
+      body += '<br>비어 있던 항목(' + esc(kc.filledFromCert) + ')을 인증 정보로 채워 리콜 공표문과 대조했습니다.';
+    }
+    if (!warn) body += '<br>인증 여부는 리콜·안전 여부와 별개입니다.';
+  } else if (kc.status === 'NOT_FOUND') {
+    warn = true;
+    body = esc(kc.certNum || '') + ' — KC 인증 DB에서 이 번호를 찾지 못했습니다. 번호를 다시 확인해 주세요.';
+  } else {
+    body = 'KC 인증 DB를 지금 조회하지 못했습니다' + (kc.certNum ? ' (' + esc(kc.certNum) + ')' : '') +
+            '. 리콜 대조는 입력한 정보로 그대로 진행했습니다.';
+  }
+  return '<br><span class="kc-cert" style="display:block;margin-top:8px;font-size:0.92em;' +
+          (warn ? 'color:#b45309;' : '') + '">🔖 KC 인증 조회: ' + body + '</span>';
 }
 
 /* 9/27 — 사진으로 찾기 버튼과 결과 문구. 서버가 imageCheckAvailable 을 내려줄 때만 버튼을 보인다
@@ -1167,6 +1197,14 @@ function kcHint(v) {
   }
 }
 
+/* 10/3 — 이력 한 줄에 KC 인증 DB 조회 결과를 짧게 붙인다(KC인증 연동) */
+function kcDbHint(v) {
+  if (!v || !v.kcLookup) return '';
+  if (v.kcLookup === 'FOUND') return 'KC 인증 ' + (v.kcCertState || '확인');
+  if (v.kcLookup === 'NOT_FOUND') return 'KC 인증 DB에 없는 번호';
+  return '';
+}
+
 function renderHistoryList(targetId, items) {
 
   const list = document.getElementById(targetId);
@@ -1186,7 +1224,8 @@ function renderHistoryList(targetId, items) {
     const sub = [
       fmtDateTime(v.createdAt),
       v.makerName || '',
-      kcHint(v)
+      kcHint(v),
+      kcDbHint(v)
     ].filter(Boolean).join(' · ');
 
     const statusNote =
