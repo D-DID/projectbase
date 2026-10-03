@@ -342,6 +342,9 @@ public class MatchingService {
      *      칸이 비었거나 "-"·"공급자적합성" 같은 값이면, 또는 우리 번호가 들어 있으면 반영한다.
      *   2) 품번꼴이 아닌 모델명(상품명 문장)은 공표문 모델명 칸 <b>전체</b>와 같을 때만 인정한다 —
      *      "곰인형 / 토끼인형" 같은 칸의 조각 하나와 짧은 일반명이 우연히 같아지는 걸 막는다.
+     *   3) 품번꼴이 아닌 모델명이 {@value #CERT_MODEL_MIN_NAME_LENGTH}글자 미만이면 반영하지 않는다(10/3 실조회 20건 점검) —
+     *      B364R116-9002 의 인증 모델명이 "물총", 리콜 공표문 모델명도 "물총"인 건이 있었다. 이런 일반명은
+     *      번호 없는 다른 회사 "물총" 리콜과도 같아지므로 확정 근거가 못 된다.
      */
     private void addCertModelComparison(List<FieldComparison> out, KcLookup kc,
                                         Recall recall, MatchProfile profile) {
@@ -376,7 +379,8 @@ public class MatchingService {
             return;
         }
         boolean sameCertFamily = sameCertFamily(kc.certNum(), recall.getCertNum());
-        double weight = best >= DecisionResolver.EXACT && sameCertFamily
+        boolean specificName = identifier || normalizedCert.length() >= CERT_MODEL_MIN_NAME_LENGTH;
+        double weight = best >= DecisionResolver.EXACT && sameCertFamily && specificName
                 ? similarityCalculator.weightOf("modelName", profile) : 0.0;
         if (weight == 0.0 && out.isEmpty()) {
             return;
@@ -392,6 +396,9 @@ public class MatchingService {
         }
         return ourCertNum != null && recallNumbers.stream().anyMatch(n -> n.equalsIgnoreCase(ourCertNum.trim()));
     }
+
+    /** 품번꼴이 아닌 인증 모델명을 근거로 쓸 최소 글자 수(정규화 후). "물총"·"내의" 같은 일반명을 거른다. */
+    static final int CERT_MODEL_MIN_NAME_LENGTH = 4;
 
     /** 근거표 항목 이름 — 인증 DB 모델명 대조 */
     public static final String CERT_MODEL_FIELD = "certModelName";
