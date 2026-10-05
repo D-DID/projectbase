@@ -6,12 +6,14 @@ import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
 import com.underfaker.recallcheck.dto.internal.ExtractionNotes;
 import com.underfaker.recallcheck.dto.internal.FieldComparison;
 import com.underfaker.recallcheck.dto.internal.ImageInsight;
+import com.underfaker.recallcheck.dto.internal.KcLookup;
 import com.underfaker.recallcheck.dto.internal.MatchCandidate;
 import com.underfaker.recallcheck.dto.internal.MatchOutcome;
 import com.underfaker.recallcheck.dto.internal.ResultView;
 import com.underfaker.recallcheck.dto.request.ImageVerifyRequest;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
 import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
+import com.underfaker.recallcheck.dto.response.KcCertResponse;
 import com.underfaker.recallcheck.dto.response.MatchEvidenceResponse;
 import com.underfaker.recallcheck.dto.response.VerificationHistoryResponse;
 import com.underfaker.recallcheck.dto.response.VerificationResultResponse;
@@ -31,6 +33,7 @@ import com.underfaker.recallcheck.repository.RecallRepository;
 import com.underfaker.recallcheck.repository.VerificationRepository;
 import com.underfaker.recallcheck.security.CustomUserDetailsService;
 import com.underfaker.recallcheck.service.extraction.ExtractionService;
+import com.underfaker.recallcheck.service.kc.KcLookupService;
 import com.underfaker.recallcheck.service.matching.MatchingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +72,8 @@ public class VerificationService {
     private final MatchingService matchingService;
     /** 9/27 — 사진 확인(사용자 클릭)에서만 쓴다. 자동 호출 없음. */
     private final GoogleVisionClient visionClient;
+    /** 10/3 — KC 인증번호 → 인증 DB 조회(KC인증 연동). 예외를 던지지 않는다. */
+    private final KcLookupService kcLookupService;
 
     /**
      * 자기 자신의 프록시 참조. verifyByManualInputBatch() 안에서 verifyByManualInput() 을
@@ -104,9 +109,9 @@ public class VerificationService {
      *   4) 후보 매칭 및 4단계 판정 (FR-010, 011, 012)
      *   5) 최종 판정 저장 후 결과 반환 (FR-013)
      */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VerificationResultResponse verifyByManualInput(ManualInputRequest request) {
-        return verifyByManualInput(request, VerificationChannel.WEB);
+        return self.verifyByManualInput(request, VerificationChannel.WEB);
     }
 
     /**
@@ -114,8 +119,26 @@ public class VerificationService {
      * 이 메서드를 EXTENSION 으로 호출한다. 위의 1-인자 버전(웹의 "제품 정보로 리콜 검증" 단건 폼이
      * 씀)은 WEB 을 넘기는 얇은 래퍼일 뿐, 로직은 완전히 동일하다.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VerificationResultResponse verifyByManualInput(ManualInputRequest request, VerificationChannel channel) {
+        requireUserId();
+        // 10/3 — KC인증 연동. KC 인증번호 조회(캐시 → KC API)는 검증 트랜잭션을 열기 <b>전에</b> 한다.
+        // 외부 API 를 기다리는 동안(최대 수 초) DB 커넥션을 잡고 있지 않게 하려는 것(10/3 리뷰).
+        // 직접입력 검증의 추출 결과는 이 요청 값 하나뿐이라 request.certNum() 이 곧 판정에 쓰는 인증번호다.
+        // 조회 실패·미등록이어도 판정은 그대로 진행한다(KcLookupService 는 예외를 던지지 않는다).
+        KcLookup kc = kcLookupService.lookup(request.certNum());
+        return self.verifyByManualInputWithKc(request, channel, kc);
+    }
+
+    /**
+     * 10/3 — 검증 본체(트랜잭션). verifyByManualInput 이 KC 조회를 트랜잭션 밖에서 끝낸 뒤 프록시로 부른다.
+     * 외부에서 직접 부르지 말 것.
+     *
+     * @param kc KC 인증 DB 조회 결과. 인증번호가 없었으면 null
+     */
+    @Transactional
+    public VerificationResultResponse verifyByManualInputWithKc(ManualInputRequest request,
+                                                                VerificationChannel channel, KcLookup kc) {
         Long userId = requireUserId();
 
         Verification verification = verificationRepository.save(Verification.builder()
@@ -125,6 +148,14 @@ public class VerificationService {
                 .build());
 
         ExtractedProduct product = extractionService.extractFromManualInput(verification.getId(), request);
+
+        // 10/3 — KC인증 연동. 조회 결과를 판정 입력에 싣는다(KcLookup.applyTo). 매칭은 인증 DB 모델명을
+        // 리콜 공표문 모델명과 대조해 정확히 같을 때만 확정 근거로 쓴다(다르면 판정을 깎지 않는다).
+        // 조회 결과는 raw_text 에 남겨 판정근거 재계산 때도 같은 값을 쓴다.
+        if (kc != null) {
+            extractionService.saveKcLookup(verification.getId(), kc);
+            product = kc.applyTo(product);
+        }
 
         if (product.isEmpty()) {
             verification.complete(FinalResult.UNKNOWN);
@@ -343,7 +374,8 @@ public class VerificationService {
                     extraction == null ? null : extraction.getMakerName(),
                     v.getStatus(), v.getFinalResult(), v.getCreatedAt(),
                     view.resultState(), view.imageCheck(), view.imageCheckAvailable(), view.missingReason(),
-                    ExtractionNotes.kcStatusName(rawText), ExtractionNotes.kcText(rawText));
+                    ExtractionNotes.kcStatusName(rawText), ExtractionNotes.kcText(rawText),
+                    kcLookupName(rawText), kcCertState(rawText));
         }));
     }
 
@@ -419,6 +451,23 @@ public class VerificationService {
         return "직접 입력";
     }
 
+    /** 10/3 — 이력 한 줄용 KC 인증 DB 조회 결과 */
+    private static String kcLookupName(String rawText) {
+        KcLookup kc = KcLookup.fromRawText(rawText);
+        return kc == null || kc.status() == null ? null : kc.status().name();
+    }
+
+    private static String kcCertState(String rawText) {
+        KcLookup kc = KcLookup.fromRawText(rawText);
+        return kc == null || !kc.isFound() ? null : kc.certState();
+    }
+
+    /** 10/3 — 결과 화면용 KC 인증 DB 조회 결과. 조회하지 않았으면(번호 없음·이전 검증) null. */
+    private KcCertResponse kcOf(Verification v) {
+        Extraction primary = extractionService.primaryRow(v.getId());
+        return primary == null ? null : KcCertResponse.of(KcLookup.fromRawText(primary.getRawText()));
+    }
+
     private VerificationResultResponse toResult(Verification v, MatchCandidate best, Recall r) {
         ResultView rv = viewOf(v);
         return new VerificationResultResponse(
@@ -437,7 +486,8 @@ public class VerificationService {
                 r == null ? null : r.getPublishActionDscr(),
                 r == null ? null : r.getPublishDate(),
                 v.getCreatedAt(),
-                rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason());
+                rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason(),
+                kcOf(v));
     }
 
     private VerificationResultResponse toResultFrom(Verification v, MatchResult m, Recall r) {
@@ -457,6 +507,7 @@ public class VerificationService {
                 r == null ? null : r.getPublishActionDscr(),
                 r == null ? null : r.getPublishDate(),
                 v.getCreatedAt(),
-                rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason());
+                rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason(),
+                kcOf(v));
     }
 }

@@ -3,6 +3,7 @@ package com.underfaker.recallcheck.service.sync;
 import com.underfaker.recallcheck.common.PageResponse;
 import com.underfaker.recallcheck.common.TextNormalizer;
 import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
+import com.underfaker.recallcheck.dto.internal.KcLookup;
 import com.underfaker.recallcheck.dto.request.RecallSearchRequest;
 import com.underfaker.recallcheck.dto.response.RecallDetailResponse;
 import com.underfaker.recallcheck.entity.Recall;
@@ -59,6 +60,9 @@ public class RecallQueryService {
 
     private static final int MAX_CANDIDATES = 50;
 
+    /** 10/3 — KC 인증 DB 모델명으로 더 찾는 후보 상한 */
+    private static final int CERT_MODEL_MAX_CANDIDATES = 10;
+
     /** 토큰 폴백에서 쓸 최소 토큰 길이. 2자는 "완구", "우산" 같은 분류어가 걸려 후보가 폭증한다. */
     private static final int MIN_TOKEN_LENGTH = 3;
 
@@ -98,6 +102,17 @@ public class RecallQueryService {
         String certKey = fieldNormalizer.searchKey(product.certNum());
         if (certKey != null) {
             put(merged, recallRepository.findByNormalizedCertNumContaining(certKey));
+        }
+
+        // 10/3 — KC인증 연동. 인증 DB 모델명으로도 찾는다. 공표문 인증번호 칸이 "-"·"공급자적합성" 등이라
+        // 번호로는 못 찾는 리콜(4,092건 중 23%)을 모델명으로 잡기 위해서. 판정은 MatchingService 가 완전일치만 반영한다.
+        KcLookup kc = KcLookup.fromRawText(product.rawText());
+        String certModelKey = kc == null ? null : fieldNormalizer.modelSearchKey(kc.modelNameForMatching());
+        if (certModelKey != null) {
+            // 흔한 이름("슬라임")이면 수백 건이 걸려 다른 후보·사진 확인 후보 자리를 차지한다(10/3 리뷰) — 앞 10건만.
+            List<Recall> byCertModel = recallRepository.findByNormalizedModelNameContaining(certModelKey);
+            put(merged, byCertModel.size() > CERT_MODEL_MAX_CANDIDATES
+                    ? byCertModel.subList(0, CERT_MODEL_MAX_CANDIDATES) : byCertModel);
         }
 
         String modelKey = fieldNormalizer.modelSearchKey(product.modelName());

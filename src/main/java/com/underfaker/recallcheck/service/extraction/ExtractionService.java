@@ -3,6 +3,7 @@ package com.underfaker.recallcheck.service.extraction;
 import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
 import com.underfaker.recallcheck.dto.internal.ExtractionNotes;
 import com.underfaker.recallcheck.dto.internal.ImageInsight;
+import com.underfaker.recallcheck.dto.internal.KcLookup;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
 import com.underfaker.recallcheck.entity.Extraction;
 import com.underfaker.recallcheck.entity.enums.SourceType;
@@ -77,6 +78,9 @@ public class ExtractionService {
      * 항목별 입력값을 복원할 수 없다. 그래서 extraction 행을 다시 읽어서 합친다.
      * 검증할 때 쓰는 통합 규칙(IdentityMerger)을 그대로 재사용하므로 같은 값이 나온다.
      *
+     * 10/3 — [kc-lookup] 블록이 있으면 검증 때와 같게 적용한다(정리된 인증번호, 인증 모델명 근거).
+     * 이걸 안 하면 판정근거 화면이 KC 조회 없이 다시 계산돼 판정과 근거가 어긋난다.
+     *
      * @return 추출 행이 하나도 없으면 null (호출 쪽에서 빈 근거로 처리)
      */
     @Transactional(readOnly = true)
@@ -85,7 +89,25 @@ public class ExtractionService {
                 .map(ExtractionService::toExtractedProduct)
                 .toList();
 
-        return sources.isEmpty() ? null : identityMerger.merge(sources);
+        return sources.isEmpty() ? null : KcLookup.applyFromRawText(identityMerger.merge(sources));
+    }
+
+    /**
+     * 10/3 추가 — KC 인증 DB 조회 결과를 남긴다(KC인증 연동).
+     *
+     * saveImageInsight 와 같은 방식 — 첫 추출 행(직접입력이면 MANUAL 행)의 raw_text 에 [kc-lookup] 블록을 덧붙인다.
+     * 새 컬럼·새 source 값을 쓰지 않는 이유는 KcLookup 주석 참조(ddl-auto=validate, source ENUM).
+     */
+    public void saveKcLookup(Long verificationId, KcLookup lookup) {
+        if (lookup == null) {
+            return;
+        }
+        Extraction target = primaryRow(verificationId);
+        if (target == null) {
+            return;
+        }
+        target.appendRawText(lookup.toBlock());
+        extractionRepository.save(target);
     }
 
     /**

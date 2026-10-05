@@ -62,8 +62,11 @@ public class DecisionResolver {
     /** 부동소수 오차를 감안한 100% */
     static final double EXACT = 0.9999;
 
-    /** 완전일치 하나만으로 일치를 확정할 수 있는 항목 */
-    static final Set<String> IDENTIFIER_FIELDS = Set.of("certNum", "modelName");
+    /**
+     * 완전일치 하나만으로 일치를 확정할 수 있는 항목.
+     * 10/3 — certModelName(인증 DB 모델명 = 공표문 모델명) 추가. MatchingService 가 완전일치일 때만 가중치를 준다.
+     */
+    static final Set<String> IDENTIFIER_FIELDS = Set.of("certNum", "modelName", "certModelName");
 
     static boolean hasExactEvidence(double score, List<FieldComparison> comparisons) {
         if (comparisons == null || comparisons.isEmpty()) {
