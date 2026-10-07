@@ -251,7 +251,8 @@ public class VerificationService {
                     "Google Vision 이 설정되지 않았거나 이번 달 사용 상한에 닿았습니다.");
         }
 
-        ImageInsight insight = visionClient.annotateUrl(product.thumbnailUrl());
+        // 10/7 — URL 방식만 쓰면 쿠팡 사진을 Google 이 못 읽는 경우가 있다(code=3). 서버가 받아서 넘긴다.
+        ImageInsight insight = visionClient.annotateRemote(product.thumbnailUrl());
         if (insight.failed()) {
             // 호출 실패 — 기록하지 않는다(다시 누를 수 있게). 원인은 GoogleVisionClient 로그에 남는다.
             throw new BusinessException(ErrorCode.IMAGE_CHECK_UNAVAILABLE,
@@ -487,7 +488,7 @@ public class VerificationService {
                 r == null ? null : r.getPublishDate(),
                 v.getCreatedAt(),
                 rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason(),
-                kcOf(v));
+                kcOf(v), rv.imageProductName());
     }
 
     private VerificationResultResponse toResultFrom(Verification v, MatchResult m, Recall r) {
@@ -508,6 +509,6 @@ public class VerificationService {
                 r == null ? null : r.getPublishDate(),
                 v.getCreatedAt(),
                 rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason(),
-                kcOf(v));
+                kcOf(v), rv.imageProductName());
     }
 }
