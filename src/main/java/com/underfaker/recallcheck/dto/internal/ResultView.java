@@ -11,6 +11,7 @@ import com.underfaker.recallcheck.entity.enums.VerificationChannel;
  *   PARTIAL  의심     — 확정은 아니지만 공표문과 닮았다
  *   MISSING  항목누락 — 텍스트로는 못 찾았고, KC 인증정보가 필요한 품목인데 번호를 못 얻었다
  *                       → "사진으로 찾기" 버튼(사용자가 누를 때만 Vision)
+ *                       10/7 — 사진 확인 뒤에도 공표문을 못 찾았으면 항목누락을 유지한다(아래 of() 주석)
  *   NO_MATCH 불일치
  *   UNKNOWN  확인불가 — 비교할 정보가 아예 없다(기존 그대로)
  *
@@ -21,9 +22,15 @@ import com.underfaker.recallcheck.entity.enums.VerificationChannel;
  * @param imageCheck          사진 확인 결과 FOUND / NONE / FAILED, 안 했으면 null
  * @param imageCheckAvailable "사진으로 찾기" 버튼을 보여 줄지
  * @param missingReason       항목누락 사유(화면 안내용). 해당 없으면 null
+ * @param imageProductName    10/7 — 사진으로 찾은 상품명(여러 사이트에서 반복된 것). 사진 확인을 안 했거나 못 찾았으면 null
  */
 public record ResultView(String resultState, String imageCheck, boolean imageCheckAvailable,
-                         String missingReason) {
+                         String missingReason, String imageProductName) {
+
+    /** 10/7 이전 형태 호환용. */
+    public ResultView(String resultState, String imageCheck, boolean imageCheckAvailable, String missingReason) {
+        this(resultState, imageCheck, imageCheckAvailable, missingReason, null);
+    }
 
     public static ResultView of(FinalResult finalResult, VerificationChannel channel,
                                 String rawText, String thumbnailUrl) {
@@ -33,10 +40,14 @@ public record ResultView(String resultState, String imageCheck, boolean imageChe
         boolean missing = ExtractionNotes.infoMissing(rawText);
         boolean hasThumb = thumbnailUrl != null && !thumbnailUrl.isBlank();
 
+        // 10/7 — 사진 확인을 했어도 항목누락을 유지한다.
+        // 9/27~10/7 은 "missing && !checked" 라서 사진으로 찾기를 누르면 공표문을 못 찾은 건이 불일치로 바뀌었다.
+        // 사진 확인은 리콜 공표문만 다시 찾을 뿐 KC 인증번호를 채워 주지 않는다 — 번호가 없다는 사실이
+        // 화면 맨 위에서 사라지면 안 된다. 사진으로 의심이 나면(PARTIAL) 그쪽이 우선이다.
         String state;
         if (finalResult == null) {
             state = null;
-        } else if (finalResult == FinalResult.NO_MATCH && missing && !checked) {
+        } else if (finalResult == FinalResult.NO_MATCH && missing) {
             state = "MISSING";
         } else {
             state = finalResult.name();
@@ -49,8 +60,12 @@ public record ResultView(String resultState, String imageCheck, boolean imageChe
                 && finalResult != null && finalResult != FinalResult.MATCH && finalResult != FinalResult.UNKNOWN
                 && (missing || channel == VerificationChannel.WEB);
 
+        String productName = check == ExtractionNotes.ImageCheck.FOUND
+                ? ImageInsight.fromRawText(rawText).productName()
+                : null;
+
         return new ResultView(state, check == null ? null : check.name(), available,
-                missing ? missingReason(rawText) : null);
+                missing ? missingReason(rawText) : null, productName);
     }
 
     private static String missingReason(String rawText) {

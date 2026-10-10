@@ -858,12 +858,14 @@ function setResultState(fr, score, d) {
   text('resultTitle', LABEL[fr] || '확인불가');
   text('resultSub', SUBLABEL[fr] || SUBLABEL.UNKNOWN);
 
+  /* 10/7 — 불일치·항목누락이면 종합 유사도를 숨긴다. 이 숫자는 '가장 가까운 후보'의 점수라서
+     3.6% 같은 무관한 공표문 점수가 결과처럼 보였다(10/7 배밀이 쿠션 ↔ HP 노트북 배터리). */
   const scoreEl = document.getElementById('score');
   if (scoreEl) {
     scoreEl.textContent =
-        (score === null || score === undefined)
-            ? '-'
-            : (score * 100).toFixed(1) + '%';
+            (score === null || score === undefined || fr === 'NO_MATCH' || fr === 'MISSING')
+                    ? '-'
+                    : (score * 100).toFixed(1) + '%';
   }
 
   document.querySelectorAll('.judgement-state')
@@ -897,10 +899,15 @@ function setResultState(fr, score, d) {
 
   } else if (fr === 'MISSING') {
     notice.className = 'result-notice missing';
+    /* 10/7 — 사진 확인 뒤에도 항목누락으로 남는다(ResultView). 이미 사진으로 찾아봤으면 그 사실을 적는다. */
+    const imageChecked = d && (d.imageCheck === 'FOUND' || d.imageCheck === 'NONE');
     notice.innerHTML =
-        '<strong>🟣 항목누락 — 판단할 정보가 부족합니다.</strong><br>' +
-        esc((d && d.missingReason) || 'KC 인증번호 같은 식별 정보가 없습니다.') + ' ' +
-        '상품명만으로는 리콜 공표문을 찾지 못했습니다. 사진으로 한 번 더 찾아볼 수 있습니다.';
+            '<strong>🟣 항목누락 — 판단할 정보가 부족합니다.</strong><br>' +
+            esc((d && d.missingReason) || 'KC 인증번호 같은 식별 정보가 없습니다.') + ' ' +
+            (imageChecked
+                    ? '사진으로도 찾아봤지만 일치하는 리콜 공표문은 없었습니다. ' +
+                      '공표문과 맞지 않는다고 KC 인증을 받은 제품이라는 뜻은 아닙니다.'
+                    : '상품명만으로는 리콜 공표문을 찾지 못했습니다. 사진으로 한 번 더 찾아볼 수 있습니다.');
 
   } else if (fr === 'NO_MATCH') {
     notice.className = 'result-notice nomatch';
@@ -961,6 +968,14 @@ function imageCheckHtml(d) {
     return '<br><button type="button" class="image-check-btn" ' +
         'onclick="event.stopPropagation(); checkImage(' + Number(d.verificationId) + ', this)">' +
         '📷 사진으로 찾기</button>';
+  }
+  /* 10/7 — 사진으로 찾은 상품명(여러 사이트에서 반복된 것)을 보여 준다. 없으면 '특정 못 함'으로 적는다.
+     10/7 이전에 사진 확인한 건은 상품명이 저장돼 있지 않아 '특정 못 함'으로 보인다. */
+  if (d.imageCheck === 'FOUND') {
+    const found = d.imageProductName
+            ? '📷 사진으로 찾은 상품명: <b>' + esc(d.imageProductName) + '</b> — 여러 사이트에 같은 사진·같은 이름으로 실려 있어 이 이름으로 공표문과 한 번 더 대조했습니다.'
+            : '📷 사진으로 웹을 검색했지만 여러 사이트에 반복된 같은 상품을 찾지 못해 상품명을 특정하지 못했습니다.';
+    return '<span class="image-check-note">' + found + '</span>';
   }
   const note = IMAGE_CHECK_NOTE[d.imageCheck];
   return note ? '<span class="image-check-note">' + note + '</span>' : '';
@@ -1047,12 +1062,12 @@ async function loadEvidence(id) {
         : '판정 근거가 기록되지 않았습니다.';
   }
 
-  renderComparisons(data.comparisons);
+  renderComparisons(data.comparisons, data.decision);
   return data;
 }
 
 
-function renderComparisons(comparisons) {
+function renderComparisons(comparisons, decision) {
 
   const box = document.getElementById('evidenceTable');
   if (!box) return;
@@ -1097,13 +1112,25 @@ function renderComparisons(comparisons) {
         '</tr>';
   }).join('');
 
-  box.innerHTML =
-      '<table class="evidence-table">' +
-      '<thead><tr>' +
-      '<th scope="col">입력값</th><th scope="col">공표문값</th><th scope="col">텍스트 유사도</th><th scope="col">이미지 유사도</th>' +
-      '</tr></thead>' +
-      '<tbody>' + rows + '</tbody></table>' +
-      '<p class="evidence-image-note">이미지 유사도는 현재 Vision이 이미지에서 추출한 문구의 대조 점수입니다. 이미지 자체의 시각적 유사도와 항목별 이미지 점수는 서버에서 제공하지 않습니다.</p>';
+  const table =
+          '<table class="evidence-table">' +
+          '<thead><tr>' +
+          '<th>항목</th><th>내 입력값</th><th>공표문 값</th><th>유사도</th>' +
+          '</tr></thead>' +
+          '<tbody>' + rows + '</tbody></table>';
+
+  /* 10/7 — 불일치 건의 표는 '가장 가까운 후보'와의 대조라 무관한 공표문이 '공표문 값'처럼 보였다.
+     접어 두고 열면 참고로만 보이게 한다. 판정·데이터는 그대로다. */
+  if (decision === 'NO_MATCH') {
+    box.innerHTML =
+            '<div class="evidence-empty">비슷한 리콜 공표문이 없습니다.</div>' +
+            '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:0.92em">' +
+            '가장 가까운 후보와의 대조 보기 (참고 — 의심 기준에 못 미친 공표문)</summary>' +
+            table + '</details>';
+    return;
+  }
+
+  box.innerHTML = table;
 }
 
 
@@ -1450,6 +1477,8 @@ function summarizeCoupang(items) {
     match: suspects.filter(v => stateOf(v) === 'MATCH').length,
     partial: suspects.filter(v => stateOf(v) === 'PARTIAL').length,
     missing: missing.length,
+    /* 10/7 — 항목누락 중 아직 사진으로 찾기를 누를 수 있는 건(사진 확인을 한 건도 항목누락으로 남는다) */
+    missingCheckable: missing.filter(v => v.imageCheckAvailable).length,
     kcKnown: kcKnown.length,
     kcTarget: kcTarget,
     kcNone: kcNone,
@@ -1492,7 +1521,10 @@ function updateCoupangResultCard(f) {
   }
 
   const extra = [];
-  if (f.missing) extra.push('항목누락 ' + f.missing + '개 (사진으로 찾기 가능)');
+  if (f.missing) {
+    extra.push('항목누락 ' + f.missing + '개' +
+            (f.missingCheckable ? ' (사진으로 찾기 가능 ' + f.missingCheckable + '개)' : ''));
+  }
   if (f.pending) extra.push('확인 중 ' + f.pending + '개');
   if (f.failed) extra.push('처리 실패 ' + f.failed + '개');
 
@@ -1522,10 +1554,14 @@ function updateCoupangResultCard(f) {
     if (meta) meta.textContent = extra.join(' · ');
   } else if (f.missing) {
     text('coupangResultProduct',
-        '구매한 제품 ' + f.done + '개 중 항목누락 ' + f.missing + '개 — 사진으로 찾아보세요');
+            '구매한 제품 ' + f.done + '개 중 항목누락 ' + f.missing + '개' +
+            (f.missingCheckable ? ' — 사진으로 찾아보세요' : ' — KC 인증번호를 확인하지 못했습니다'));
     if (meta) {
-      meta.textContent = '상품명만으로는 리콜 의심 제품을 찾지 못했습니다. KC 인증번호가 없는 제품은 ' +
-          '아래에서 "사진으로 찾기"를 누르면 사진으로 웹을 검색해 한 번 더 대조합니다.';
+      meta.textContent = f.missingCheckable
+              ? '상품명만으로는 리콜 의심 제품을 찾지 못했습니다. KC 인증번호가 없는 제품은 ' +
+                '아래에서 "사진으로 찾기"를 누르면 사진으로 웹을 검색해 한 번 더 대조합니다.'
+              : '사진으로도 찾아봤지만 리콜 의심 제품은 없었습니다. 아래 제품은 KC 인증번호가 표기되지 않아 ' +
+                '인증 여부를 확인하지 못했습니다.';
     }
     if (pill) {
       pill.className = 'status-pill status-MISSING';

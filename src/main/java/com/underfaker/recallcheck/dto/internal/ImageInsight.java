@@ -40,19 +40,21 @@ public record ImageInsight(
         List<String> entities,
         double topEntityScore,
         int matchingPageCount,
-        List<String> pageTitles
+        List<String> pageTitles,
+        /* 10/7 — 같은 사진이 실린 서로 다른 사이트 2곳 이상에서 반복된 상품명(GoogleVisionClient.consensusTitle). 없으면 null */
+        String productName
 ) {
 
     /** 판독하지 않았거나 실패한 경우. null 대신 이걸 쓴다. */
     public static final ImageInsight NONE =
-            new ImageInsight(null, List.of(), 0.0, 0, List.of());
+            new ImageInsight(null, List.of(), 0.0, 0, List.of(), null);
 
     /**
      * 9/27 — 호출 자체가 실패했다(네트워크·API 오류·토큰·월 상한). NONE(웹에서 못 찾음)과 구분해야
      * 사진 확인 버튼을 "다시 누를 수 있음"으로 남길 수 있다. isUsable() 은 false 라 기존 호출부는 그대로다.
      */
     public static final ImageInsight FAILED =
-            new ImageInsight(null, List.of(), 0.0, -1, List.of());
+            new ImageInsight(null, List.of(), 0.0, -1, List.of(), null);
 
     /** 호출 실패로 받은 결과인가 */
     public boolean failed() {
@@ -64,7 +66,13 @@ public record ImageInsight(
 
     /** 9/24 형태(페이지 제목 없음) 호환용. */
     public ImageInsight(String bestGuessLabel, List<String> entities, double topEntityScore, int matchingPageCount) {
-        this(bestGuessLabel, entities, topEntityScore, matchingPageCount, List.of());
+        this(bestGuessLabel, entities, topEntityScore, matchingPageCount, List.of(), null);
+    }
+
+    /** 9/27 형태(상품명 없음) 호환용. */
+    public ImageInsight(String bestGuessLabel, List<String> entities, double topEntityScore, int matchingPageCount,
+                        List<String> pageTitles) {
+        this(bestGuessLabel, entities, topEntityScore, matchingPageCount, pageTitles, null);
     }
 
     /**
@@ -79,6 +87,7 @@ public record ImageInsight(
     public ImageInsight {
         entities = entities == null ? List.of() : List.copyOf(entities);
         pageTitles = pageTitles == null ? List.of() : List.copyOf(pageTitles);
+        productName = productName == null || productName.isBlank() ? null : productName.trim();
     }
 
     /** 대조에 쓸 만한 판독 결과가 있는가. */
@@ -180,6 +189,9 @@ public record ImageInsight(
         for (String t : pageTitles) {
             sb.append("title: ").append(oneLine(t)).append('\n');
         }
+        if (productName != null) {
+            sb.append("product: ").append(oneLine(productName)).append('\n');
+        }
         return sb.append(RAW_TEXT_END).toString();
     }
 
@@ -203,6 +215,7 @@ public record ImageInsight(
         int pages = 0;
         List<String> entities = new ArrayList<>();
         List<String> titles = new ArrayList<>();
+        String product = null;
         for (String line : body.split("\\R")) {
             String l = line.trim();
             if (l.startsWith("best:")) {
@@ -221,10 +234,12 @@ public record ImageInsight(
                 if (!t.isEmpty()) {
                     titles.add(t);
                 }
+            } else if (l.startsWith("product:")) {
+                product = l.substring(8).trim();
             }
         }
         ImageInsight insight = new ImageInsight(best == null || best.isEmpty() ? null : best,
-                entities, top, pages, titles);
+                entities, top, pages, titles, product);
         return insight.isUsable() ? insight : NONE;
     }
 

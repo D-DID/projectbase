@@ -41,6 +41,23 @@ public record VerificationResultResponse(
         String missingReason,
 
         /* 10/3 — KC 인증 DB 조회 결과(KC인증 연동). 인증번호를 안 넣었거나 10/3 이전 검증이면 null */
-        KcCertResponse kc
+        KcCertResponse kc,
+
+        /* 10/7 — 사진으로 찾은 상품명(같은 사진이 실린 서로 다른 사이트 2곳 이상에서 반복). 없으면 null */
+        String imageProductName
 ) {
+
+    /** 10/7 이전 형태(사진 상품명 없음) 호환용 — 다른 호출부가 있어도 컴파일이 깨지지 않게 둔다. */
+    public VerificationResultResponse(Long verificationId, FinalResult finalResult, Double similarityScore,
+                                      Long recallUid, String recallProductName, String recallBrandName,
+                                      String recallModelName, String recallTypeName, String recallMeans,
+                                      String recallCmpnyName, String makerName, String harmDscr,
+                                      String accidentCaseDscr, String publishActionDscr, String publishDate,
+                                      LocalDateTime createdAt, String resultState, String imageCheck,
+                                      Boolean imageCheckAvailable, String missingReason, KcCertResponse kc) {
+        this(verificationId, finalResult, similarityScore, recallUid, recallProductName, recallBrandName,
+                recallModelName, recallTypeName, recallMeans, recallCmpnyName, makerName, harmDscr,
+                accidentCaseDscr, publishActionDscr, publishDate, createdAt, resultState, imageCheck,
+                imageCheckAvailable, missingReason, kc, null);
+    }
 }

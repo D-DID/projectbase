@@ -5,16 +5,30 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.underfaker.recallcheck.dto.internal.ImageInsight;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.UnknownHostException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Google Cloud Vision — WEB_DETECTION 전용 클라이언트.
@@ -55,8 +69,12 @@ public class GoogleVisionClient {
 
     private static final String FEATURE_WEB_DETECTION = "WEB_DETECTION";
 
-    /** 응답에서 받아 올 최대 결과 수. 더 받아도 하위는 점수가 낮아 쓸모가 없다. */
-    private static final int MAX_RESULTS = 10;
+    /**
+     * 응답에서 받아 올 최대 결과 수(개체·페이지 등 항목별).
+     * 10/7 — 10 → 50. 10건일 때(배밀이 쿠션) 일치 페이지 10개가 전부 해외 '비슷한 사진' 페이지였다.
+     * 같은 사진이 실린 한국 페이지가 11번째 이후에 있었는지 보려고 늘린다. 호출 요금은 사진 1장 기준이라 그대로다.
+     */
+    private static final int MAX_RESULTS = 50;
 
     /** ImageInsight 에 담을 최대 개체 수. 대조 비용이 후보 수에 비례한다. */
     private static final int MAX_ENTITIES = 5;
@@ -67,10 +85,35 @@ public class GoogleVisionClient {
      */
     private static final int MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
+    /**
+     * 10/7 — 서버가 이미지를 직접 내려받을 때 보내는 User-Agent.
+     * Java 기본값(Java/17)은 CDN 이 봇으로 보고 막는 경우가 있다(추측 — 쿠팡 CDN 에서 확인 전).
+     */
+    private static final String DOWNLOAD_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                    + "Chrome/128.0 Safari/537.36";
+
+    /**
+     * 10/7 — 사진으로 찾은 상품명은 서로 다른 사이트 몇 곳 이상에서 반복돼야 믿는가.
+     * 실측(10/7): 빠방 밀대 사진의 '같은 사진' 페이지 15곳 중 이 상품 페이지는 쿠팡·소빛·미니멀스탠드
+     * 3곳(같은 상품명)이고, 나머지는 그 사진이 추천 칸에 걸린 다른 상품 페이지(타요 청소밀대 등, 각 1곳)였다.
+     */
+    static final int CONSENSUS_MIN_SITES = 2;
+
+    /** 두 제목이 같은 상품이라고 볼 최소 단어 겹침(짧은 쪽 단어 수 기준). 잠정치 — 실측 2건 기준. */
+    static final double CONSENSUS_MIN_OVERLAP = 0.7;
+
+    /** 겹치는 단어가 이보다 적으면 같은 상품으로 보지 않는다("걸음마보조기" 한 단어만 겹치는 경우 등). */
+    static final int CONSENSUS_MIN_SHARED_WORDS = 2;
+
+    private static final Pattern TITLE_WORD_SPLIT = Pattern.compile("[^가-힣a-z0-9]+");
+
     /** 인증 방식. 기동 시 한 번 정해진다. */
     public enum AuthMode { SERVICE_ACCOUNT, API_KEY, DISABLED }
 
     private final RestClient restClient;
+    /** 10/7 — 이미지 내려받기 전용. 사용자가 결과를 기다리는 중이라 짧게 끊는다(연결 3초·읽기 8초). */
+    private final RestClient downloadClient;
     private final OcrCallBudget budget;
     private final String endpoint;
     private final String apiKey;
@@ -91,6 +134,9 @@ public class GoogleVisionClient {
         this.endpoint = endpoint == null ? "" : endpoint.trim();
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.restClient = RestClient.builder().build();
+        this.downloadClient = RestClient.builder()
+                .requestFactory(timeouts(Duration.ofSeconds(3), Duration.ofSeconds(8)))
+                .build();
 
         this.serviceAccount = loadServiceAccount(credentialsPath);
         this.mode = decideMode(this.endpoint, this.apiKey, this.serviceAccount);
@@ -217,6 +263,102 @@ public class GoogleVisionClient {
     }
 
     /**
+     * 10/7 — 원격 이미지 판독. 서버가 먼저 내려받아 바이트로 보내고, 못 받았을 때만 URL 방식으로 보낸다.
+     * 둘 중 하나만 부르므로 Vision 호출은 항상 최대 1건이다.
+     *
+     * 실측(10/7, 검증 922): 쿠팡 상품 사진 주소를 imageUri 로 넘기자 Vision 이
+     *   code=3 "The URL does not appear to be accessible by us" 로 거절했다.
+     * 9/27 슬라임 썸네일은 URL 방식으로 됐으므로 항상 막히는 건 아니다. Google 수집기가
+     * 쿠팡 CDN 이미지를 못 읽는 경우가 있다는 뜻이라, 우리 서버가 받아서 넘기는 쪽을 먼저 쓴다.
+     */
+    public ImageInsight annotateRemote(String imageUrl) {
+        if (!isEnabled() || imageUrl == null || imageUrl.isBlank()) {
+            return ImageInsight.NONE;
+        }
+        byte[] bytes = download(imageUrl.trim());
+        if (bytes != null) {
+            return annotateBytes(bytes);
+        }
+        return annotateUrl(imageUrl);
+    }
+
+    /**
+     * 10/7 — 이미지를 내려받는다. 못 받으면 null — 호출부가 URL 방식으로 넘어간다. 예외를 던지지 않는다.
+     * 응답을 다 받은 뒤 크기를 본다. 읽기 8초 제한이 사실상의 상한이다.
+     */
+    byte[] download(String imageUrl) {
+        URI uri;
+        try {
+            uri = new URI(imageUrl);
+        } catch (URISyntaxException e) {
+            log.warn("[Vision] 이미지 주소 형식 오류 — {}", e.getMessage());
+            return null;
+        }
+        if (!isPublicHttpUrl(uri)) {
+            log.warn("[Vision] 내려받지 않는 주소 — host={}", uri.getHost());
+            return null;
+        }
+        try {
+            ResponseEntity<byte[]> res = downloadClient.get()
+                    .uri(uri)
+                    .header(HttpHeaders.USER_AGENT, DOWNLOAD_USER_AGENT)
+                    .header(HttpHeaders.ACCEPT, "image/*")
+                    .retrieve()
+                    .toEntity(byte[].class);
+            byte[] body = res.getBody();
+            if (body == null || body.length == 0) {
+                log.warn("[Vision] 이미지 내려받기 — 빈 응답 (host={})", uri.getHost());
+                return null;
+            }
+            if (body.length > MAX_IMAGE_BYTES) {
+                log.warn("[Vision] 이미지가 너무 크다 — {}바이트 (상한 {}). URL 방식으로 넘긴다.",
+                        body.length, MAX_IMAGE_BYTES);
+                return null;
+            }
+            log.info("[Vision] 이미지 내려받음 — {}바이트, {} (host={})",
+                    body.length, res.getHeaders().getContentType(), uri.getHost());
+            return body;
+        } catch (RuntimeException e) {
+            log.warn("[Vision] 이미지 내려받기 실패 (host={}): {}", uri.getHost(), e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 사용자가 넣은 주소를 서버가 대신 내려받으므로 내부망 주소는 막는다(SSRF 방지).
+     * http(s) 이고, 호스트가 루프백·사설·링크로컬·와일드카드·멀티캐스트 주소로 풀리지 않을 때만 true.
+     * 리다이렉트 뒤의 주소와 DNS 재바인딩까지는 막지 않는다 — 시연 범위의 최소 방어선이다.
+     */
+    static boolean isPublicHttpUrl(URI uri) {
+        String scheme = uri.getScheme();
+        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+            return false;
+        }
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            return false;
+        }
+        try {
+            for (InetAddress a : InetAddress.getAllByName(host)) {
+                if (a.isLoopbackAddress() || a.isSiteLocalAddress() || a.isLinkLocalAddress()
+                        || a.isAnyLocalAddress() || a.isMulticastAddress()) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (UnknownHostException e) {
+            return false;
+        }
+    }
+
+    private static SimpleClientHttpRequestFactory timeouts(Duration connect, Duration read) {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(connect);
+        factory.setReadTimeout(read);
+        return factory;
+    }
+
+    /**
      * URL 로 먼저 시도하고, 결과가 쓸모없으면 바이트로 한 번 더 시도한다.
      *
      * 호출이 최대 두 번 나간다 — 상한을 두 칸 먹는다. 쿠팡 썸네일이 imageUri 로
@@ -326,24 +468,174 @@ public class GoogleVisionClient {
 
         int pages = web.pagesWithMatchingImages() == null ? 0 : web.pagesWithMatchingImages().size();
 
-        // 9/27 — 페이지 제목. 영어 라벨만으로는 한글 공표문과 대조가 안 된다(ImageInsight 주석 참조).
-        List<String> titles = new ArrayList<>();
-        if (web.pagesWithMatchingImages() != null) {
-            for (WebPage page : web.pagesWithMatchingImages()) {
-                String title = ImageInsight.cleanPageTitle(page.pageTitle());
-                if (title != null && !titles.contains(title)) {
-                    titles.add(title);
-                }
-                if (titles.size() >= ImageInsight.MAX_PAGE_TITLES) {
-                    break;
-                }
-            }
-        }
+        // 10/7 — 페이지 순서를 바꾼다: 같은 사진이 실린 페이지(fullMatchingImages) → 한글 제목 → 나머지.
+        // 9/27~10/6 은 응답 순서대로 앞 5개 제목만 썼다. partialMatchingImages 는 "특징점 일부만 공유"하는
+        // 비슷한 사진이라(10/7 실측: 배밀이 쿠션 → 카드게임 매트) 같은 상품의 근거가 못 된다.
+        List<WebPage> ordered = web.pagesWithMatchingImages() == null
+                ? List.of()
+                : web.pagesWithMatchingImages().stream()
+                        .sorted(Comparator.comparingInt(GoogleVisionClient::pageRank))
+                        .toList();
 
-        ImageInsight insight = new ImageInsight(bestGuess, entities, topScore, pages, titles);
+        // 10/7 — 페이지 제목은 "여러 사이트에서 반복된 상품명" 하나만 대조에 쓴다.
+        // 9/27~10/7 오전에는 앞 5개 제목을 그대로 썼다. 10/7 실측(빠방 밀대)에서 '같은 사진' 페이지에
+        // 그 사진이 추천 칸에 걸린 다른 상품 페이지(타요 청소밀대 등)가 섞여, 다른 상품명이 대조에 들어갔다.
+        // 그 상품이 리콜 대상이면 IMAGE_SUSPECT_SCORE 로 엉뚱한 '의심'이 날 수 있는 구조였다.
+        // 반복된 상품명이 없으면 제목은 쓰지 않는다(추정 이름·개체명만 남는다).
+        String productName = consensusTitle(ordered);
+        List<String> titles = productName == null ? List.of() : List.of(productName);
+
+        ImageInsight insight = new ImageInsight(bestGuess, entities, topScore, pages, titles, productName);
         log.info("[Vision] 판독 — bestGuess='{}' entities={} pages={} titles={}",
                 bestGuess, entities, pages, titles);
+        if (productName != null) {
+            log.info("[Vision] 사진으로 찾은 상품명 — '{}' (같은 사진 · 서로 다른 사이트 {}곳 이상에서 반복)",
+                    productName, CONSENSUS_MIN_SITES);
+        } else {
+            log.info("[Vision] 사진으로 찾은 상품명 — 없음 (같은 사진이 실린 페이지 중 {}곳 이상에서 반복된 상품명이 없다)",
+                    CONSENSUS_MIN_SITES);
+        }
+
+        // 10/7 — 일치 페이지 주소와 일치 종류. 판정에는 쓰지 않는다(효과 확인용 로그).
+        //   full    = 그 페이지에 실린 같은 사진(크기만 다른 사본 포함) 수
+        //   partial = 그 페이지에 실린 비슷한 사진(특징점 일부 공유) 수
+        long fullPages = ordered.stream().filter(p -> sizeOf(p.fullMatchingImages()) > 0).count();
+        long koreanPages = ordered.stream().filter(p -> hasHangul(ImageInsight.cleanPageTitle(p.pageTitle()))).count();
+        log.info("[Vision] 일치 페이지 요약 — 전체 {} · 같은 사진 {} · 한글 제목 {}", pages, fullPages, koreanPages);
+        int i = 0;
+        for (WebPage page : ordered) {
+            i++;
+            log.info("[Vision] 일치 페이지 {}/{} — full={} partial={} — {} | {}",
+                    i, pages, sizeOf(page.fullMatchingImages()), sizeOf(page.partialMatchingImages()),
+                    page.url(), ImageInsight.cleanPageTitle(page.pageTitle()));
+        }
         return insight;
+    }
+
+    /** 10/7 — 페이지 정렬 순위. 작을수록 앞. 같은 사진+한글 0 · 같은 사진 1 · 한글 2 · 나머지 3 */
+    static int pageRank(WebPage page) {
+        boolean full = sizeOf(page.fullMatchingImages()) > 0;
+        boolean korean = hasHangul(ImageInsight.cleanPageTitle(page.pageTitle()));
+        if (full && korean) {
+            return 0;
+        }
+        if (full) {
+            return 1;
+        }
+        return korean ? 2 : 3;
+    }
+
+    /**
+     * 10/7 — 같은 사진(fullMatchingImages)이 실린 페이지들의 제목에서, 서로 다른 사이트
+     * CONSENSUS_MIN_SITES 곳 이상에서 반복된 상품명을 찾는다. 없으면 null.
+     *
+     *   제목의 상품명 부분 = cleanPageTitle 뒤 첫 " | " 앞("… 장난감, 랜덤 발송, 1개 | 쿠팡" → "… 장난감, 랜덤 발송, 1개")
+     *   같은 상품 = 단어(한글·영문·숫자, 2글자 이상)가 CONSENSUS_MIN_SHARED_WORDS 개 이상, 짧은 쪽의
+     *              CONSENSUS_MIN_OVERLAP 이상 겹친다
+     *   사이트    = 도메인(www. 제외, co.kr 류는 3단계). tw.coupang.com 과 coupang.com 은 같은 사이트로 센다.
+     *
+     * 가장 많은 사이트에서 반복된 제목을 고르고, 같으면 짧은 쪽(군더더기가 적은 쪽)을 고른다.
+     * 실측(10/7): 빠방 밀대 → "토이천국 아이놀이터 빠방 밀대 장난감"(쿠팡·소빛·미니멀스탠드),
+     *             치발기 → "퍼기 큐피드 손목 치발기 세트"(쿠팡·폴센트), 배밀이 쿠션 → 없음(같은 사진 0).
+     */
+    static String consensusTitle(List<WebPage> pages) {
+        List<String> cores = new ArrayList<>();
+        List<Set<String>> words = new ArrayList<>();
+        List<String> sites = new ArrayList<>();
+        for (WebPage page : pages) {
+            if (sizeOf(page.fullMatchingImages()) == 0) {
+                continue;
+            }
+            String title = ImageInsight.cleanPageTitle(page.pageTitle());
+            String site = siteOf(page.url());
+            if (title == null || site == null) {
+                continue;
+            }
+            int bar = title.indexOf(" | ");
+            String core = (bar < 0 ? title : title.substring(0, bar)).trim();
+            Set<String> w = titleWords(core);
+            if (w.size() < CONSENSUS_MIN_SHARED_WORDS) {
+                continue;
+            }
+            cores.add(core);
+            words.add(w);
+            sites.add(site);
+        }
+
+        String best = null;
+        int bestSites = 0;
+        for (int i = 0; i < cores.size(); i++) {
+            Set<String> agreeing = new HashSet<>();
+            for (int j = 0; j < cores.size(); j++) {
+                if (i == j || sameProduct(words.get(i), words.get(j))) {
+                    agreeing.add(sites.get(j));
+                }
+            }
+            int n = agreeing.size();
+            if (n < CONSENSUS_MIN_SITES) {
+                continue;
+            }
+            if (n > bestSites || (n == bestSites && cores.get(i).length() < best.length())) {
+                best = cores.get(i);
+                bestSites = n;
+            }
+        }
+        return best;
+    }
+
+    static boolean sameProduct(Set<String> a, Set<String> b) {
+        int shared = 0;
+        for (String w : a) {
+            if (b.contains(w)) {
+                shared++;
+            }
+        }
+        int smaller = Math.min(a.size(), b.size());
+        return shared >= CONSENSUS_MIN_SHARED_WORDS && smaller > 0
+                && (double) shared / smaller >= CONSENSUS_MIN_OVERLAP;
+    }
+
+    static Set<String> titleWords(String s) {
+        Set<String> out = new LinkedHashSet<>();
+        for (String w : TITLE_WORD_SPLIT.split(s.toLowerCase(Locale.ROOT))) {
+            if (w.length() >= 2) {
+                out.add(w);
+            }
+        }
+        return out;
+    }
+
+    /** 사이트(대략적인 등록 도메인). "www.tw.coupang.com" → "coupang.com", "a.11st.co.kr" → "11st.co.kr". */
+    static String siteOf(String url) {
+        if (url == null) {
+            return null;
+        }
+        String host;
+        try {
+            host = new URI(url.trim()).getHost();
+        } catch (URISyntaxException e) {
+            return null;
+        }
+        if (host == null || host.isBlank()) {
+            return null;
+        }
+        String[] labels = host.toLowerCase(Locale.ROOT).split("\\.");
+        int n = labels.length;
+        if (n <= 2) {
+            return String.join(".", labels);
+        }
+        boolean secondLevelKr = labels[n - 1].length() == 2
+                && Set.of("co", "or", "go", "ne", "ac", "re", "pe", "com", "net", "org").contains(labels[n - 2]);
+        int keep = secondLevelKr ? 3 : 2;
+        return String.join(".", java.util.Arrays.copyOfRange(labels, n - keep, n));
+    }
+
+    static boolean hasHangul(String s) {
+        return s != null && s.chars().anyMatch(c -> c >= '가' && c <= '힣');
+    }
+
+    private static int sizeOf(List<?> list) {
+        return list == null ? 0 : list.size();
     }
 
     /** 예외 메시지에 API 키가 실려 나오는 경우를 대비. 로그에 키를 남기지 않는다. */
@@ -405,7 +697,17 @@ public class GoogleVisionClient {
     record BestGuessLabel(String label, String languageCode) {
     }
 
+    /**
+     * 10/7 — fullMatchingImages(같은 사진·크기만 다른 사본)와 partialMatchingImages(비슷한 사진)를 함께 받는다.
+     * 응답의 score 는 문서상 지원 중단이라 받지 않는다.
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record WebPage(String url, String pageTitle) {
+    record WebPage(String url, String pageTitle,
+                   List<WebImage> fullMatchingImages,
+                   List<WebImage> partialMatchingImages) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record WebImage(String url) {
     }
 }
