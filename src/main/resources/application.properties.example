@@ -54,12 +54,9 @@ openapi.safety-korea.recall-publish-date=20260916
 # 트랜잭션 하나 안에서 HTTP 호출이 수백 번 일어난다. 그럴 땐 값을 줘서 끊는 게 안전하다.
 openapi.safety-korea.recall-sync-max=0
 
-# ---------------------------------------------------------------- OCR 모듈 (FR-006)
-ocr.base-url=http://localhost:8000
-
-# CLOVA OCR — 9/24 현재 쓰지 않는다(과금 방지로 비워 둠). 켜려면 환경변수로 넣는다.
-clova.ocr.invoke-url=${CLOVA_OCR_INVOKE_URL:}
-clova.ocr.secret-key=${CLOVA_OCR_SECRET_KEY:}
+# ---------------------------------------------------------------- OCR 모듈 — 10/10 삭제
+# 10/1 결정으로 OCR(CLOVA·Python OCR)은 쓰지 않는다. 클래스·설정을 지웠다.
+# 각자 application.properties 에 남아 있는 ocr.base-url / clova.ocr.* 줄은 지워도 되고 남겨도 된다(읽는 코드 없음).
 
 # ---------------------------------------------------------------- Google Cloud Vision (2단계 이미지 판독)
 # 둘 중 하나만 채운다. 둘 다 있으면 credentials-path(서비스 계정)가 우선.

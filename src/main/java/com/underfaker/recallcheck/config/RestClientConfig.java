@@ -18,9 +18,6 @@ public class RestClientConfig {
     @Value("${openapi.safety-korea.auth-key}")
     private String safetyKoreaAuthKey;
 
-    @Value("${ocr.base-url}")
-    private String ocrBaseUrl;
-
     /**
      * 국가기술표준원 Open API 전용 클라이언트 — 관리자 적재(리콜 목록·상세, KC 동기화)용.
      * 인증키는 쿼리 파라미터가 아니라 HTTP 헤더 AuthKey 로 보낸다(대소문자 구분).
@@ -51,13 +48,7 @@ public class RestClientConfig {
                 .build();
     }
 
-    /** Python OCR 서버 전용 클라이언트 */
-    @Bean
-    public RestClient ocrRestClient() {
-        return RestClient.builder()
-                .baseUrl(ocrBaseUrl)
-                .build();
-    }
+    // 10/10 — Python OCR 서버 클라이언트(ocrRestClient)와 ocr.base-url 설정을 지웠다(10/1 OCR 폐기).
 
     private static SimpleClientHttpRequestFactory timeouts(Duration connect, Duration read) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();

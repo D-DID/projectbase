@@ -2,6 +2,7 @@ package com.underfaker.recallcheck.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.underfaker.recallcheck.common.WebPageIdentifiers;
 import com.underfaker.recallcheck.dto.internal.ImageInsight;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,9 +25,11 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -51,7 +54,7 @@ import java.util.regex.Pattern;
  * 유사도 기능이 없고, Lens 는 공개 API 가 없다. 역이미지 검색으로 얻은 <b>텍스트</b>를
  * 기존 매칭 엔진에 태우는 것이 이 프로젝트에서 실제로 만들 수 있는 유일한 형태다.
  *
- * ── 호출을 막는 장치가 두 겹이다 (ClovaOcrClient 와 같은 구조) ──
+ * ── 호출을 막는 장치가 두 겹이다 ──
  * 1. 키가 없으면 비활성. isEnabled() 가 false 면 HTTP 요청을 만들지 않는다.
  *    예외를 던지지 않으므로 팀원들이 키 없이도 앱을 띄우고 나머지를 개발할 수 있다.
  * 2. 월 건수 상한. OcrCallBudget.VISION — 무료 1,000건 중 800 에서 끊는다.
@@ -108,12 +111,32 @@ public class GoogleVisionClient {
 
     private static final Pattern TITLE_WORD_SPLIT = Pattern.compile("[^가-힣a-z0-9]+");
 
+    /**
+     * 10/10 — 최종 흐름 2차: 같은 사진이 실린 페이지 본문에서 KC 인증번호·모델명을 뽑으려고 서버가 여는 페이지 수 상한.
+     * 사이트마다 한 페이지만 연다(반복 여부를 사이트 수로 세기 때문). 사용자가 버튼을 누르고 기다리는 중이라 작게 둔다.
+     */
+    static final int MAX_PAGE_FETCHES = 5;
+
+    /** 10/10 — 페이지 읽기 전체 시간 상한. 넘으면 남은 페이지는 건너뛴다. */
+    static final Duration PAGE_FETCH_BUDGET = Duration.ofSeconds(15);
+
+    /** 10/10 — 페이지 본문 처리 상한(바이트). 받은 뒤 이 앞부분만 본다. */
+    static final int MAX_PAGE_BYTES = 3 * 1024 * 1024;
+
+    /**
+     * 10/10 — 서버에서 열지 않는 사이트. 쿠팡은 서버·확장 백그라운드 요청이 403 이다
+     * (0.4.0 확장 background fetch 전부 403 실측, 10/7 서버 확인). 열어 봐야 시간만 쓴다.
+     */
+    static final Set<String> SKIP_PAGE_SITES = Set.of("coupang.com");
+
     /** 인증 방식. 기동 시 한 번 정해진다. */
     public enum AuthMode { SERVICE_ACCOUNT, API_KEY, DISABLED }
 
     private final RestClient restClient;
     /** 10/7 — 이미지 내려받기 전용. 사용자가 결과를 기다리는 중이라 짧게 끊는다(연결 3초·읽기 8초). */
     private final RestClient downloadClient;
+    /** 10/10 — 같은 사진이 실린 웹페이지 본문 읽기 전용(연결 3초·읽기 5초, 리다이렉트마다 내부망 검사). */
+    private final WebPageFetcher pageFetcher;
     private final OcrCallBudget budget;
     private final String endpoint;
     private final String apiKey;
@@ -122,7 +145,6 @@ public class GoogleVisionClient {
 
     /**
      * RestClient 를 직접 만든다 — 이 프로젝트에는 RestClient.Builder 빈이 없다.
-     * ClovaOcrClient 9/21 주석과 같은 이유.
      */
     public GoogleVisionClient(
             OcrCallBudget budget,
@@ -137,6 +159,8 @@ public class GoogleVisionClient {
         this.downloadClient = RestClient.builder()
                 .requestFactory(timeouts(Duration.ofSeconds(3), Duration.ofSeconds(8)))
                 .build();
+        this.pageFetcher = new WebPageFetcher(3_000, 5_000, MAX_PAGE_BYTES, DOWNLOAD_USER_AGENT,
+                GoogleVisionClient::isPublicHttpUrl);
 
         this.serviceAccount = loadServiceAccount(credentialsPath);
         this.mode = decideMode(this.endpoint, this.apiKey, this.serviceAccount);
@@ -481,13 +505,22 @@ public class GoogleVisionClient {
         // 9/27~10/7 오전에는 앞 5개 제목을 그대로 썼다. 10/7 실측(빠방 밀대)에서 '같은 사진' 페이지에
         // 그 사진이 추천 칸에 걸린 다른 상품 페이지(타요 청소밀대 등)가 섞여, 다른 상품명이 대조에 들어갔다.
         // 그 상품이 리콜 대상이면 IMAGE_SUSPECT_SCORE 로 엉뚱한 '의심'이 날 수 있는 구조였다.
-        // 반복된 상품명이 없으면 제목은 쓰지 않는다(추정 이름·개체명만 남는다).
-        String productName = consensusTitle(ordered);
+        // 반복된 상품명이 없으면 제목은 쓰지 않는다.
+        TitleConsensus consensus = consensus(ordered);
+        String productName = consensus == null ? null : consensus.title();
         List<String> titles = productName == null ? List.of() : List.of(productName);
 
-        ImageInsight insight = new ImageInsight(bestGuess, entities, topScore, pages, titles, productName);
-        log.info("[Vision] 판독 — bestGuess='{}' entities={} pages={} titles={}",
-                bestGuess, entities, pages, titles);
+        // 10/10 — 최종 흐름 2차: 같은 사진이 실린 페이지를 열어 KC 인증번호·모델명(제품번호)을 뽑고,
+        // 서로 다른 사이트 CONSENSUS_MIN_SITES 곳 이상에서 같은 값만 쓴다. 반복된 상품명의 페이지를 먼저 연다.
+        PageIdentifiers ids = readIdentifiers(pagesToRead(ordered, consensus));
+        // 페이지를 하나도 못 열었어도 '실패'로 돌리지 않는다 — 차단(403)·HTML 아님도 같은 null 이라, 다시 눌러도
+        // 같은 결과에 Vision 사용량만 든다. 로그(readIdentifiers)로 구분한다.
+
+        // bestGuess·entities 는 기록·로그용이다 — 판정에는 반복된 값(상품명·KC 번호·모델명)만 쓴다(ImageInsight 주석).
+        ImageInsight insight = new ImageInsight(bestGuess, entities, topScore, pages, titles, productName,
+                ids.certNum(), ids.modelName());
+        log.info("[Vision] 판독 — bestGuess='{}' entities={} pages={} titles={} cert={} model={}",
+                bestGuess, entities, pages, titles, ids.certNum(), ids.modelName());
         if (productName != null) {
             log.info("[Vision] 사진으로 찾은 상품명 — '{}' (같은 사진 · 서로 다른 사이트 {}곳 이상에서 반복)",
                     productName, CONSENSUS_MIN_SITES);
@@ -539,9 +572,20 @@ public class GoogleVisionClient {
      *             치발기 → "퍼기 큐피드 손목 치발기 세트"(쿠팡·폴센트), 배밀이 쿠션 → 없음(같은 사진 0).
      */
     static String consensusTitle(List<WebPage> pages) {
+        TitleConsensus c = consensus(pages);
+        return c == null ? null : c.title();
+    }
+
+    /** 10/10 — 반복된 상품명과, 그 상품명에 동의한 페이지들(사이트 순서는 페이지 순위대로). */
+    record TitleConsensus(String title, List<WebPage> pages) {
+    }
+
+    /** consensusTitle 과 같은 규칙. 동의한 페이지 목록까지 돌려준다. 없으면 null. */
+    static TitleConsensus consensus(List<WebPage> pages) {
         List<String> cores = new ArrayList<>();
         List<Set<String>> words = new ArrayList<>();
         List<String> sites = new ArrayList<>();
+        List<WebPage> kept = new ArrayList<>();
         for (WebPage page : pages) {
             if (sizeOf(page.fullMatchingImages()) == 0) {
                 continue;
@@ -560,15 +604,19 @@ public class GoogleVisionClient {
             cores.add(core);
             words.add(w);
             sites.add(site);
+            kept.add(page);
         }
 
         String best = null;
         int bestSites = 0;
+        List<WebPage> bestPages = List.of();
         for (int i = 0; i < cores.size(); i++) {
             Set<String> agreeing = new HashSet<>();
+            List<WebPage> agreeingPages = new ArrayList<>();
             for (int j = 0; j < cores.size(); j++) {
                 if (i == j || sameProduct(words.get(i), words.get(j))) {
                     agreeing.add(sites.get(j));
+                    agreeingPages.add(kept.get(j));
                 }
             }
             int n = agreeing.size();
@@ -578,9 +626,92 @@ public class GoogleVisionClient {
             if (n > bestSites || (n == bestSites && cores.get(i).length() < best.length())) {
                 best = cores.get(i);
                 bestSites = n;
+                bestPages = agreeingPages;
             }
         }
-        return best;
+        return best == null ? null : new TitleConsensus(best, bestPages);
+    }
+
+    // ------------------------------------------------------------------ 10/10 페이지 본문 KC 번호·모델명
+
+    /** 10/10 — 페이지 본문에서 서로 다른 사이트 2곳 이상 같은 KC 번호·모델명. 없으면 null. */
+    record PageIdentifiers(String certNum, String modelName) {
+        static final PageIdentifiers NONE = new PageIdentifiers(null, null);
+    }
+
+    /**
+     * 10/10 — 열어 볼 페이지 순서: 반복된 상품명에 동의한 페이지 → 나머지 '같은 사진' 페이지(fullMatchingImages).
+     * '비슷한 사진'만 실린 페이지는 다른 상품이라(10/7 배밀이 쿠션 → 카드게임 매트) 열지 않는다.
+     */
+    static List<WebPage> pagesToRead(List<WebPage> ordered, TitleConsensus consensus) {
+        Set<WebPage> out = new LinkedHashSet<>();
+        if (consensus != null) {
+            out.addAll(consensus.pages());
+        }
+        for (WebPage page : ordered) {
+            if (sizeOf(page.fullMatchingImages()) > 0) {
+                out.add(page);
+            }
+        }
+        return new ArrayList<>(out);
+    }
+
+    /**
+     * 10/10 — 페이지를 열어 KC 인증번호·모델명을 뽑고, 서로 다른 사이트 CONSENSUS_MIN_SITES 곳 이상에서
+     * 같은 값을 고른다. 사이트마다 한 페이지, 최대 MAX_PAGE_FETCHES 곳, PAGE_FETCH_BUDGET 안에서만 연다.
+     * 쿠팡(SKIP_PAGE_SITES)은 403 이라 열지 않는다. 예외를 던지지 않는다.
+     */
+    PageIdentifiers readIdentifiers(List<WebPage> pages) {
+        if (pages == null || pages.isEmpty()) {
+            return PageIdentifiers.NONE;
+        }
+        long deadline = System.nanoTime() + PAGE_FETCH_BUDGET.toNanos();
+        Map<String, List<String>> certsBySite = new LinkedHashMap<>();
+        Map<String, List<String>> modelsBySite = new LinkedHashMap<>();
+        Set<String> triedSites = new HashSet<>();
+        int fetched = 0;
+        int failed = 0;
+        for (WebPage page : pages) {
+            if (fetched >= MAX_PAGE_FETCHES || System.nanoTime() > deadline) {
+                break;
+            }
+            String site = siteOf(page.url());
+            if (site == null || SKIP_PAGE_SITES.contains(site) || !triedSites.add(site)) {
+                continue;
+            }
+            fetched++;
+            String html = fetchPage(page.url(), deadline);
+            if (html == null) {
+                failed++;
+                continue;
+            }
+            WebPageIdentifiers.Found found = WebPageIdentifiers.extract(html);
+            log.info("[Vision] 페이지 본문 — {} | KC {} · 모델명 {}", site, found.certNums(), found.modelNames());
+            if (!found.certNums().isEmpty()) {
+                certsBySite.put(site, found.certNums());
+            }
+            if (!found.modelNames().isEmpty()) {
+                modelsBySite.put(site, found.modelNames());
+            }
+        }
+        String cert = WebPageIdentifiers.consensus(certsBySite, CONSENSUS_MIN_SITES);
+        String model = WebPageIdentifiers.consensus(modelsBySite, CONSENSUS_MIN_SITES);
+        log.info("[Vision] 사진으로 찾은 KC 번호 — {} · 모델명 — {} (페이지 {}곳 열람, 서로 다른 사이트 {}곳 이상 같은 값만)",
+                cert == null ? "없음" : cert, model == null ? "없음" : model, fetched, CONSENSUS_MIN_SITES);
+        if (fetched > 0 && failed == fetched) {
+            log.info("[Vision] 같은 사진 페이지 {}곳을 하나도 열지 못했다(차단·오류·HTML 아님)", fetched);
+        }
+        return new PageIdentifiers(cert, model);
+    }
+
+    /** 10/10 — 웹페이지 HTML. 못 받았거나 HTML 이 아니면 null. 예외를 던지지 않는다(WebPageFetcher). */
+    String fetchPage(String pageUrl, long deadlineNanos) {
+        WebPageFetcher.Page page = pageFetcher.fetchHtml(pageUrl, deadlineNanos);
+        if (page == null) {
+            log.info("[Vision] 페이지를 열지 못함 — {}", siteOf(pageUrl));
+            return null;
+        }
+        return WebPageIdentifiers.decode(page.body(), page.contentType());
     }
 
     static boolean sameProduct(Set<String> a, Set<String> b) {

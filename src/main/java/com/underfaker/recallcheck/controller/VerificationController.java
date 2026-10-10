@@ -2,7 +2,6 @@ package com.underfaker.recallcheck.controller;
 
 import com.underfaker.recallcheck.common.ApiResponse;
 import com.underfaker.recallcheck.common.PageResponse;
-import com.underfaker.recallcheck.dto.request.ImageVerifyRequest;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
 import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
 import com.underfaker.recallcheck.dto.response.MatchEvidenceResponse;
@@ -28,12 +27,6 @@ public class VerificationController {
     @PostMapping("/url")
     public ApiResponse<VerificationResultResponse> verifyByUrl(@Valid @RequestBody UrlVerifyRequest request) {
         return ApiResponse.success(verificationService.verifyByUrl(request));
-    }
-
-    /** FR-004 이미지 업로드 검증 */
-    @PostMapping(value = "/image", consumes = "multipart/form-data")
-    public ApiResponse<VerificationResultResponse> verifyByImage(@Valid @ModelAttribute ImageVerifyRequest request) {
-        return ApiResponse.success(verificationService.verifyByImage(request));
     }
 
     /** FR-008 사용자 직접 입력 검증 — 추출부터 4단계 판정까지 */

@@ -80,4 +80,15 @@ class KcCertNumbersTest {
         assertEquals("A11-1001", KcCertNumbers.first("x A11-1001 A11-1002"));
         assertNull(KcCertNumbers.first("공급자적합성"));
     }
+
+    @Test
+    void 여러_칸의_번호를_모두_모아_잇는다() {
+        // 10/10 — 확장 0.4.4 는 KC 칸의 첫 번호만 certNum 으로 보낸다. KC 칸 원문의 나머지 번호까지 모은다.
+        assertEquals("CB063R423-5001, B364R970-2001, HH07952-13056",
+                KcCertNumbers.joinAll("CB063R423-5001",
+                        "KC: CB063R423-5001 / B364R970-2001, HH07952-13056, XL090008-16192"));
+        assertEquals("CB063R423-5001", KcCertNumbers.joinAll(null, "인증번호-CB063R423-5001"));
+        assertNull(KcCertNumbers.joinAll(null, "상품 상세페이지 참조"));
+        assertNull(KcCertNumbers.joinAll());
+    }
 }

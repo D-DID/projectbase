@@ -14,6 +14,11 @@ import java.util.Locale;
  * [image-check]                    ← 사용자가 "사진으로 찾기"를 눌러 Vision 을 돌렸는지와 그 결과
  * result: FOUND
  * [/image-check]
+ *
+ * [scope]                          ← 10/10 — 해외직구·구매대행이라 판단하지 않은 건
+ * excluded: OVERSEAS                  (어린이제품이면 대신 child: YES — 판단은 한다)
+ * signal: 해외직구
+ * [/scope]
  * </pre>
  *
  * 새 컬럼이 아니라 raw_text 에 두는 이유는 ImageInsight 의 [vision] 블록과 같다 —
@@ -101,10 +106,71 @@ public final class ExtractionNotes {
         }
     }
 
-    /** KC 인증정보가 필요한 품목인데 번호를 못 얻었다 — 항목누락 */
+    /** KC 인증정보가 필요한 품목인데 번호를 못 얻었다 — 항목누락(10/10 화면 표시: KC 번호 미표기) */
     public static boolean infoMissing(String rawText) {
         KcStatus s = kcStatus(rawText);
         return s == KcStatus.REFERENCED || s == KcStatus.UNREADABLE;
+    }
+
+    // ------------------------------------------------------------------ 10/10 판단 제외(국외 판매)
+
+    public static final String SCOPE_BEGIN = "[scope]";
+    public static final String SCOPE_END = "[/scope]";
+    private static final String EXCLUDED_OVERSEAS = "OVERSEAS";
+
+    /**
+     * 10/10 — 해외직구·구매대행 상품이라 판단하지 않았다는 메모(팀장 결정: 국외 제품은 판단하지 않는다).
+     * 어린이제품은 빼지 않는다 — overseasChildBlock 참조.
+     * <pre>
+     * [scope]
+     * excluded: OVERSEAS
+     * signal: 해외직구
+     * [/scope]
+     * </pre>
+     * final_result 는 MySQL ENUM 이라 새 값을 못 넣는다 — UNKNOWN 으로 저장하고 화면 상태(EXCLUDED)는 이 메모로 계산한다.
+     *
+     * @param signal 근거가 된 표현(OverseasListing.signal)
+     */
+    public static String overseasBlock(String signal) {
+        StringBuilder sb = new StringBuilder(SCOPE_BEGIN).append('\n')
+                .append("excluded: ").append(EXCLUDED_OVERSEAS).append('\n');
+        if (signal != null && !signal.isBlank()) {
+            sb.append("signal: ").append(oneLine(signal)).append('\n');
+        }
+        return sb.append(SCOPE_END).toString();
+    }
+
+    /**
+     * 10/10 — 해외직구·구매대행이지만 어린이제품이라 판단한 건의 메모(판단 제외 아님).
+     * 어린이제품은 구매대행·판매중개도 KC 표시가 없으면 금지다(어린이제품법 제30조) — 화면 안내에 쓴다.
+     * <pre>
+     * [scope]
+     * child: YES
+     * signal: 해외구매대행
+     * [/scope]
+     * </pre>
+     */
+    public static String overseasChildBlock(String signal) {
+        StringBuilder sb = new StringBuilder(SCOPE_BEGIN).append('\n').append("child: YES").append('\n');
+        if (signal != null && !signal.isBlank()) {
+            sb.append("signal: ").append(oneLine(signal)).append('\n');
+        }
+        return sb.append(SCOPE_END).toString();
+    }
+
+    /** 해외직구·구매대행 어린이제품이라 판단한 건인가 */
+    public static boolean overseasChild(String rawText) {
+        return "YES".equals(field(rawText, SCOPE_BEGIN, SCOPE_END, "child:"));
+    }
+
+    /** 국외 판매라 판단에서 뺀 건인가 */
+    public static boolean excludedOverseas(String rawText) {
+        return EXCLUDED_OVERSEAS.equals(field(rawText, SCOPE_BEGIN, SCOPE_END, "excluded:"));
+    }
+
+    /** 판단에서 뺀 근거 표현. 없으면 null */
+    public static String overseasSignal(String rawText) {
+        return field(rawText, SCOPE_BEGIN, SCOPE_END, "signal:");
     }
 
     /** 블록 안에서 "key: 값" 줄의 값을 꺼낸다. 블록이 여러 개면 마지막 블록을 쓴다(최신). */

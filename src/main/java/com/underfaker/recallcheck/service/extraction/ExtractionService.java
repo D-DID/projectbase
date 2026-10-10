@@ -11,7 +11,6 @@ import com.underfaker.recallcheck.repository.ExtractionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -23,17 +22,11 @@ public class ExtractionService {
 
     private final ExtractionRepository extractionRepository;
     private final WebTextExtractor webTextExtractor;
-    private final ImageExtractor imageExtractor;
     private final IdentityMerger identityMerger;
 
     /** FR-005 경로 — URL 에서 추출 (미구현) */
     public ExtractedProduct extractFromUrl(Long verificationId, String url) {
         throw new UnsupportedOperationException("TODO: FR-005 URL 파싱 미구현");
-    }
-
-    /** FR-006 경로 — 이미지에서 추출 (미구현) */
-    public ExtractedProduct extractFromImage(Long verificationId, MultipartFile image) {
-        throw new UnsupportedOperationException("TODO: FR-006 OCR 미구현");
     }
 
     /**
@@ -143,6 +136,32 @@ public class ExtractionService {
             return;
         }
         target.appendRawText(ExtractionNotes.imageCheckBlock(result));
+        extractionRepository.save(target);
+    }
+
+    /**
+     * 10/10 — 해외직구·구매대행 상품이라 판단하지 않았다는 메모를 남긴다(ExtractionNotes.overseasBlock).
+     * 화면 상태 EXCLUDED 는 이 메모로 계산한다(ResultView).
+     */
+    public void markOverseas(Long verificationId, String signal) {
+        Extraction target = primaryRow(verificationId);
+        if (target == null) {
+            return;
+        }
+        target.appendRawText(ExtractionNotes.overseasBlock(signal));
+        extractionRepository.save(target);
+    }
+
+    /**
+     * 10/10 — 해외직구·구매대행이지만 어린이제품이라 판단한다는 메모를 남긴다(ExtractionNotes.overseasChildBlock).
+     * 어린이제품은 구매대행도 KC 표시가 없으면 금지(어린이제품법 제30조) — 화면 안내(ResultView)에 쓴다.
+     */
+    public void markOverseasChild(Long verificationId, String signal) {
+        Extraction target = primaryRow(verificationId);
+        if (target == null) {
+            return;
+        }
+        target.appendRawText(ExtractionNotes.overseasChildBlock(signal));
         extractionRepository.save(target);
     }
 
