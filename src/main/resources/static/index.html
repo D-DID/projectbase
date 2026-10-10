@@ -1812,7 +1812,7 @@
 
     }
 
-  
+
 
     /* ==================================================
        RESTRUCTURED VERIFICATION FLOW
@@ -1912,10 +1912,12 @@
 
     .evidence-card #evidenceTable {
       margin-top: 14px;
+      overflow-x: auto;
     }
 
     .evidence-table {
       width: 100%;
+      min-width: 560px;
 
       border-collapse: collapse;
 
@@ -1976,6 +1978,26 @@
       font-size: 10.5px;
 
       font-weight: 500;
+    }
+
+    .evidence-field {
+      display: block;
+      margin-bottom: 4px;
+      font-weight: 700;
+      color: #344054;
+    }
+    .evidence-image-score { min-width: 150px; }
+    .evidence-image-detail {
+      display: block;
+      margin-top: 8px;
+      white-space: normal;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    .evidence-image-note {
+      font-size: 11px;
+      line-height: 1.6;
+      color: #667085;
     }
 
     .evidence-score {
@@ -2052,24 +2074,18 @@
     @media (max-width: 720px) {
 
       .evidence-table thead {
-        display: none;
+        display: table-header-group;
       }
 
       .evidence-table tbody th,
       .evidence-table tbody td {
-        display: block;
-
-        border-bottom: none;
-
-        padding: 2px 0;
+        display: table-cell;
+        border-bottom: 1px solid #f2f4f7;
+        padding: 11px 10px;
       }
 
       .evidence-table tbody tr {
-        display: block;
-
-        padding: 10px 0;
-
-        border-bottom: 1px solid #f2f4f7;
+        display: table-row;
       }
 
       .evidence-score {
@@ -2169,7 +2185,7 @@
       cursor: pointer;
     }
 
-</style>
+  </style>
 
 </head>
 
@@ -2655,548 +2671,548 @@
 
 
 
-    <!-- ==================================================
-         RESULT
-    ================================================== -->
-
-    <div
-            class="embedded-result"
-            id="resultScreen">
-
-      <div class="page-title">
-
-        <h1>
-          검증 결과
-        </h1>
-
-        <p>
-          입력한 제품과 공식 리콜 정보를 비교한 결과입니다.
-        </p>
-
-      </div>
-
-
       <!-- ==================================================
-           RESULT HERO
+           RESULT
       ================================================== -->
 
       <div
-              id="resultHero"
-              class="result-hero state-MATCH">
+              class="embedded-result"
+              id="resultScreen">
 
-        <div
-                class="result-icon"
-                id="resultIcon">
+        <div class="page-title">
 
-          !
+          <h1>
+            검증 결과
+          </h1>
 
-        </div>
-
-
-        <div
-                class="result-title"
-                id="resultTitle">
-
-          일치
-
-        </div>
-
-
-        <div
-                class="result-sub"
-                id="resultSub">
-
-          리콜 대상 상품과 일치합니다.
-
-        </div>
-
-
-        <div
-                class="score"
-                id="score">
-
-          96.8%
-
-        </div>
-
-
-        <div class="score-label">
-          종합 유사도
-        </div>
-
-
-        <!-- ==================================================
-             4단계 판정
-        ================================================== -->
-
-        <div class="judgement-states">
-
-          <div
-                  class="judgement-state match"
-                  id="stateMatch">
-
-            🔴 일치
-
-          </div>
-
-
-          <div
-                  class="judgement-state partial"
-                  id="statePartial">
-
-            🟠 의심
-
-          </div>
-
-
-          <!-- 9/27 — 확인불가 자리를 항목누락으로 바꿨다(팀장 결정 4단계: 일치·의심·항목누락·불일치).
-               확인불가(정보가 아예 없음)는 드물어서 범례에서 빼고 제목으로만 보여 준다. -->
-          <div
-                  class="judgement-state missing"
-                  id="stateMissing">
-
-            🟣 항목누락
-
-          </div>
-
-
-          <div
-                  class="judgement-state nomatch"
-                  id="stateNoMatch">
-
-            ⚪ 불일치
-
-          </div>
+          <p>
+            입력한 제품과 공식 리콜 정보를 비교한 결과입니다.
+          </p>
 
         </div>
 
 
         <!-- ==================================================
-             4단계 판정 바로 아래 안내창
+             RESULT HERO
         ================================================== -->
 
         <div
-                class="result-notice"
-                id="resultNotice">
+                id="resultHero"
+                class="result-hero state-MATCH">
 
-          <strong>
-            ⚠ 리콜 대상 제품입니다.
-          </strong>
+          <div
+                  class="result-icon"
+                  id="resultIcon">
 
-          <br>
-
-          입력한 제품 정보가 공식 리콜 정보와 일치합니다.
-
-        </div>
-
-      </div>
-
-
-      <!-- ==================================================
-           RESULT DETAIL
-           제품 비교
-           ↓
-           리콜 정보
-           ↓
-           판정 근거
-      ================================================== -->
-
-      <div class="result-detail-grid">
-
-
-        <!-- ==================================================
-             ① 제품 정보 비교
-        ================================================== -->
-
-        <div class="card">
-
-          <div class="card-title">
-
-            <h2>
-              제품 정보 비교
-            </h2>
+            !
 
           </div>
 
 
-          <div class="compare">
+          <div
+                  class="result-title"
+                  id="resultTitle">
+
+            일치
+
+          </div>
 
 
-            <!-- 입력 제품 -->
+          <div
+                  class="result-sub"
+                  id="resultSub">
 
-            <div class="compare-box">
+            리콜 대상 상품과 일치합니다.
 
-              <h3>
-                내가 입력한 제품
-              </h3>
+          </div>
 
 
-              <div class="compare-row">
+          <div
+                  class="score"
+                  id="score">
+
+            96.8%
+
+          </div>
+
+
+          <div class="score-label">
+            종합 유사도
+          </div>
+
+
+          <!-- ==================================================
+               4단계 판정
+          ================================================== -->
+
+          <div class="judgement-states">
+
+            <div
+                    class="judgement-state match"
+                    id="stateMatch">
+
+              🔴 일치
+
+            </div>
+
+
+            <div
+                    class="judgement-state partial"
+                    id="statePartial">
+
+              🟠 의심
+
+            </div>
+
+
+            <!-- 9/27 — 확인불가 자리를 항목누락으로 바꿨다(팀장 결정 4단계: 일치·의심·항목누락·불일치).
+                 확인불가(정보가 아예 없음)는 드물어서 범례에서 빼고 제목으로만 보여 준다. -->
+            <div
+                    class="judgement-state missing"
+                    id="stateMissing">
+
+              🟣 항목누락
+
+            </div>
+
+
+            <div
+                    class="judgement-state nomatch"
+                    id="stateNoMatch">
+
+              ⚪ 불일치
+
+            </div>
+
+          </div>
+
+
+          <!-- ==================================================
+               4단계 판정 바로 아래 안내창
+          ================================================== -->
+
+          <div
+                  class="result-notice"
+                  id="resultNotice">
+
+            <strong>
+              ⚠ 리콜 대상 제품입니다.
+            </strong>
+
+            <br>
+
+            입력한 제품 정보가 공식 리콜 정보와 일치합니다.
+
+          </div>
+
+        </div>
+
+
+        <!-- ==================================================
+             RESULT DETAIL
+             제품 비교
+             ↓
+             리콜 정보
+             ↓
+             판정 근거
+        ================================================== -->
+
+        <div class="result-detail-grid">
+
+
+          <!-- ==================================================
+               ① 제품 정보 비교
+          ================================================== -->
+
+          <div class="card">
+
+            <div class="card-title">
+
+              <h2>
+                제품 정보 비교
+              </h2>
+
+            </div>
+
+
+            <div class="compare">
+
+
+              <!-- 입력 제품 -->
+
+              <div class="compare-box">
+
+                <h3>
+                  내가 입력한 제품
+                </h3>
+
+
+                <div class="compare-row">
 
                 <span class="compare-label">
                   제품명
                 </span>
 
-                <span
-                        class="compare-value"
-                        id="inputProduct">
+                  <span
+                          class="compare-value"
+                          id="inputProduct">
 
                   -
 
                 </span>
 
-              </div>
+                </div>
 
 
-              <div class="compare-row">
+                <div class="compare-row">
 
                 <span class="compare-label">
                   브랜드
                 </span>
 
-                <span
-                        class="compare-value"
-                        id="inputBrand">
+                  <span
+                          class="compare-value"
+                          id="inputBrand">
 
                   -
 
                 </span>
 
-              </div>
+                </div>
 
 
-              <div class="compare-row">
+                <div class="compare-row">
 
                 <span class="compare-label">
                   모델명
                 </span>
 
-                <span
-                        class="compare-value"
-                        id="inputModel">
+                  <span
+                          class="compare-value"
+                          id="inputModel">
 
                   -
 
                 </span>
 
-              </div>
+                </div>
 
 
-              <div class="compare-row">
+                <div class="compare-row">
 
                 <span class="compare-label">
                   바코드
                 </span>
 
-                <span
-                        class="compare-value"
-                        id="inputBarcode">
+                  <span
+                          class="compare-value"
+                          id="inputBarcode">
 
                   -
 
                 </span>
 
+                </div>
+
               </div>
 
-            </div>
+
+              <div class="compare-arrow">
+                ↔
+              </div>
 
 
-            <div class="compare-arrow">
-              ↔
-            </div>
+              <!-- 공식 리콜 제품 -->
+
+              <div class="compare-box">
+
+                <h3>
+                  공식 리콜 정보
+                </h3>
 
 
-            <!-- 공식 리콜 제품 -->
-
-            <div class="compare-box">
-
-              <h3>
-                공식 리콜 정보
-              </h3>
-
-
-              <div class="compare-row">
+                <div class="compare-row">
 
                 <span class="compare-label">
                   제품명
                 </span>
 
-                <span
-                        class="compare-value"
-                        id="recallProduct">
+                  <span
+                          class="compare-value"
+                          id="recallProduct">
 
                   -
 
                 </span>
 
-              </div>
+                </div>
 
 
-              <div class="compare-row">
+                <div class="compare-row">
 
                 <span class="compare-label">
                   브랜드
                 </span>
 
-                <span
-                        class="compare-value"
-                        id="recallBrand">
+                  <span
+                          class="compare-value"
+                          id="recallBrand">
 
                   -
 
                 </span>
 
-              </div>
+                </div>
 
 
-              <div class="compare-row">
+                <div class="compare-row">
 
                 <span class="compare-label">
                   모델명
                 </span>
 
-                <span
-                        class="compare-value"
-                        id="recallModel">
+                  <span
+                          class="compare-value"
+                          id="recallModel">
 
                   -
 
                 </span>
 
-              </div>
+                </div>
 
 
-              <div class="compare-row">
+                <div class="compare-row">
 
                 <span class="compare-label">
                   제조사
                 </span>
 
-                <span
-                        class="compare-value"
-                        id="recallMaker">
+                  <span
+                          class="compare-value"
+                          id="recallMaker">
 
                   -
 
                 </span>
 
+                </div>
+
               </div>
 
             </div>
 
           </div>
 
-        </div>
+
+          <!-- ==================================================
+               ② 리콜 정보
+          ================================================== -->
+
+          <div class="card">
+
+            <div class="card-title">
+
+              <h2>
+                리콜 정보
+              </h2>
+
+            </div>
 
 
-        <!-- ==================================================
-             ② 리콜 정보
-        ================================================== -->
+            <div class="recall-info">
 
-        <div class="card">
-
-          <div class="card-title">
-
-            <h2>
-              리콜 정보
-            </h2>
-
-          </div>
+              <div class="info-grid">
 
 
-          <div class="recall-info">
+                <div class="info-item">
 
-            <div class="info-grid">
+                  <div class="info-label">
+                    리콜 종류
+                  </div>
 
+                  <div
+                          class="info-value"
+                          id="recallType">
 
-              <div class="info-item">
+                    -
 
-                <div class="info-label">
-                  리콜 종류
+                  </div>
+
                 </div>
+
+
+                <div class="info-item">
+
+                  <div class="info-label">
+                    리콜 방법
+                  </div>
+
+                  <div
+                          class="info-value"
+                          id="recallMethod">
+
+                    -
+
+                  </div>
+
+                </div>
+
+
+                <div class="info-item">
+
+                  <div class="info-label">
+                    리콜 사업자
+                  </div>
+
+                  <div
+                          class="info-value"
+                          id="recallBusiness">
+
+                    -
+
+                  </div>
+
+                </div>
+
+
+                <div class="info-item">
+
+                  <div class="info-label">
+                    공표일
+                  </div>
+
+                  <div
+                          class="info-value"
+                          id="recallDate">
+
+                    -
+
+                  </div>
+
+                </div>
+
+
+                <div class="info-item">
+
+                  <div class="info-label">
+                    제품 결함
+                  </div>
+
+                  <div
+                          class="info-value"
+                          id="recallDefect">
+
+                    -
+
+                  </div>
+
+                </div>
+
+
+                <div class="info-item">
+
+                  <div class="info-label">
+                    위해 정보
+                  </div>
+
+                  <div
+                          class="info-value"
+                          id="recallRisk">
+
+                    -
+
+                  </div>
+
+                </div>
+
 
                 <div
-                        class="info-value"
-                        id="recallType">
+                        class="info-item"
+                        style="grid-column:1/-1">
 
-                  -
+                  <div class="info-label">
+                    소비자 행동요령
+                  </div>
+
+                  <div
+                          class="info-value"
+                          id="recallAction">
+
+                    -
+
+                  </div>
 
                 </div>
+
 
               </div>
-
-
-              <div class="info-item">
-
-                <div class="info-label">
-                  리콜 방법
-                </div>
-
-                <div
-                        class="info-value"
-                        id="recallMethod">
-
-                  -
-
-                </div>
-
-              </div>
-
-
-              <div class="info-item">
-
-                <div class="info-label">
-                  리콜 사업자
-                </div>
-
-                <div
-                        class="info-value"
-                        id="recallBusiness">
-
-                  -
-
-                </div>
-
-              </div>
-
-
-              <div class="info-item">
-
-                <div class="info-label">
-                  공표일
-                </div>
-
-                <div
-                        class="info-value"
-                        id="recallDate">
-
-                  -
-
-                </div>
-
-              </div>
-
-
-              <div class="info-item">
-
-                <div class="info-label">
-                  제품 결함
-                </div>
-
-                <div
-                        class="info-value"
-                        id="recallDefect">
-
-                  -
-
-                </div>
-
-              </div>
-
-
-              <div class="info-item">
-
-                <div class="info-label">
-                  위해 정보
-                </div>
-
-                <div
-                        class="info-value"
-                        id="recallRisk">
-
-                  -
-
-                </div>
-
-              </div>
-
-
-              <div
-                      class="info-item"
-                      style="grid-column:1/-1">
-
-                <div class="info-label">
-                  소비자 행동요령
-                </div>
-
-                <div
-                        class="info-value"
-                        id="recallAction">
-
-                  -
-
-                </div>
-
-              </div>
-
 
             </div>
 
           </div>
 
-        </div>
 
+          <!-- ==================================================
+               ③ 판정 근거
+          ================================================== -->
 
-        <!-- ==================================================
-             ③ 판정 근거
-        ================================================== -->
+          <div class="card evidence-card">
 
-        <div class="card evidence-card">
+            <div class="card-title">
 
-          <div class="card-title">
+              <h2>
+                판정 근거
+              </h2>
 
-            <h2>
-              판정 근거
-            </h2>
-
-            <span>
+              <span>
               리콜체크가 이 결과를 판단한 근거입니다.
             </span>
 
+            </div>
+
+
+            <div id="reason">
+
+              판정 결과에 대한 근거입니다.
+
+            </div>
+
+
+            <div id="evidenceTable"></div>
+
           </div>
 
-
-          <div id="reason">
-
-            판정 결과에 대한 근거입니다.
-
-          </div>
-
-
-          <div id="evidenceTable"></div>
 
         </div>
 
 
+        <!-- ==================================================
+             RESULT ACTION
+        ================================================== -->
+
+        <div class="action-row">
+
+          <button
+                  class="secondary-btn"
+                  onclick="goHome()">
+
+            ← 다른 제품 확인하기
+
+          </button>
+
+
+          <button
+                  class="primary-btn"
+                  onclick="goHistory()">
+
+            내 검증 이력 보기 →
+
+          </button>
+
+        </div>
+
       </div>
-
-
-      <!-- ==================================================
-           RESULT ACTION
-      ================================================== -->
-
-      <div class="action-row">
-
-        <button
-                class="secondary-btn"
-                onclick="goHome()">
-
-          ← 다른 제품 확인하기
-
-        </button>
-
-
-        <button
-                class="primary-btn"
-                onclick="goHistory()">
-
-          내 검증 이력 보기 →
-
-        </button>
-
-      </div>
-
-    </div>
 
     </section>
 

@@ -70,8 +70,8 @@
 const API = '';
 
 const DEMO_MODE =
-        location.protocol === 'file:' ||
-        new URLSearchParams(location.search).get('demo') === '1';
+    location.protocol === 'file:' ||
+    new URLSearchParams(location.search).get('demo') === '1';
 
 const DEMO_TOKEN = 'demo-token';
 
@@ -237,8 +237,8 @@ function bindCategoryChips() {
   document.querySelectorAll('.categories .category').forEach(function (chip) {
     chip.addEventListener('click', function () {
       const label = (chip.textContent || '')
-              .replace(/[^\p{L}\p{N}\s]/gu, '')
-              .trim();
+          .replace(/[^\p{L}\p{N}\s]/gu, '')
+          .trim();
       const input = document.getElementById('productName');
       if (!input || !label) return;
       input.value = label;
@@ -265,8 +265,8 @@ function paintHeader() {
 
   if (profileBtn) {
     profileBtn.title = token
-            ? (userEmail ? userEmail + ' 님' : '내 검증 이력')
-            : '로그인';
+        ? (userEmail ? userEmail + ' 님' : '내 검증 이력')
+        : '로그인';
   }
 
   updateLoginMessages();
@@ -438,13 +438,13 @@ function handleUnauthorized() {
 function showScreen(id) {
 
   document.querySelectorAll('.screen')
-          .forEach(el => el.classList.remove('active'));
+      .forEach(el => el.classList.remove('active'));
 
   const target = document.getElementById(id);
   if (target) target.classList.add('active');
 
   document.querySelectorAll('.nav-item')
-          .forEach(el => el.classList.remove('active'));
+      .forEach(el => el.classList.remove('active'));
 
   const navMap = {
     verifyScreen: 'navVerify',
@@ -520,9 +520,9 @@ function goCoupangHistory() {
 
 function openCoupang() {
   window.open(
-          'https://mc.coupang.com/ssr/desktop/order/list',
-          '_blank',
-          'noopener,noreferrer'
+      'https://mc.coupang.com/ssr/desktop/order/list',
+      '_blank',
+      'noopener,noreferrer'
   );
 }
 
@@ -554,8 +554,8 @@ async function signup() {
     show('authMsg', '회원가입 완료. 이제 로그인하세요.', true);
   } else {
     show('authMsg',
-            '회원가입 실패 (' + r.status + ') ' + (r.json?.message || ''),
-            false);
+        '회원가입 실패 (' + r.status + ') ' + (r.json?.message || ''),
+        false);
   }
 }
 
@@ -598,8 +598,8 @@ async function login() {
 
   } else {
     show('authMsg',
-            '로그인 실패 (' + r.status + ') ' + (r.json?.message || ''),
-            false);
+        '로그인 실패 (' + r.status + ') ' + (r.json?.message || ''),
+        false);
   }
 }
 
@@ -684,9 +684,9 @@ async function verify() {
 
       if (!r.json || !r.json.success) {
         show('verifyMsg',
-                '검증 실패 (' + r.status + ') ' +
-                (r.json?.message || '알 수 없는 오류가 발생했습니다.'),
-                false);
+            '검증 실패 (' + r.status + ') ' +
+            (r.json?.message || '알 수 없는 오류가 발생했습니다.'),
+            false);
         return;
       }
 
@@ -869,7 +869,7 @@ function setResultState(fr, score, d) {
   }
 
   document.querySelectorAll('.judgement-state')
-          .forEach(el => el.classList.remove('active'));
+      .forEach(el => el.classList.remove('active'));
 
   const stateMap = {
     MATCH: 'stateMatch',
@@ -887,15 +887,15 @@ function setResultState(fr, score, d) {
   if (fr === 'MATCH') {
     notice.className = 'result-notice match';
     notice.innerHTML =
-            '<strong>⚠ 리콜 대상 제품입니다.</strong><br>' +
-            '제품 사용을 중지하고 아래 <strong>소비자 행동요령</strong>을 확인하세요.';
+        '<strong>⚠ 리콜 대상 제품입니다.</strong><br>' +
+        '제품 사용을 중지하고 아래 <strong>소비자 행동요령</strong>을 확인하세요.';
 
   } else if (fr === 'PARTIAL') {
     notice.className = 'result-notice partial';
     notice.innerHTML =
-            '<strong>🔎 리콜 의심 제품입니다.</strong><br>' +
-            '제품명이나 브랜드가 리콜 공표문과 닮았지만 인증번호·모델명으로 100% 확인되지는 않았습니다. ' +
-            '아래 판정 근거의 항목별 유사도를 확인하세요.';
+        '<strong>🔎 리콜 의심 제품입니다.</strong><br>' +
+        '제품명이나 브랜드가 리콜 공표문과 닮았지만 인증번호·모델명으로 100% 확인되지는 않았습니다. ' +
+        '아래 판정 근거의 항목별 유사도를 확인하세요.';
 
   } else if (fr === 'MISSING') {
     notice.className = 'result-notice missing';
@@ -912,16 +912,16 @@ function setResultState(fr, score, d) {
   } else if (fr === 'NO_MATCH') {
     notice.className = 'result-notice nomatch';
     notice.innerHTML =
-            '<strong>일치하는 리콜 공표문을 찾지 못했습니다.</strong><br>' +
-            '현재 입력한 정보 기준으로 공식 리콜 정보와 일치하지 않습니다. ' +
-            '단, 안전하다는 뜻이 아니며 리콜 대상이 아님을 의미하지도 않습니다.';
+        '<strong>일치하는 리콜 공표문을 찾지 못했습니다.</strong><br>' +
+        '현재 입력한 정보 기준으로 공식 리콜 정보와 일치하지 않습니다. ' +
+        '단, 안전하다는 뜻이 아니며 리콜 대상이 아님을 의미하지도 않습니다.';
 
   } else {
     notice.className = 'result-notice unknown';
     notice.innerHTML =
-            '<strong>– 확인할 수 없습니다.</strong><br>' +
-            '정보가 부족하거나 공식 데이터를 조회하지 못했습니다. ' +
-            '제품 정보를 추가한 후 다시 확인해주세요.';
+        '<strong>– 확인할 수 없습니다.</strong><br>' +
+        '정보가 부족하거나 공식 데이터를 조회하지 못했습니다. ' +
+        '제품 정보를 추가한 후 다시 확인해주세요.';
   }
 
   notice.innerHTML += kcCertHtml(d);
@@ -966,8 +966,8 @@ function imageCheckHtml(d) {
   if (!d) return '';
   if (d.imageCheckAvailable && d.verificationId) {
     return '<br><button type="button" class="image-check-btn" ' +
-            'onclick="event.stopPropagation(); checkImage(' + Number(d.verificationId) + ', this)">' +
-            '📷 사진으로 찾기</button>';
+        'onclick="event.stopPropagation(); checkImage(' + Number(d.verificationId) + ', this)">' +
+        '📷 사진으로 찾기</button>';
   }
   /* 10/7 — 사진으로 찾은 상품명(여러 사이트에서 반복된 것)을 보여 준다. 없으면 '특정 못 함'으로 적는다.
      10/7 이전에 사진 확인한 건은 상품명이 저장돼 있지 않아 '특정 못 함'으로 보인다. */
@@ -1058,8 +1058,8 @@ async function loadEvidence(id) {
 
   if (reasonEl) {
     reasonEl.textContent = data.reason
-            ? '판정 근거 · ' + data.reason
-            : '판정 근거가 기록되지 않았습니다.';
+        ? '판정 근거 · ' + data.reason
+        : '판정 근거가 기록되지 않았습니다.';
   }
 
   renderComparisons(data.comparisons, data.decision);
@@ -1074,39 +1074,42 @@ function renderComparisons(comparisons, decision) {
 
   if (!comparisons || !comparisons.length) {
     box.innerHTML =
-            '<div class="evidence-empty">항목별 대조 결과가 없습니다.</div>';
+        '<div class="evidence-empty">항목별 대조 결과가 없습니다.</div>';
     return;
   }
 
-  const rows = comparisons.map(function (c) {
+  const items = comparisons.filter(function (c) { return c && typeof c === 'object'; });
+  const image = items.find(function (c) { return c.field === 'imageLabel'; });
+  const textItems = items.filter(function (c) { return c.field !== 'imageLabel'; });
+  if (!items.length) {
+    box.innerHTML = '<div class="evidence-empty">항목별 대조 결과가 없습니다.</div>';
+    return;
+  }
 
-    const label = FIELD_LABEL[c.field] || c.field;
-    const pct = (c.score === null || c.score === undefined)
-            ? '-'
-            : (c.score * 100).toFixed(1) + '%';
-
-    /* 9/27 — 가중치 0 은 "대조는 했지만 판정에 넣지 않은 행"이다(이미지판독 점수가 낮을 때).
-       '가중 0.00' 으로 두면 버그처럼 보여서 '판정 미반영' 으로 적는다. */
-    const w = (c.weight === null || c.weight === undefined)
-            ? ''
-            : Number(c.weight) === 0
-              ? '<span class="evidence-weight">판정 미반영</span>'
-              : '<span class="evidence-weight">가중 ' +
-                Number(c.weight).toFixed(2) + '</span>';
-
-    const bar = (c.score === null || c.score === undefined)
-            ? 0
-            : Math.max(0, Math.min(100, c.score * 100));
-
+  // imageLabel.score는 Vision이 추출한 문구와 공표문 간 텍스트 대조 점수다.
+  // 항목별 이미지 점수가 아니므로 공통 셀로 한 번만 표시한다.
+  function scoreCell(c) {
+    const raw = c && c.score;
+    const score = (typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== ''))
+        ? Number(raw) : NaN;
+    if (!Number.isFinite(score) || score < 0 || score > 1) return '<span>미제공</span>';
+    const unused = c.weight !== null && c.weight !== undefined && Number(c.weight) === 0;
+    return '<span class="evidence-bar"><i style="width:' + (score * 100) + '%"></i></span>' +
+        '<b>' + (score * 100).toFixed(1) + '%</b>' +
+        (unused ? '<span class="evidence-weight">판정 미반영</span>' : '');
+  }
+  const visibleItems = textItems.length ? textItems : [null];
+  const rows = visibleItems.map(function (c, index) {
+    const label = c ? (FIELD_LABEL[c.field] || c.field || '항목') : '텍스트 대조 없음';
     return '<tr>' +
-            '<th>' + esc(label) + w + '</th>' +
-            '<td>' + esc(c.inputValue || '-') + '</td>' +
-            '<td>' + esc(c.officialValue || '-') + '</td>' +
-            '<td class="evidence-score">' +
-              '<span class="evidence-bar"><i style="width:' + bar + '%"></i></span>' +
-              '<b>' + pct + '</b>' +
-            '</td>' +
-            '</tr>';
+        '<td><span class="evidence-field">' + esc(label) + '</span>' + esc(c && c.inputValue != null ? c.inputValue : '-') + '</td>' +
+        '<td>' + esc(c && c.officialValue != null ? c.officialValue : '-') + '</td>' +
+        '<td class="evidence-score">' + scoreCell(c) + '</td>' +
+        (index === 0 ? '<td class="evidence-score evidence-image-score" rowspan="' + visibleItems.length + '">' +
+            scoreCell(image) + (image ? '<span class="evidence-weight">Vision 문구 대조 · 공통 점수</span>' +
+                '<span class="evidence-image-detail">입력: ' + esc(image.inputValue == null ? '-' : image.inputValue) +
+                '<br>공표문: ' + esc(image.officialValue == null ? '-' : image.officialValue) + '</span>' : '') + '</td>' : '') +
+        '</tr>';
   }).join('');
 
   const table =
@@ -1187,19 +1190,19 @@ async function loadHistoryChannel(channel, targetId) {
   const list = document.getElementById(targetId);
   if (list) {
     list.innerHTML =
-            '<div class="history-empty">불러오는 중...</div>';
+        '<div class="history-empty">불러오는 중...</div>';
   }
 
   const r = await call(
-          '/api/verifications/me?page=0&size=20&channel=' + channel,
-          'GET'
+      '/api/verifications/me?page=0&size=20&channel=' + channel,
+      'GET'
   );
 
   if (!r.json || !r.json.success) {
     if (list) {
       list.innerHTML =
-              '<div class="history-empty">이력을 불러오지 못했습니다 (' +
-              r.status + ').</div>';
+          '<div class="history-empty">이력을 불러오지 못했습니다 (' +
+          r.status + ').</div>';
     }
     return;
   }
@@ -1239,7 +1242,7 @@ function renderHistoryList(targetId, items) {
 
   if (!items || !items.length) {
     list.innerHTML =
-            '<div class="history-empty">아직 검증 이력이 없습니다.</div>';
+        '<div class="history-empty">아직 검증 이력이 없습니다.</div>';
     return;
   }
 
@@ -1256,29 +1259,29 @@ function renderHistoryList(targetId, items) {
     ].filter(Boolean).join(' · ');
 
     const statusNote =
-            (v.status && v.status !== STATUS_OK)
-                    ? '<span class="history-status">' +
-                      esc(STATUS_LABEL[v.status] || v.status) + '</span>'
-                    : '';
+        (v.status && v.status !== STATUS_OK)
+            ? '<span class="history-status">' +
+            esc(STATUS_LABEL[v.status] || v.status) + '</span>'
+            : '';
 
     return '' +
-            '<div class="history-item" onclick="openHistoryItem(' +
-            Number(v.verificationId) + ')">' +
-            '<div class="history-product">' + icon + '</div>' +
-            '<div class="history-main">' +
-            '<div class="history-name">' +
-            esc(v.inputSummary || '제품 정보') + statusNote +
-            '</div>' +
-            '<div class="history-date">' + esc(sub) + '</div>' +
-            '</div>' +
-            (v.imageCheckAvailable
-                    ? '<button type="button" class="image-check-btn" ' +
-                      'onclick="event.stopPropagation(); checkImage(' + Number(v.verificationId) + ', this)">' +
-                      '📷 사진으로 찾기</button>'
-                    : '') +
-            '<div class="status-pill status-' + fr + '">' +
-            (LABEL[fr] || '-') + '</div>' +
-            '</div>';
+        '<div class="history-item" onclick="openHistoryItem(' +
+        Number(v.verificationId) + ')">' +
+        '<div class="history-product">' + icon + '</div>' +
+        '<div class="history-main">' +
+        '<div class="history-name">' +
+        esc(v.inputSummary || '제품 정보') + statusNote +
+        '</div>' +
+        '<div class="history-date">' + esc(sub) + '</div>' +
+        '</div>' +
+        (v.imageCheckAvailable
+            ? '<button type="button" class="image-check-btn" ' +
+            'onclick="event.stopPropagation(); checkImage(' + Number(v.verificationId) + ', this)">' +
+            '📷 사진으로 찾기</button>'
+            : '') +
+        '<div class="status-pill status-' + fr + '">' +
+        (LABEL[fr] || '-') + '</div>' +
+        '</div>';
   }).join('');
 }
 
@@ -1378,8 +1381,8 @@ async function loadCoupangRecent() {
       items = DEMO_HISTORY.EXTENSION.slice(0, COUPANG_SCAN_SIZE);
     } else {
       const r = await call(
-              '/api/verifications/me?page=0&size=' + COUPANG_SCAN_SIZE + '&channel=EXTENSION',
-              'GET'
+          '/api/verifications/me?page=0&size=' + COUPANG_SCAN_SIZE + '&channel=EXTENSION',
+          'GET'
       );
       if (!r.json || !r.json.success) {
         const list = document.getElementById('coupangRecentList');
@@ -1454,8 +1457,8 @@ function summarizeCoupang(items) {
   const done = unique.filter(v => !v.status || v.status === STATUS_OK);
   const rank = { MATCH: 0, PARTIAL: 1 };
   const suspects = done
-          .filter(v => stateOf(v) === 'MATCH' || stateOf(v) === 'PARTIAL')
-          .sort((a, b) => rank[stateOf(a)] - rank[stateOf(b)]);
+      .filter(v => stateOf(v) === 'MATCH' || stateOf(v) === 'PARTIAL')
+      .sort((a, b) => rank[stateOf(a)] - rank[stateOf(b)]);
   /* 9/27 — 항목누락: 텍스트로 못 찾았고 KC 인증번호도 없는 건. 사진으로 찾기 버튼 대상 */
   const missing = done.filter(v => stateOf(v) === 'MISSING');
   /* 9/30 — 서버 이력 응답의 kcStatus(확장이 쿠팡 고시에서 읽은 KC 인증정보 상태).
@@ -1510,8 +1513,8 @@ function updateCoupangResultCard(f) {
     /* 9/30 — 주문목록을 못 읽었을 때의 대안(직접 입력)을 같이 안내한다 */
     if (meta) {
       meta.textContent = '쿠팡 주문목록 페이지를 열면 확장 프로그램이 자동으로 보냅니다. ' +
-              '열었는데도 넘어오지 않으면 확장 프로그램 설치·로그인을 확인하고, 그래도 안 되면 ' +
-              "위 '품명으로 제품 확인'에서 제품명을 직접 입력해 확인하세요.";
+          '열었는데도 넘어오지 않으면 확장 프로그램 설치·로그인을 확인하고, 그래도 안 되면 ' +
+          "위 '품명으로 제품 확인'에서 제품명을 직접 입력해 확인하세요.";
     }
     if (pill) pill.style.display = 'none';
     return;
@@ -1529,10 +1532,10 @@ function updateCoupangResultCard(f) {
 
   if (f.suspects.length) {
     text('coupangResultProduct',
-            '구매한 제품 ' + f.done + '개 중 리콜 의심 제품 ' + f.suspects.length + '개를 찾았습니다');
+        '구매한 제품 ' + f.done + '개 중 리콜 의심 제품 ' + f.suspects.length + '개를 찾았습니다');
     if (meta) {
       meta.textContent = ['리콜 일치 ' + f.match + '개', '의심 ' + f.partial + '개']
-              .concat(extra).join(' · ') + ' — 제품을 눌러 판정 근거를 확인하세요.';
+          .concat(extra).join(' · ') + ' — 제품을 눌러 판정 근거를 확인하세요.';
     }
     if (pill) {
       pill.className = 'status-pill status-' + (f.match ? 'MATCH' : 'PARTIAL');
@@ -1568,7 +1571,7 @@ function updateCoupangResultCard(f) {
   } else if (f.kcKnown && !f.kcTarget) {
     /* 9/30 — KC 인증 대상으로 표기된 제품이 하나도 없을 때. '찾지 못함'만 보이면 고장인지 정상인지 구분이 안 된다. */
     text('coupangResultProduct',
-            '구매한 제품 ' + f.done + '개 중 KC 인증 대상으로 표기된 제품이 없습니다');
+        '구매한 제품 ' + f.done + '개 중 KC 인증 대상으로 표기된 제품이 없습니다');
     if (meta) {
       meta.textContent = extra.concat([
         /* 9/30 — 근거: 제4차 어린이제품 안전관리 기본계획(2025.1, 국가기술표준원) — 어린이제품안전법은
@@ -1585,11 +1588,11 @@ function updateCoupangResultCard(f) {
     return;
   } else {
     text('coupangResultProduct',
-            '구매한 제품 ' + f.done + '개에서 리콜 의심 제품을 찾지 못했습니다');
+        '구매한 제품 ' + f.done + '개에서 리콜 의심 제품을 찾지 못했습니다');
     if (meta) {
       const kcNote = f.kcKnown
-              ? ['KC 인증 대상 ' + f.kcTarget + '개 · 대상 아님 ' + f.kcNone + '개를 대조했습니다.']
-              : [];
+          ? ['KC 인증 대상 ' + f.kcTarget + '개 · 대상 아님 ' + f.kcNone + '개를 대조했습니다.']
+          : [];
       meta.textContent = extra.concat(kcNote).concat([
         '찾지 못했다고 안전하다는 뜻은 아닙니다. 공표문과 상품명이 크게 다르면 찾지 못할 수 있습니다.'
       ]).join(' · ');
@@ -1615,10 +1618,10 @@ function createDemoManualResult(input) {
   const lower = String(input.productName || '').toLowerCase();
 
   const isMatch =
-          lower.includes('물티슈') ||
-          lower.includes('장난감') ||
-          lower.includes('슬라임') ||
-          lower.includes('리콜');
+      lower.includes('물티슈') ||
+      lower.includes('장난감') ||
+      lower.includes('슬라임') ||
+      lower.includes('리콜');
 
   const id = demoSeq++;
 
@@ -1639,8 +1642,8 @@ function createDemoManualResult(input) {
     harmDscr: isMatch ? '프탈레이트계 가소제 기준 초과(더미)' : null,
     accidentCaseDscr: isMatch ? '피부 접촉 시 위해 우려(더미)' : null,
     publishActionDscr: isMatch
-            ? '즉시 사용을 중지하고 구입처에서 교환 또는 환급받으십시오(더미).'
-            : null,
+        ? '즉시 사용을 중지하고 구입처에서 교환 또는 환급받으십시오(더미).'
+        : null,
 
     publishDate: isMatch ? '20260901' : null,
     createdAt: new Date().toISOString().substring(0, 19)
@@ -1667,8 +1670,8 @@ function createDemoManualResult(input) {
     decision: result.finalResult,
     similarityScore: result.similarityScore,
     reason: isMatch
-            ? '모델명 완전 일치, 제품명 부분 일치 (더미)'
-            : '일치하는 리콜 공표문을 찾지 못함 (더미)',
+        ? '모델명 완전 일치, 제품명 부분 일치 (더미)'
+        : '일치하는 리콜 공표문을 찾지 못함 (더미)',
     recallProductName: result.recallProductName,
     publishDate: result.publishDate,
     comparisons: isMatch ? [
