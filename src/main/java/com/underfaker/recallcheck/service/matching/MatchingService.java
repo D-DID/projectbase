@@ -164,6 +164,16 @@ public class MatchingService {
             pool.putIfAbsent(r.getRecallUid(), r);
         }
         if (insight != null && insight.isUsable()) {
+            // 10/10 — 여러 사이트에서 반복된 KC 번호·모델명으로도 후보를 찾는다(최종 흐름 2차).
+            // 번호·모델명이 같은 공표문이 상품명 검색에 안 걸려도 대조 대상에 들어오게 한다.
+            if (insight.certNum() != null || insight.modelName() != null) {
+                for (Recall r : recallQueryService.findCandidates(identifiersOnly(insight))) {
+                    if (pool.size() >= IMAGE_SEARCH_MAX_CANDIDATES) {
+                        break;
+                    }
+                    pool.putIfAbsent(r.getRecallUid(), r);
+                }
+            }
             int used = 0;
             for (String text : insight.textCandidates()) {
                 if (used++ >= IMAGE_SEARCH_TEXTS || pool.size() >= IMAGE_SEARCH_MAX_CANDIDATES) {
@@ -195,19 +205,31 @@ public class MatchingService {
         return new ExtractedProduct(text, null, null, null, null, null, null, null, 1.0);
     }
 
-    /** 이미지판독이 충분히 맞으면 불일치를 의심으로 올린다. 일치로는 올리지 않는다. */
+    /** 10/10 — 사진으로 찾은 KC 번호·모델명만 가진 검색용 입력 */
+    private static ExtractedProduct identifiersOnly(ImageInsight insight) {
+        return new ExtractedProduct(null, null, insight.modelName(), null, null, insight.certNum(),
+                null, null, 1.0);
+    }
+
+    /**
+     * 사진 찾기 결과가 충분히 맞으면 불일치를 의심으로 올린다. 일치로는 올리지 않는다(팀장 결정 10/10 — 2차는 최대 '의심').
+     *   - 이미지판독(여러 사이트에서 반복된 상품명) IMAGE_SUSPECT_SCORE 이상
+     *   - 10/10 사진 KC 번호·사진 모델명이 공표문 값과 완전일치
+     */
     private Scored raiseByImage(Scored s) {
         if (s.decision() != Decision.NO_MATCH) {
             return s;
         }
         boolean imageHit = s.comparisons().stream()
-                .anyMatch(c -> c.field().equals("imageLabel") && c.weight() > 0
-                        && c.score() >= IMAGE_SUSPECT_SCORE);
+                .anyMatch(c -> c.weight() > 0
+                        && ((c.field().equals("imageLabel") && c.score() >= IMAGE_SUSPECT_SCORE)
+                        || ((c.field().equals(IMAGE_CERT_FIELD) || c.field().equals(IMAGE_MODEL_FIELD))
+                        && c.score() >= DecisionResolver.EXACT)));
         if (!imageHit) {
             return s;
         }
         return new Scored(s.recall(), s.profile(), s.comparisons(), s.score(), Decision.PARTIAL,
-                s.reason() + " · 사진 판독으로 의심");
+                s.reason() + " · 사진 찾기로 의심");
     }
 
     private List<MatchCandidate> saveAndSort(Long verificationId, List<Scored> scoredList) {
@@ -295,8 +317,9 @@ public class MatchingService {
         addListComparison(comparisons, "modelName",
                 product.modelName(), recall.getRecallModelName(), true, profile);
 
-        addListComparison(comparisons, "certNum",
-                product.certNum(), recall.getCertNum(), false, profile);
+        // 10/10 — 입력 인증번호가 여러 개("A, B")면 번호마다 재고 가장 잘 맞는 하나를 쓴다(KcCertNumbers.joinAll).
+        addCertNumComparison(comparisons, "certNum", "certNum",
+                product.certNum(), recall.getCertNum(), profile);
 
         // 상품명 — 입력은 원본과 정제본 둘 다, 공식 값은 분류명 칸과 상품명이 실제로 들어 있는
         // 모델명 칸 둘 다. 네 조합 중 가장 잘 맞는 하나를 대표로 쓴다.
@@ -316,6 +339,7 @@ public class MatchingService {
         }
 
         addImageComparison(comparisons, insight, recall, profile);
+        addImageIdentifierComparisons(comparisons, insight, product, recall, profile);
 
         // 비교할 다른 항목이 하나도 없는데 반영 안 되는 인증 모델명 행만 생기면, 대조 대상이 아니던 리콜이
         // 0점 후보로 저장된다(10/3 리뷰). 그래서 반영될 때(완전일치)나 다른 항목이 있을 때만 싣는다.
@@ -663,6 +687,81 @@ public class MatchingService {
         return !modelStyle || MatchProfile.hasModelCode(officialList);
     }
 
+    /** 10/10 — 사진 찾기(2차)로 얻은 KC 인증번호 대조 행 이름 */
+    public static final String IMAGE_CERT_FIELD = "imageCertNum";
+
+    /** 10/10 — 사진 찾기(2차)로 얻은 모델명(제품번호) 대조 행 이름 */
+    public static final String IMAGE_MODEL_FIELD = "imageModelName";
+
+    /**
+     * 10/10 — 인증번호 대조. 입력에 번호가 둘 이상이면 번호마다 재서 가장 높은 하나를 행으로 남긴다.
+     * 하나 이하면 기존 addListComparison 과 똑같다(입력 원문 그대로).
+     *
+     * @param field       결과 행 이름
+     * @param weightField 가중치를 가져올 항목 이름(사진 KC 번호는 인증번호 가중치를 쓴다)
+     */
+    private void addCertNumComparison(List<FieldComparison> out, String field, String weightField,
+                                      String input, String officialList, MatchProfile profile) {
+        List<String> numbers = KcCertNumbers.extract(input);
+        List<String> inputs = numbers.size() > 1 ? numbers : java.util.Collections.singletonList(input);
+        FieldComparison best = null;
+        for (String one : inputs) {
+            List<FieldComparison> tmp = new ArrayList<>();
+            addListComparison(tmp, weightField, one, officialList, false, profile);
+            for (FieldComparison c : tmp) {
+                if (best == null || c.score() > best.score()) {
+                    best = c;
+                }
+            }
+        }
+        if (best != null) {
+            out.add(new FieldComparison(field, best.inputValue(), best.officialValue(), best.score(), best.weight()));
+        }
+    }
+
+    /**
+     * 10/10 — 사진 찾기(2차)로 얻은 KC 인증번호·모델명(같은 사진이 실린 서로 다른 사이트 2곳 이상에서 같은 값)을
+     * 공표문의 인증번호·모델명 칸과 잰다.
+     *
+     * 싣는 조건 — 1차 값이 없거나 못 믿을 때만:
+     *   사진 KC 번호: 판매자 KC 번호가 없거나, 적힌 번호가 KC 인증 DB 에 없을 때(NOT_FOUND — 사진 찾기 버튼이 열리는 두 경우)
+     *   사진 모델명: 판매자 모델명이 비었을 때
+     * 적힌 값이 있으면 1차 값이 우선이고, 같은 항목이 두 번 들어가 가중치가 겹치지 않게 한다.
+     *
+     * 가중치 — <b>완전일치일 때만</b> 인증번호·모델명 가중치를 주고, 아니면 0 으로 근거표에만 남긴다.
+     * 사진 찾기는 결과를 올리기만 하고 깎지 않는다(10/10 리뷰: 0점 행이 가중치 0.5 로 들어가 텍스트 '의심'이
+     * '불일치'로 떨어질 수 있었다). 같은 제품도 리뉴얼로 KC 번호가 바뀌어 나온다(10/7 빠방 밀대) — 번호가 다르다는 건
+     * 반대 증거가 못 된다. 확정 근거로도 쓰지 않는다(DecisionResolver.isImageField — 최대 '의심').
+     */
+    private void addImageIdentifierComparisons(List<FieldComparison> out, ImageInsight insight,
+                                               ExtractedProduct product, Recall recall, MatchProfile profile) {
+        if (insight == null || !insight.isUsable()) {
+            return;
+        }
+        KcLookup sellerKc = KcLookup.fromRawText(product.rawText());
+        boolean sellerCertUnverified = sellerKc != null && sellerKc.status() == KcLookup.Status.NOT_FOUND;
+        if (insight.certNum() != null
+                && (KcCertNumbers.extract(product.certNum()).isEmpty() || sellerCertUnverified)) {
+            List<FieldComparison> tmp = new ArrayList<>();
+            addCertNumComparison(tmp, IMAGE_CERT_FIELD, "certNum", insight.certNum(), recall.getCertNum(), profile);
+            tmp.forEach(c -> out.add(onlyIfExact(c)));
+        }
+        if (insight.modelName() != null && (product.modelName() == null || product.modelName().isBlank())) {
+            List<FieldComparison> tmp = new ArrayList<>();
+            addListComparison(tmp, "modelName", insight.modelName(), recall.getRecallModelName(), true, profile);
+            for (FieldComparison c : tmp) {
+                out.add(onlyIfExact(new FieldComparison(IMAGE_MODEL_FIELD, c.inputValue(), c.officialValue(),
+                        c.score(), c.weight())));
+            }
+        }
+    }
+
+    /** 완전일치가 아니면 가중치 0(근거표에만 — 화면에 '판정 미반영') */
+    private static FieldComparison onlyIfExact(FieldComparison c) {
+        return c.score() >= DecisionResolver.EXACT ? c
+                : new FieldComparison(c.field(), c.inputValue(), c.officialValue(), c.score(), 0.0);
+    }
+
     /**
      * 판정 근거 문자열.
      * 어떤 프로파일로 쟀는지 같이 남긴다 — 같은 점수라도 임계값이 달라서
@@ -688,6 +787,8 @@ public class MatchingService {
             case "makerName" -> "제조사";
             case "brandName" -> "브랜드";
             case "imageLabel" -> "이미지판독";
+            case IMAGE_CERT_FIELD -> "사진 KC 번호";
+            case IMAGE_MODEL_FIELD -> "사진 모델명";
             case CERT_MODEL_FIELD -> "인증 모델명";
             default -> field;
         };

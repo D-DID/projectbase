@@ -34,6 +34,15 @@ import java.util.List;
  * 글자 단위로 겹칠 수가 없다 — 이미지판독 0%. 반면 같은 응답의 pagesWithMatchingImages[].pageTitle 은
  * 그 사진이 실린 판매 페이지 제목이라 한국 쇼핑몰이면 <b>한글 상품명</b>이다. 응답에 이미 들어 있던
  * 값(pages=10)을 버리고 있었다. 추가 호출·추가 비용 없음.
+ *
+ * ── 10/10 최종 흐름(팀장 결정) — 판정에는 "여러 사이트에서 반복된 값"만 쓴다 ──
+ * 2차(사진 찾기)는 같은 사진이 실린 웹 문서에서 <b>가장 여러 사이트에 반복된 값</b>으로 KC 인증번호·제품명·
+ * 제품번호(모델명)를 가져와 판단한다. 그래서 대조·후보 검색에 쓰는 값은 셋뿐이다.
+ *   productName — 서로 다른 사이트 2곳 이상에서 반복된 상품명(10/7)
+ *   certNum     — 그 페이지 본문에서 뽑은 KC 인증번호 중 2곳 이상에서 같은 번호(10/10)
+ *   modelName   — 같은 방식의 모델명·제품번호(10/10)
+ * bestGuessLabel·entities 는 Vision 이 추정한 이름이라(대개 영어, 9/27 슬라임 → 'honeybee') 반복 근거가 없다.
+ * 기록·로그용으로만 남기고 판정에는 쓰지 않는다(textCandidates·isUsable 에서 뺐다).
  */
 public record ImageInsight(
         String bestGuessLabel,
@@ -42,19 +51,23 @@ public record ImageInsight(
         int matchingPageCount,
         List<String> pageTitles,
         /* 10/7 — 같은 사진이 실린 서로 다른 사이트 2곳 이상에서 반복된 상품명(GoogleVisionClient.consensusTitle). 없으면 null */
-        String productName
+        String productName,
+        /* 10/10 — 같은 사진이 실린 페이지 본문의 KC 인증번호 중 서로 다른 사이트 2곳 이상에서 같은 번호. 없으면 null */
+        String certNum,
+        /* 10/10 — 같은 방식으로 고른 모델명(제품번호). 없으면 null */
+        String modelName
 ) {
 
     /** 판독하지 않았거나 실패한 경우. null 대신 이걸 쓴다. */
     public static final ImageInsight NONE =
-            new ImageInsight(null, List.of(), 0.0, 0, List.of(), null);
+            new ImageInsight(null, List.of(), 0.0, 0, List.of(), null, null, null);
 
     /**
      * 9/27 — 호출 자체가 실패했다(네트워크·API 오류·토큰·월 상한). NONE(웹에서 못 찾음)과 구분해야
      * 사진 확인 버튼을 "다시 누를 수 있음"으로 남길 수 있다. isUsable() 은 false 라 기존 호출부는 그대로다.
      */
     public static final ImageInsight FAILED =
-            new ImageInsight(null, List.of(), 0.0, -1, List.of(), null);
+            new ImageInsight(null, List.of(), 0.0, -1, List.of(), null, null, null);
 
     /** 호출 실패로 받은 결과인가 */
     public boolean failed() {
@@ -66,13 +79,19 @@ public record ImageInsight(
 
     /** 9/24 형태(페이지 제목 없음) 호환용. */
     public ImageInsight(String bestGuessLabel, List<String> entities, double topEntityScore, int matchingPageCount) {
-        this(bestGuessLabel, entities, topEntityScore, matchingPageCount, List.of(), null);
+        this(bestGuessLabel, entities, topEntityScore, matchingPageCount, List.of(), null, null, null);
     }
 
     /** 9/27 형태(상품명 없음) 호환용. */
     public ImageInsight(String bestGuessLabel, List<String> entities, double topEntityScore, int matchingPageCount,
                         List<String> pageTitles) {
-        this(bestGuessLabel, entities, topEntityScore, matchingPageCount, pageTitles, null);
+        this(bestGuessLabel, entities, topEntityScore, matchingPageCount, pageTitles, null, null, null);
+    }
+
+    /** 10/7 형태(페이지 본문 KC·모델명 없음) 호환용. */
+    public ImageInsight(String bestGuessLabel, List<String> entities, double topEntityScore, int matchingPageCount,
+                        List<String> pageTitles, String productName) {
+        this(bestGuessLabel, entities, topEntityScore, matchingPageCount, pageTitles, productName, null, null);
     }
 
     /**
@@ -87,36 +106,32 @@ public record ImageInsight(
     public ImageInsight {
         entities = entities == null ? List.of() : List.copyOf(entities);
         pageTitles = pageTitles == null ? List.of() : List.copyOf(pageTitles);
-        productName = productName == null || productName.isBlank() ? null : productName.trim();
-    }
-
-    /** 대조에 쓸 만한 판독 결과가 있는가. */
-    public boolean isUsable() {
-        return (bestGuessLabel != null && !bestGuessLabel.isBlank())
-                || !entities.isEmpty() || !pageTitles.isEmpty();
+        productName = blankToNull(productName);
+        certNum = blankToNull(certNum);
+        modelName = blankToNull(modelName);
     }
 
     /**
-     * 공표문과 대조해 볼 텍스트 후보들.
-     * bestGuessLabel 을 맨 앞에 둔다 — 개체명보다 구체적이라 대개 잘 맞는다.
-     * 페이지 제목은 맨 뒤에 둔다. 순서는 동점일 때 어느 값을 근거로 보여 줄지만 바꾼다.
+     * 대조에 쓸 만한 판독 결과가 있는가 — 여러 사이트에서 반복된 상품명·KC 번호·모델명 중 하나라도 있는가.
+     *
+     * 10/10 — 추정 이름(bestGuess)·개체명만 있는 결과는 쓰지 않는다(최종 흐름: 반복된 값만 판정에 쓴다).
+     * 9/27~10/9 는 그것만 있어도 '찾음'으로 보고 대조에 넣었다.
+     */
+    public boolean isUsable() {
+        return productName != null || certNum != null || modelName != null;
+    }
+
+    /**
+     * 공표문과 대조해 볼 텍스트 후보 — 여러 사이트에서 반복된 상품명 하나뿐이다(10/10).
+     * 9/24~10/9 는 bestGuess·개체명·페이지 제목까지 넣었다. 반복 근거가 없는 이름이 리콜 후보를 끌어오고
+     * 이미지판독 점수를 만들어 '의심'이 날 수 있었다.
      */
     public List<String> textCandidates() {
-        List<String> out = new ArrayList<>();
-        if (bestGuessLabel != null && !bestGuessLabel.isBlank()) {
-            out.add(bestGuessLabel.trim());
-        }
-        for (String e : entities) {
-            if (e != null && !e.isBlank() && !out.contains(e.trim())) {
-                out.add(e.trim());
-            }
-        }
-        for (String t : pageTitles) {
-            if (t != null && !t.isBlank() && !out.contains(t.trim())) {
-                out.add(t.trim());
-            }
-        }
-        return out;
+        return productName == null ? List.of() : List.of(productName);
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     /**
@@ -192,6 +207,12 @@ public record ImageInsight(
         if (productName != null) {
             sb.append("product: ").append(oneLine(productName)).append('\n');
         }
+        if (certNum != null) {
+            sb.append("cert: ").append(oneLine(certNum)).append('\n');
+        }
+        if (modelName != null) {
+            sb.append("model: ").append(oneLine(modelName)).append('\n');
+        }
         return sb.append(RAW_TEXT_END).toString();
     }
 
@@ -216,6 +237,8 @@ public record ImageInsight(
         List<String> entities = new ArrayList<>();
         List<String> titles = new ArrayList<>();
         String product = null;
+        String cert = null;
+        String model = null;
         for (String line : body.split("\\R")) {
             String l = line.trim();
             if (l.startsWith("best:")) {
@@ -236,10 +259,14 @@ public record ImageInsight(
                 }
             } else if (l.startsWith("product:")) {
                 product = l.substring(8).trim();
+            } else if (l.startsWith("cert:")) {
+                cert = l.substring(5).trim();
+            } else if (l.startsWith("model:")) {
+                model = l.substring(6).trim();
             }
         }
         ImageInsight insight = new ImageInsight(best == null || best.isEmpty() ? null : best,
-                entities, top, pages, titles, product);
+                entities, top, pages, titles, product, cert, model);
         return insight.isUsable() ? insight : NONE;
     }
 

@@ -88,4 +88,29 @@ public final class KcCertNumbers {
         List<String> numbers = extract(raw);
         return numbers.isEmpty() ? null : numbers.get(0);
     }
+
+    /**
+     * 10/10 — 여러 칸의 원문에서 번호를 모두 모아 ", " 로 잇는다(중복 제거, 나온 순서, 최대 {@link #MAX_NUMBERS}개).
+     * 번호가 하나도 없으면 null.
+     *
+     * 왜 필요한가 — 확장 0.4.4 는 쿠팡 KC 인증정보 칸에서 <b>첫 번호만</b> certNum 으로 보낸다
+     * (detail-parser.js CERT_RE). 칸 원문(kcText)에 남은 두 번째·세 번째 번호는 조회도 대조도 안 됐다.
+     * 실측(10/7 빠방 밀대): 판매글에 "리뉴얼 진행 중… KC인증번호가 상이한 동일 제품 수령 가능"이 있고
+     * KC 칸에 번호가 여러 개였다. 최종 흐름(10/10)은 KC 번호가 1차 판단 기준이라 칸의 번호를 전부 쓴다.
+     * 확장을 다시 배포하지 않아도 되게 서버에서 원문을 다시 읽는다.
+     */
+    public static String joinAll(String... raws) {
+        Set<String> found = new LinkedHashSet<>();
+        if (raws != null) {
+            for (String raw : raws) {
+                for (String n : extract(raw)) {
+                    if (found.size() >= MAX_NUMBERS) {
+                        break;
+                    }
+                    found.add(n);
+                }
+            }
+        }
+        return found.isEmpty() ? null : String.join(", ", found);
+    }
 }

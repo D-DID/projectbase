@@ -186,4 +186,31 @@ class KcCertMatchingTest {
         ExtractedProduct seller2 = new ExtractedProduct(null, null, null, null, null, "YU10147-14002A", null, null, 1.0);
         assertEquals(Decision.MATCH, decide(cougar.applyTo(seller2), cougarRecall));
     }
+
+    @Test
+    void 판매자가_번호를_여러_개_적었으면_그중_하나가_공표문과_같아도_일치() {
+        // 10/10 — KC 칸 번호를 모두 모아 "A, B" 로 넘긴다(VerificationService.withAllCertNumbers)
+        ExtractedProduct seller = new ExtractedProduct("핑크풋 슬라임 대용량 3종 세트", null, null, null, null,
+                "B364R970-2001, CB067R2225-4001", null, null, 1.0);
+        assertEquals(Decision.MATCH, decide(seller, pinkFootRecall("CB067R2225-4001")));
+    }
+
+    @Test
+    void 사진_찾기로_얻은_KC_번호가_공표문과_같아도_일치가_아니라_최대_의심() {
+        // 10/10 팀장 결정 — 2차(사진 찾기) 값은 판매자가 적은 값이 아니라 확정 근거로 쓰지 않는다
+        ExtractedProduct seller = new ExtractedProduct("아기 장난감 세트", null, null, null, null,
+                null, null, null, 1.0);
+        com.underfaker.recallcheck.dto.internal.ImageInsight insight =
+                new com.underfaker.recallcheck.dto.internal.ImageInsight(null, List.of(), 0.0, 3, List.of(),
+                        null, "CB067R2225-4001", null);
+        Recall recall = pinkFootRecall("CB067R2225-4001");
+        MatchProfile profile = MatchProfile.of(recall);
+        List<FieldComparison> comparisons = matching.compare(seller, recall, profile, insight);
+
+        FieldComparison imageCert = comparisons.stream()
+                .filter(c -> c.field().equals(MatchingService.IMAGE_CERT_FIELD)).findFirst().orElseThrow();
+        assertEquals(1.0, imageCert.score(), 1e-9);
+        assertNotEquals(Decision.MATCH,
+                resolver.resolve(calculator.weightedScore(comparisons), profile, comparisons));
+    }
 }

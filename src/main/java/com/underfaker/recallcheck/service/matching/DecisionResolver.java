@@ -75,7 +75,9 @@ public class DecisionResolver {
         boolean anyText = false;
         boolean allTextExact = true;
         for (FieldComparison c : comparisons) {
-            if (c.weight() <= 0 || "imageLabel".equals(c.field())) {
+            // 10/10 — 사진 찾기(2차)로 얻은 값(imageLabel·imageCertNum·imageModelName)은 확정 근거가 아니다.
+            // 판매자가 적은 값이 아니라 같은 사진이 실린 다른 페이지에서 가져온 값이라 최대 '의심'(팀장 결정 10/10).
+            if (c.weight() <= 0 || isImageField(c.field())) {
                 continue;
             }
             if (IDENTIFIER_FIELDS.contains(c.field()) && c.score() >= EXACT) {
@@ -85,6 +87,11 @@ public class DecisionResolver {
             allTextExact &= c.score() >= EXACT;
         }
         return anyText && allTextExact;
+    }
+
+    /** 사진 찾기(2차)에서 온 항목인가 — 이름이 "image" 로 시작한다 */
+    static boolean isImageField(String field) {
+        return field != null && field.startsWith("image");
     }
 
     /** 프로파일을 안 주면 기존 동작(IDENTIFIED 임계값)을 따른다. 호환용. */

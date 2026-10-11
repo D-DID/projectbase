@@ -721,22 +721,26 @@ async function verify() {
 ================================================== */
 
 /* 9/27 — 팀장 결정 4단계: 일치(100% 확정 근거) · 의심 · 항목누락 · 불일치.
-   서버가 resultState 로 내려준다(dto.internal.ResultView). 항목누락(MISSING)은 DB 판정값이 아니라
-   "텍스트로 못 찾았고 KC 인증번호도 없음" 을 뜻하는 화면 상태다. 없으면 finalResult 로 대신한다. */
+   서버가 resultState 로 내려준다(dto.internal.ResultView). MISSING 은 DB 판정값이 아니라
+   "텍스트로 못 찾았고 KC 인증번호도 없음" 을 뜻하는 화면 상태다. 없으면 finalResult 로 대신한다.
+   10/10 — 최종 흐름(팀장 결정): MISSING 표시를 '항목누락' → 'KC 번호 미표기'로 바꾼다. '불법'으로 단정하지 않는다
+   (공급자적합성확인 제품은 인증기관 번호가 없을 수 있다). EXCLUDED(판단 제외) 추가 — (어린이제품이 아닌) 해외직구·구매대행 상품은 판단하지 않는다. */
 const LABEL = {
   MATCH: '일치',
   PARTIAL: '의심',
-  MISSING: '항목누락',
+  MISSING: 'KC 번호 미표기',
   NO_MATCH: '불일치',
-  UNKNOWN: '확인불가'
+  UNKNOWN: '확인불가',
+  EXCLUDED: '판단 제외'
 };
 
 const SUBLABEL = {
   MATCH: '리콜 대상 제품과 일치합니다 (인증번호·모델명 등 100% 일치).',
   PARTIAL: '리콜 제품과 닮았습니다. 확인이 필요합니다.',
-  MISSING: '확인에 필요한 정보(KC 인증번호 등)가 없습니다.',
+  MISSING: 'KC 인증번호가 없어 KC 번호로 판단하지 못했습니다.',
   NO_MATCH: '일치하는 리콜 공표문을 찾지 못했습니다. 안전하다는 뜻은 아닙니다.',
-  UNKNOWN: '정보 부족으로 판별할 수 없습니다.'
+  UNKNOWN: '정보 부족으로 판별할 수 없습니다.',
+  EXCLUDED: '(어린이제품이 아닌) 해외직구·구매대행 상품은 판단하지 않습니다.'
 };
 
 /* 화면에 쓸 상태 키 — 서버 resultState 우선, 없으면(구 서버·더미) finalResult */
@@ -754,7 +758,10 @@ const FIELD_LABEL = {
   makerName: '제조사',
   brandName: '브랜드',
   imageLabel: '이미지판독',
-  certModelName: '인증 모델명'   /* 10/3 — KC 인증 DB 모델명 대조. 완전일치일 때만 판정에 반영 */
+  certModelName: '인증 모델명',  /* 10/3 — KC 인증 DB 모델명 대조. 완전일치일 때만 판정에 반영 */
+  /* 10/10 — 사진 찾기(2차): 같은 사진이 실린 서로 다른 사이트 2곳 이상에서 같은 값. 최대 '의심'까지만 */
+  imageCertNum: '사진 KC 번호',
+  imageModelName: '사진 모델명'
 };
 
 /* comparisons[].field → 입력 비교 박스의 element id */
@@ -852,7 +859,7 @@ function setResultState(fr, score, d) {
   if (hero) hero.className = 'result-hero state-' + fr;
 
   /* 9/30 — 불일치 아이콘 ✓ → ≠ . 체크 표시는 '안전 확인'으로 읽힌다(불일치 = 공표문과 안 맞음일 뿐) */
-  const icons = { MATCH: '!', PARTIAL: '?', MISSING: '…', NO_MATCH: '≠', UNKNOWN: '–' };
+  const icons = { MATCH: '!', PARTIAL: '?', MISSING: '…', NO_MATCH: '≠', UNKNOWN: '–', EXCLUDED: '–' };
 
   text('resultIcon', icons[fr] || '–');
   text('resultTitle', LABEL[fr] || '확인불가');
@@ -863,7 +870,7 @@ function setResultState(fr, score, d) {
   const scoreEl = document.getElementById('score');
   if (scoreEl) {
     scoreEl.textContent =
-            (score === null || score === undefined || fr === 'NO_MATCH' || fr === 'MISSING')
+            (score === null || score === undefined || fr === 'NO_MATCH' || fr === 'MISSING' || fr === 'EXCLUDED')
                     ? '-'
                     : (score * 100).toFixed(1) + '%';
   }
@@ -899,15 +906,29 @@ function setResultState(fr, score, d) {
 
   } else if (fr === 'MISSING') {
     notice.className = 'result-notice missing';
-    /* 10/7 — 사진 확인 뒤에도 항목누락으로 남는다(ResultView). 이미 사진으로 찾아봤으면 그 사실을 적는다. */
+    /* 10/7 — 사진 확인 뒤에도 KC 번호 미표기(구 항목누락)로 남는다(ResultView). 이미 사진으로 찾아봤으면 그 사실을 적는다. */
     const imageChecked = d && (d.imageCheck === 'FOUND' || d.imageCheck === 'NONE');
     notice.innerHTML =
-            '<strong>🟣 항목누락 — 판단할 정보가 부족합니다.</strong><br>' +
-            esc((d && d.missingReason) || 'KC 인증번호 같은 식별 정보가 없습니다.') + ' ' +
+            '<strong>🟣 KC 번호 미표기 — KC 인증번호로 판단할 수 없습니다.</strong><br>' +
+            esc((d && d.missingReason) || 'KC 인증번호가 없습니다.') + ' ' +
             (imageChecked
                     ? '사진으로도 찾아봤지만 일치하는 리콜 공표문은 없었습니다. ' +
                       '공표문과 맞지 않는다고 KC 인증을 받은 제품이라는 뜻은 아닙니다.'
-                    : '상품명만으로는 리콜 공표문을 찾지 못했습니다. 사진으로 한 번 더 찾아볼 수 있습니다.');
+                    : '상품명만으로는 리콜 공표문을 찾지 못했습니다. ' +
+                      /* 10/10 — 사진 주소가 없으면 사진 찾기 버튼이 안 나온다(웹 직접입력은 대개 사진 없음) */
+                      (d && d.imageCheckAvailable
+                              ? '사진으로 한 번 더 찾아볼 수 있습니다.'
+                              : 'KC 인증번호를 넣거나 사진 주소를 넣으면 다시 확인할 수 있습니다.'));
+
+  } else if (fr === 'EXCLUDED') {
+    /* 10/10 — 국외 판매(해외직구·구매대행) 상품은 판단 범위가 아니다(팀장 결정). 서버 ResultView.EXCLUDED */
+    notice.className = 'result-notice unknown';
+    notice.innerHTML =
+        '<strong>– 판단 제외 — (어린이제품이 아닌) 해외직구·구매대행 상품</strong><br>' +
+        esc((d && d.missingReason) || '(어린이제품이 아닌) 해외직구·구매대행 상품이라 판단하지 않습니다.') + ' ' +
+        '이 서비스는 국내에서 판매되는 KC 인증 대상 공산품·유아제품만 판단합니다. ' +
+        /* 10/10 — 어린이제품은 구매대행도 KC 표시 필수(어린이제품법 제30조)라 서버가 판단 제외하지 않는다 */
+        '어린이제품은 해외직구·구매대행이어도 KC 표시가 필수라 판단합니다(어린이제품 안전 특별법 제30조).';
 
   } else if (fr === 'NO_MATCH') {
     notice.className = 'result-notice nomatch';
@@ -956,10 +977,11 @@ function kcCertHtml(d) {
 }
 
 /* 9/27 — 사진으로 찾기 버튼과 결과 문구. 서버가 imageCheckAvailable 을 내려줄 때만 버튼을 보인다
-   (사진이 있고, 아직 안 눌렀고, 일치가 아닌 건 — 쿠팡은 항목누락일 때). */
+   (10/10 — 사진이 있고, 아직 안 눌렀고, 일치가 아니고, KC 번호로 판단할 수 없는 건: 번호 미표기·미입력이거나
+   적힌 번호가 KC 인증 DB 에 없을 때). */
 const IMAGE_CHECK_NOTE = {
   FOUND: '📷 사진으로 웹을 검색해 공표문과 한 번 더 대조했습니다.',
-  NONE: '📷 사진으로 웹을 검색했지만 이 사진이 실린 곳을 찾지 못했습니다.'
+  NONE: '📷 사진으로 웹을 검색했지만 여러 사이트에서 반복된 상품명·KC 번호·모델명을 찾지 못했습니다.'
 };
 
 function imageCheckHtml(d) {
@@ -972,9 +994,16 @@ function imageCheckHtml(d) {
   /* 10/7 — 사진으로 찾은 상품명(여러 사이트에서 반복된 것)을 보여 준다. 없으면 '특정 못 함'으로 적는다.
      10/7 이전에 사진 확인한 건은 상품명이 저장돼 있지 않아 '특정 못 함'으로 보인다. */
   if (d.imageCheck === 'FOUND') {
-    const found = d.imageProductName
-            ? '📷 사진으로 찾은 상품명: <b>' + esc(d.imageProductName) + '</b> — 여러 사이트에 같은 사진·같은 이름으로 실려 있어 이 이름으로 공표문과 한 번 더 대조했습니다.'
-            : '📷 사진으로 웹을 검색했지만 여러 사이트에 반복된 같은 상품을 찾지 못해 상품명을 특정하지 못했습니다.';
+    /* 10/10 — 최종 흐름 2차: 같은 사진이 실린 서로 다른 사이트 2곳 이상에서 반복된 상품명·KC 번호·모델명 */
+    const facts = [
+      d.imageProductName ? '상품명 <b>' + esc(d.imageProductName) + '</b>' : null,
+      d.imageCertNum ? 'KC 번호 <b>' + esc(d.imageCertNum) + '</b>' : null,
+      d.imageModelName ? '모델명 <b>' + esc(d.imageModelName) + '</b>' : null
+    ].filter(Boolean);
+    const found = facts.length
+            ? '📷 사진으로 찾은 정보: ' + facts.join(' · ') + ' — 같은 사진이 여러 사이트에 실려 있고 그 사이트들에서 ' +
+              '같은 값이 반복돼 이 값으로 공표문과 한 번 더 대조했습니다. 판매자가 직접 적은 값이 아니라서 최대 \'의심\'까지만 판정합니다.'
+            : '📷 사진으로 웹을 검색했지만 여러 사이트에 반복된 같은 상품을 찾지 못해 상품을 특정하지 못했습니다.';
     return '<span class="image-check-note">' + found + '</span>';
   }
   const note = IMAGE_CHECK_NOTE[d.imageCheck];
@@ -1399,7 +1428,7 @@ async function loadCoupangRecent() {
     renderHistoryList('coupangSuspectList', finder.suspects.slice(0, COUPANG_SUSPECT_SHOW));
     const suspectList = document.getElementById('coupangSuspectList');
     if (suspectList && !finder.suspects.length) suspectList.innerHTML = '';
-    /* 9/27 — 항목누락 목록(사진으로 찾기 버튼) */
+    /* 9/27 — KC 번호 미표기(구 항목누락) 목록(사진으로 찾기 버튼) */
     renderHistoryList('coupangMissingList', finder.missingItems.slice(0, COUPANG_SUSPECT_SHOW));
     const missingList = document.getElementById('coupangMissingList');
     if (missingList && !finder.missingItems.length) missingList.innerHTML = '';
@@ -1459,12 +1488,15 @@ function summarizeCoupang(items) {
   const suspects = done
       .filter(v => stateOf(v) === 'MATCH' || stateOf(v) === 'PARTIAL')
       .sort((a, b) => rank[stateOf(a)] - rank[stateOf(b)]);
-  /* 9/27 — 항목누락: 텍스트로 못 찾았고 KC 인증번호도 없는 건. 사진으로 찾기 버튼 대상 */
+  /* 9/27 — KC 번호 미표기(구 항목누락): 텍스트로 못 찾았고 KC 인증번호도 없는 건. 사진으로 찾기 버튼 대상 */
   const missing = done.filter(v => stateOf(v) === 'MISSING');
+  /* 10/10 — 판단 제외: 해외직구·구매대행 상품(서버 ResultView.EXCLUDED) */
+  const excluded = done.filter(v => stateOf(v) === 'EXCLUDED');
   /* 9/30 — 서버 이력 응답의 kcStatus(확장이 쿠팡 고시에서 읽은 KC 인증정보 상태).
      KC 대상 = 번호 있음·번호 없음(참조)·못 읽음. NONE = KC 칸이 없거나 '해당없음'. 없으면(구 기록·웹) 모름 */
   const KC_TARGET = { DISCLOSED: 1, REFERENCED: 1, UNREADABLE: 1 };
-  const kcKnown = done.filter(v => !!v.kcStatus);
+  /* 10/10 — 판단 제외(해외직구·구매대행) 건은 대조하지 않았으므로 KC 대상 집계에서 뺀다 */
+  const kcKnown = done.filter(v => !!v.kcStatus && stateOf(v) !== 'EXCLUDED');
   const kcTarget = kcKnown.filter(v => KC_TARGET[v.kcStatus]).length;
   const kcNone = kcKnown.filter(v => v.kcStatus === 'NONE').length;
 
@@ -1477,7 +1509,8 @@ function summarizeCoupang(items) {
     match: suspects.filter(v => stateOf(v) === 'MATCH').length,
     partial: suspects.filter(v => stateOf(v) === 'PARTIAL').length,
     missing: missing.length,
-    /* 10/7 — 항목누락 중 아직 사진으로 찾기를 누를 수 있는 건(사진 확인을 한 건도 항목누락으로 남는다) */
+    excluded: excluded.length,
+    /* 10/7 — KC 번호 미표기 중 아직 사진으로 찾기를 누를 수 있는 건(사진 확인을 한 건도 그대로 남는다) */
     missingCheckable: missing.filter(v => v.imageCheckAvailable).length,
     kcKnown: kcKnown.length,
     kcTarget: kcTarget,
@@ -1522,9 +1555,10 @@ function updateCoupangResultCard(f) {
 
   const extra = [];
   if (f.missing) {
-    extra.push('항목누락 ' + f.missing + '개' +
+    extra.push('KC 번호 미표기 ' + f.missing + '개' +
             (f.missingCheckable ? ' (사진으로 찾기 가능 ' + f.missingCheckable + '개)' : ''));
   }
+  if (f.excluded) extra.push('(어린이제품이 아닌) 해외직구·구매대행 판단 제외 ' + f.excluded + '개');
   if (f.pending) extra.push('확인 중 ' + f.pending + '개');
   if (f.failed) extra.push('처리 실패 ' + f.failed + '개');
 
@@ -1554,7 +1588,7 @@ function updateCoupangResultCard(f) {
     if (meta) meta.textContent = extra.join(' · ');
   } else if (f.missing) {
     text('coupangResultProduct',
-            '구매한 제품 ' + f.done + '개 중 항목누락 ' + f.missing + '개' +
+            '구매한 제품 ' + f.done + '개 중 KC 번호 미표기 ' + f.missing + '개' +
             (f.missingCheckable ? ' — 사진으로 찾아보세요' : ' — KC 인증번호를 확인하지 못했습니다'));
     if (meta) {
       meta.textContent = f.missingCheckable
@@ -1565,7 +1599,7 @@ function updateCoupangResultCard(f) {
     }
     if (pill) {
       pill.className = 'status-pill status-MISSING';
-      pill.textContent = '항목누락 ' + f.missing + '개';
+      pill.textContent = 'KC 번호 미표기 ' + f.missing + '개';
     }
     return;
   } else if (f.kcKnown && !f.kcTarget) {

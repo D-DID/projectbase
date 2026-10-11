@@ -1,6 +1,9 @@
 package com.underfaker.recallcheck.service;
 
 import com.underfaker.recallcheck.client.GoogleVisionClient;
+import com.underfaker.recallcheck.common.ChildProductSignal;
+import com.underfaker.recallcheck.common.KcCertNumbers;
+import com.underfaker.recallcheck.common.OverseasListing;
 import com.underfaker.recallcheck.common.PageResponse;
 import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
 import com.underfaker.recallcheck.dto.internal.ExtractionNotes;
@@ -10,7 +13,6 @@ import com.underfaker.recallcheck.dto.internal.KcLookup;
 import com.underfaker.recallcheck.dto.internal.MatchCandidate;
 import com.underfaker.recallcheck.dto.internal.MatchOutcome;
 import com.underfaker.recallcheck.dto.internal.ResultView;
-import com.underfaker.recallcheck.dto.request.ImageVerifyRequest;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
 import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
 import com.underfaker.recallcheck.dto.response.KcCertResponse;
@@ -92,13 +94,6 @@ public class VerificationService {
                 "URL 자동 추출(FR-005)은 아직 구현 중입니다. 직접 입력 검증을 사용해 주세요.");
     }
 
-    /** FR-004 이미지 업로드 검증 (미구현) */
-    @Transactional
-    public VerificationResultResponse verifyByImage(ImageVerifyRequest request) {
-        throw new BusinessException(ErrorCode.NOT_IMPLEMENTED,
-                "이미지 OCR(FR-006)은 아직 구현 중입니다. 직접 입력 검증을 사용해 주세요.");
-    }
-
     /**
      * FR-008 사용자 직접 입력 검증 — 추출부터 4단계 판정까지 end-to-end.
      *
@@ -122,12 +117,57 @@ public class VerificationService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VerificationResultResponse verifyByManualInput(ManualInputRequest request, VerificationChannel channel) {
         requireUserId();
+        // 10/10 — 최종 흐름 1차는 KC 인증번호 기준이다. 확장 0.4.4 는 KC 칸의 첫 번호만 certNum 으로 보내므로
+        // KC 칸 원문(kcText)에 남은 번호까지 모아 판정에 쓴다(KcCertNumbers.joinAll).
+        ManualInputRequest req = withAllCertNumbers(request);
+        // 10/10 — 해외직구·구매대행 상품은 판단하지 않는다(팀장 결정). KC 조회도 하지 않는다.
+        // 단 어린이제품은 판단한다 — 구매대행도 KC 표시가 없으면 금지(어린이제품법 제30조). excludedOverseas 참조.
+        boolean overseas = excludedOverseas(req) != null;
         // 10/3 — KC인증 연동. KC 인증번호 조회(캐시 → KC API)는 검증 트랜잭션을 열기 <b>전에</b> 한다.
         // 외부 API 를 기다리는 동안(최대 수 초) DB 커넥션을 잡고 있지 않게 하려는 것(10/3 리뷰).
-        // 직접입력 검증의 추출 결과는 이 요청 값 하나뿐이라 request.certNum() 이 곧 판정에 쓰는 인증번호다.
+        // 직접입력 검증의 추출 결과는 이 요청 값 하나뿐이라 req.certNum() 이 곧 판정에 쓰는 인증번호다.
         // 조회 실패·미등록이어도 판정은 그대로 진행한다(KcLookupService 는 예외를 던지지 않는다).
-        KcLookup kc = kcLookupService.lookup(request.certNum());
-        return self.verifyByManualInputWithKc(request, channel, kc);
+        KcLookup kc = overseas ? null : kcLookupService.lookup(req.certNum());
+        return self.verifyByManualInputWithKc(req, channel, kc);
+    }
+
+    /**
+     * 10/10 — 판단에서 뺄 국외 판매 상품이면 그 표시(예: "해외직구"), 아니면 null.
+     *
+     * 해외직구·구매대행 표시가 있어도 <b>어린이제품이면 빼지 않는다</b>(팀장 확인 10/10).
+     *   어린이제품 안전 특별법 제30조 — 판매중개업자·구매·수입대행업자는 안전인증·안전확인·공급자적합성확인 표시가 없는
+     *   안전관리대상어린이제품의 판매를 중개하거나 구매·수입을 대행해서는 안 된다(시행 2025.10.1, 국가법령정보센터 원문).
+     *   제4차 어린이제품 안전관리 기본계획(2025.1) 2-③ "KC 미인증 구매대행 어린이제품 등 불법제품 안전관리 강화".
+     * 즉 어린이제품은 구매대행이어도 KC 가 필수라 판단 대상이다. 어린이제품이 아닌 해외직구·구매대행 상품만 뺀다.
+     */
+    static String excludedOverseas(ManualInputRequest r) {
+        String signal = OverseasListing.signal(r.productName(), r.kcText());
+        if (signal == null || ChildProductSignal.likely(r.productName(), r.kcText())) {
+            return null;
+        }
+        return signal;
+    }
+
+    /** extraction.cert_num 칸 길이 */
+    private static final int CERT_NUM_MAX_LENGTH = 64;
+
+    /**
+     * 10/10 — KC 칸 원문(kcText)에 인증번호 칸에 없던 번호가 더 있으면, 번호를 모두 모아 certNum 으로 바꾼 요청.
+     * 새로 나온 번호가 없으면 원래 요청 그대로다 — 판매자·사용자가 적은 원문을 cert_num 에 그대로 남긴다(KcLookup.applyTo 주석).
+     * 바꿀 때도 KC 칸 원문은 [detail] 블록(kcText)에 남는다. 칸 길이(64자)를 넘으면 뒤 번호부터 뺀다.
+     */
+    static ManualInputRequest withAllCertNumbers(ManualInputRequest r) {
+        String all = KcCertNumbers.joinAll(r.certNum(), r.kcText());
+        List<String> numbers = KcCertNumbers.extract(all);
+        if (all == null || numbers.size() <= KcCertNumbers.extract(r.certNum()).size()) {
+            return r;
+        }
+        while (all.length() > CERT_NUM_MAX_LENGTH && numbers.size() > 1) {
+            numbers = numbers.subList(0, numbers.size() - 1);
+            all = String.join(", ", numbers);
+        }
+        return new ManualInputRequest(r.productName(), r.brandName(), r.modelName(), r.makerName(),
+                r.barcodeNum(), all, r.thumbnailUrl(), r.kcStatus(), r.kcText());
     }
 
     /**
@@ -148,6 +188,19 @@ public class VerificationService {
                 .build());
 
         ExtractedProduct product = extractionService.extractFromManualInput(verification.getId(), request);
+
+        // 10/10 — 해외직구·구매대행 상품은 판단하지 않는다(팀장 결정: 국외 제품은 판단 대상이 아니다).
+        // 입력은 이력에 남기고, 판정은 UNKNOWN 으로 저장한다(final_result ENUM). 화면에는 '판단 제외'(ResultView.EXCLUDED).
+        // 어린이제품은 빼지 않고 판단한다 — 메모만 남겨 화면에 제30조 안내를 붙인다.
+        String overseas = OverseasListing.signal(request.productName(), request.kcText());
+        if (overseas != null) {
+            if (excludedOverseas(request) != null) {
+                extractionService.markOverseas(verification.getId(), overseas);
+                verification.complete(FinalResult.UNKNOWN);
+                return toResult(verification, null, null);
+            }
+            extractionService.markOverseasChild(verification.getId(), overseas);
+        }
 
         // 10/3 — KC인증 연동. 조회 결과를 판정 입력에 싣는다(KcLookup.applyTo). 매칭은 인증 DB 모델명을
         // 리콜 공표문 모델명과 대조해 정확히 같을 때만 확정 근거로 쓴다(다르면 판정을 깎지 않는다).
@@ -225,21 +278,31 @@ public class VerificationService {
     }
 
     /**
-     * 9/27 추가 — 사진으로 찾기. 사용자가 "항목누락" 건의 버튼을 눌렀을 때만 Google Vision 을 부른다.
+     * 9/27 추가 — 사진으로 찾기. 사용자가 버튼을 눌렀을 때만 Google Vision 을 부른다.
      *
-     * 흐름: 썸네일 → Vision Web Detection(추정 이름·웹 문서 제목) → 그 텍스트로 공공데이터 후보를 더 찾고
-     *       전 후보를 이미지판독까지 얹어 다시 채점(MatchingService.matchByImage) → 판정 갱신.
+     * ── 10/10 최종 흐름 2차(팀장 결정) ──
+     * 1차(KC 인증번호 + 제품명)로 판단할 수 없을 때 — KC 번호를 못 얻었거나 적힌 번호가 KC 인증 DB 에 없을 때 —
+     * 썸네일을 Vision 으로 웹에서 찾는다. 같은 사진이 실린 문서에서 <b>여러 사이트에 반복된 값</b>만 가져온다:
+     *   상품명(페이지 제목), KC 인증번호·모델명(페이지 본문 — GoogleVisionClient 가 페이지를 열어 뽑는다).
+     * 그 값으로 공표문 후보를 더 찾고 다시 채점한다(MatchingService.matchByImage). 결과는 최대 '의심'이다.
+     * 반복된 값이 하나도 없으면 "사진으로도 못 찾음"(NONE)으로 남긴다.
+     *
      * 이미 사진 확인을 한 건(FOUND/NONE)은 Vision 을 다시 부르지 않고 현재 결과를 돌려준다 — 사용량 보호.
-     * 사진으로 찾은 후보는 최대 "의심"이다. 일치는 인증번호·모델명 같은 확정 근거로만 난다.
+     * 판단 제외(해외직구·구매대행) 건은 사진 확인도 하지 않는다.
+     *
+     * 10/10 — Vision 호출과 웹페이지 읽기(최대 십수 초)는 트랜잭션 밖에서 한다. 기다리는 동안 DB 커넥션을
+     * 잡고 있지 않게 하려는 것(10/3 KC 조회와 같은 이유). 저장·재채점은 applyImageCheck 가 트랜잭션으로 한다.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VerificationResultResponse checkByImage(Long verificationId) {
-        Verification verification = findOwned(verificationId);
+        findOwned(verificationId);
 
         var primary = extractionService.primaryRow(verificationId);
-        ExtractionNotes.ImageCheck done = primary == null ? null : ExtractionNotes.imageCheck(primary.getRawText());
-        if (done == ExtractionNotes.ImageCheck.FOUND || done == ExtractionNotes.ImageCheck.NONE) {
-            return getResult(verificationId);
+        String rawText = primary == null ? null : primary.getRawText();
+        ExtractionNotes.ImageCheck done = ExtractionNotes.imageCheck(rawText);
+        if (done == ExtractionNotes.ImageCheck.FOUND || done == ExtractionNotes.ImageCheck.NONE
+                || ExtractionNotes.excludedOverseas(rawText)) {
+            return self.getResult(verificationId);
         }
 
         ExtractedProduct product = extractionService.loadMerged(verificationId);
@@ -258,9 +321,28 @@ public class VerificationService {
             throw new BusinessException(ErrorCode.IMAGE_CHECK_UNAVAILABLE,
                     "사진 판독 호출에 실패했습니다. 잠시 후 다시 눌러 주세요.");
         }
+        return self.applyImageCheck(verificationId, product, insight);
+    }
+
+    /**
+     * 10/10 — 사진 확인 결과 저장과 재채점(트랜잭션). checkByImage 가 Vision 호출을 끝낸 뒤 프록시로 부른다.
+     * 외부에서 직접 부르지 말 것.
+     */
+    @Transactional
+    public VerificationResultResponse applyImageCheck(Long verificationId, ExtractedProduct product,
+                                                      ImageInsight insight) {
+        Verification verification = findOwned(verificationId);
+
+        // 10/10 — 같은 건을 두 탭에서 거의 동시에 눌렀으면 먼저 끝난 쪽 결과를 그대로 쓴다(중복 저장·재채점 방지).
+        var primary = extractionService.primaryRow(verificationId);
+        ExtractionNotes.ImageCheck done = ExtractionNotes.imageCheck(primary == null ? null : primary.getRawText());
+        if (done == ExtractionNotes.ImageCheck.FOUND || done == ExtractionNotes.ImageCheck.NONE) {
+            return getResult(verificationId);
+        }
 
         if (!insight.isUsable()) {
-            // 웹에서 이 사진을 못 찾았다 — 텍스트 결과를 그대로 두고 "사진으로도 못 찾음"만 남긴다.
+            // 웹에서 이 사진을 못 찾았거나, 찾았어도 여러 사이트에서 반복된 상품명·KC 번호·모델명이 없다.
+            // 텍스트 결과를 그대로 두고 "사진으로도 못 찾음"만 남긴다.
             extractionService.markImageCheck(verificationId, ExtractionNotes.ImageCheck.NONE);
             return getResult(verificationId);
         }
@@ -419,7 +501,8 @@ public class VerificationService {
     private ResultView viewOf(Verification v, Extraction extraction) {
         return ResultView.of(v.getFinalResult(), v.getChannel(),
                 extraction == null ? null : extraction.getRawText(),
-                extraction == null ? null : extraction.getThumbnailUrl());
+                extraction == null ? null : extraction.getThumbnailUrl(),
+                extraction == null ? null : extraction.getCertNum());
     }
 
     private ResultView viewOf(Verification v) {
@@ -488,7 +571,7 @@ public class VerificationService {
                 r == null ? null : r.getPublishDate(),
                 v.getCreatedAt(),
                 rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason(),
-                kcOf(v), rv.imageProductName());
+                kcOf(v), rv.imageProductName(), rv.imageCertNum(), rv.imageModelName());
     }
 
     private VerificationResultResponse toResultFrom(Verification v, MatchResult m, Recall r) {
@@ -509,6 +592,6 @@ public class VerificationService {
                 r == null ? null : r.getPublishDate(),
                 v.getCreatedAt(),
                 rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason(),
-                kcOf(v), rv.imageProductName());
+                kcOf(v), rv.imageProductName(), rv.imageCertNum(), rv.imageModelName());
     }
 }

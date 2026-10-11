@@ -882,7 +882,8 @@
     }
 
 
-    .state-UNKNOWN .result-icon {
+    .state-UNKNOWN .result-icon,
+    .state-EXCLUDED .result-icon {   /* 10/10 — 판단 제외(해외직구·구매대행)는 확인불가와 같은 색 */
       color: var(--unknown);
 
       background: var(--unknown-bg);
@@ -1359,7 +1360,8 @@
     }
 
 
-    .status-UNKNOWN {
+    .status-UNKNOWN,
+    .status-EXCLUDED {
       color: #475467;
 
       background: #f2f4f7;
@@ -2766,12 +2768,13 @@
 
 
             <!-- 9/27 — 확인불가 자리를 항목누락으로 바꿨다(팀장 결정 4단계: 일치·의심·항목누락·불일치).
+                 10/10 — 표시를 'KC 번호 미표기'로 바꿨다(최종 흐름: KC 인증번호가 1차 판단 기준).
                  확인불가(정보가 아예 없음)는 드물어서 범례에서 빼고 제목으로만 보여 준다. -->
             <div
                     class="judgement-state missing"
                     id="stateMissing">
 
-              🟣 항목누락
+              🟣 KC 번호 미표기
 
             </div>
 
@@ -3418,9 +3421,9 @@
         <!-- 9/27 — finder: 찾은 의심 제품 (일치 먼저) -->
         <div class="history-list coupang-suspect-list" id="coupangSuspectList"></div>
 
-        <!-- 9/27 — 항목누락: KC 인증번호가 없어 텍스트로 못 찾은 제품. 사진으로 찾기 버튼 -->
+        <!-- 9/27 — KC 번호 미표기(구 항목누락): KC 인증번호가 없어 텍스트로 못 찾은 제품. 사진으로 찾기 버튼 -->
         <h3 class="coupang-sub-title" id="coupangMissingTitle" style="display:none">
-          항목누락 — 사진으로 한 번 더 찾아볼 수 있는 제품
+          KC 번호 미표기 — 사진으로 한 번 더 찾아볼 수 있는 제품
         </h3>
 
         <div class="history-list coupang-suspect-list" id="coupangMissingList"></div>
@@ -3661,7 +3664,7 @@
             </strong>
 
             <p>
-              일치·의심·항목누락·불일치의
+              일치·의심·KC 번호 미표기·불일치의
               4단계 결과를 확인합니다.
             </p>
 
