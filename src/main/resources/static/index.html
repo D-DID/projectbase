@@ -1863,6 +1863,194 @@
       color: var(--blue);
     }
 
+    /* 10/12 — 쿠팡 구매이력 읽기 버튼 · 품명 확인 입력 방식 */
+    .scan-controls {
+      margin: 18px auto 0;
+      max-width: 520px;
+      text-align: left;
+      display: grid;
+      gap: 10px;
+    }
+
+    .scan-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .scan-row-label {
+      min-width: 84px;
+      font-weight: 600;
+    }
+
+    .scan-row select,
+    .scan-row input[type="date"] {
+      padding: 6px 8px;
+      border: 1px solid #d0d5dd;
+      border-radius: 8px;
+      font: inherit;
+    }
+
+    .mini-btn.scan-btn {
+      margin-left: 0;
+      padding: 8px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      background: var(--blue);
+      border-color: var(--blue);
+    }
+
+    .mini-btn.scan-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .scan-status {
+      min-height: 1.4em;
+      font-size: 0.92em;
+      line-height: 1.5;
+    }
+
+    .scan-status.busy { color: #1565c0; }
+    .scan-status.ok { color: #2e7d32; }
+    .scan-status.err { color: #b42318; }
+    .scan-status.idle { color: #667085; }
+
+    .scan-filter-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #eef4ff;
+      font-size: 0.92em;
+    }
+
+    .input-mode {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .input-mode-btn {
+      padding: 8px 14px;
+      border: 1px solid #d0d5dd;
+      border-radius: 999px;
+      background: #fff;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .input-mode-btn.active {
+      border-color: #1565c0;
+      background: #eef4ff;
+      color: #1565c0;
+      font-weight: 600;
+    }
+
+    .url-read-box {
+      margin-bottom: 16px;
+    }
+
+    .url-read-box label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    .url-read-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .url-read-row input {
+      flex: 1;
+      min-width: 0;
+      height: 46px;
+      border: 1px solid #d8dee8;
+      border-radius: 11px;
+      padding: 0 13px;
+      outline: none;
+      font-size: 14px;
+    }
+
+    .url-read-row input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, .10);
+    }
+
+    .url-read-row .mini-btn {
+      margin-left: 0;
+      padding: 0 16px;
+    }
+
+    .url-read-msg {
+      margin: 6px 0 0;
+      font-size: 0.9em;
+      line-height: 1.5;
+    }
+
+    .url-read-msg.busy { color: #1565c0; }
+    .url-read-msg.ok { color: #2e7d32; }
+    .url-read-msg.err { color: #b42318; }
+    .url-read-msg.idle { color: #667085; }
+
+    .capture-box {
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      border-radius: 11px;
+      background: #f8fafc;
+      border: 1px solid #e4e7ec;
+    }
+
+    .capture-steps {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 0.92em;
+      line-height: 1.7;
+      color: #344054;
+    }
+
+    .capture-preview {
+      margin-top: 8px;
+      font-size: 0.9em;
+    }
+
+    .capture-preview summary {
+      cursor: pointer;
+      color: #1565c0;
+    }
+
+    .capture-source {
+      margin: 6px 0 4px;
+      color: #667085;
+      word-break: break-all;
+    }
+
+    .capture-preview pre {
+      margin: 0;
+      max-height: 180px;
+      overflow: auto;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #fff;
+      border: 1px solid #e4e7ec;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .product-grid input.just-filled {
+      border-color: #16a34a;
+      box-shadow: 0 0 0 3px rgba(22, 163, 74, .15);
+    }
+
     .coupang-result-card {
       display: none;
     }
@@ -2501,6 +2689,43 @@
             제품 정보
           </h2>
 
+        </div>
+
+
+        <!-- 10/12 — 멘토링 피드백: ① 직접 입력 / ② 쿠팡 URL 붙여넣기(확장이 상세페이지를 읽어 칸을 채움) -->
+        <div class="input-mode" role="tablist" aria-label="입력 방식">
+          <button type="button" class="input-mode-btn active" id="modeManualBtn" role="tab"
+                  onclick="setInputMode('manual')">① 직접 입력</button>
+          <button type="button" class="input-mode-btn" id="modeUrlBtn" role="tab"
+                  onclick="setInputMode('url')">② 쿠팡 URL 붙여넣기</button>
+          <button type="button" class="input-mode-btn" id="modeCaptureBtn" role="tab"
+                  onclick="setInputMode('capture')">③ 쇼핑몰 화면에서 드래그</button>
+        </div>
+
+        <!-- 10/12 — 확장 0.6.0: 쇼핑몰 상품 페이지에서 우클릭 → 영역 드래그로 글·사진을 가져와 아래 칸을 채운다 -->
+        <div class="capture-box" id="captureBox" style="display:none">
+          <ol class="capture-steps">
+            <li>쇼핑몰 상품 페이지에서 <b>마우스 오른쪽 버튼 → UnderFaker — 품명 확인에 넣기</b></li>
+            <li><b>상품정보 영역 드래그</b> → 상품명이나 상품정보 표(품명 및 모델명·제조자·KC 인증정보)를 사각형으로 감싸기</li>
+            <li><b>상품 사진 영역 드래그</b> → 대표 사진을 감싸기 (사진 위에서 우클릭 → '이 사진을 썸네일로 넣기'도 됩니다)</li>
+            <li>이 화면으로 돌아와 채워진 값을 확인·수정한 뒤 <b>[리콜 여부 확인하기]</b></li>
+          </ol>
+          <p class="url-read-msg idle" id="captureMsg"></p>
+          <details class="capture-preview" id="capturePreviewBox" style="display:none">
+            <summary>가져온 글 보기</summary>
+            <p class="capture-source" id="captureSource"></p>
+            <pre id="capturePreview"></pre>
+          </details>
+        </div>
+
+        <div class="url-read-box" id="urlReadBox" style="display:none">
+          <label for="productUrl">쿠팡 상품 페이지 주소</label>
+          <div class="url-read-row">
+            <input id="productUrl" type="url" inputmode="url" autocomplete="off"
+                   placeholder="https://www.coupang.com/vp/products/…">
+            <button type="button" class="mini-btn" id="urlReadBtn" onclick="readProductUrl()">불러오기</button>
+          </div>
+          <p class="url-read-msg idle" id="urlReadMsg"></p>
         </div>
 
 
@@ -3350,9 +3575,8 @@
           </h2>
 
           <p>
-            아래 링크를 누르면 쿠팡 주문목록 페이지가 새 창으로 열립니다.<br>
-            UnderFaker 확장 프로그램이 주문한 상품의 이름과 사진을 읽어, 품번·인증번호가 없는 유아제품도
-            리콜 공표문과 대조해 의심 제품을 찾아냅니다.
+            읽을 범위를 고르세요 — <strong>최근 10건·30건</strong> 또는 <strong>구매일자 하루</strong>.<br>
+            UnderFaker 확장 프로그램이 고른 주문의 상품 이름·사진·KC 인증정보를 읽어 리콜 공표문과 대조합니다.
           </p>
 
           <div
@@ -3361,12 +3585,32 @@
             확장 프로그램 확인 중…
           </div>
 
+          <!-- 10/12 — 멘토링 피드백(다 읽어서 오래 걸림): 읽을 범위를 골라 버튼으로 읽는다 -->
+          <div class="scan-controls">
+            <div class="scan-row">
+              <span class="scan-row-label">a. 최근 구매</span>
+              <select id="scanLimit" aria-label="읽을 건수">
+                <option value="10" selected>10건</option>
+                <option value="30">30건</option>
+              </select>
+              <button type="button" class="mini-btn scan-btn" id="scanRecentBtn"
+                      onclick="startCoupangScan('recent')">최근 N건 읽기</button>
+            </div>
+            <div class="scan-row">
+              <span class="scan-row-label">b. 구매일자</span>
+              <input type="date" id="scanDate" aria-label="구매일자">
+              <button type="button" class="mini-btn scan-btn" id="scanDateBtn"
+                      onclick="startCoupangScan('date')">구매일자 읽기</button>
+            </div>
+            <div class="scan-status idle" id="scanStatus" role="status" aria-live="polite"></div>
+          </div>
+
           <a
                   class="official-link"
                   href="#"
                   onclick="openCoupang(); return false;"
                   style="margin-top:18px">
-            쿠팡 구매 이력 확인하기 ↗
+            쿠팡 주문목록 열기 (쿠팡 로그인 확인용) ↗
           </a>
 
           <br>
@@ -3380,10 +3624,9 @@
           </a>
 
           <div class="verification-path-note">
-            따로 누를 버튼은 없습니다. 주문목록 페이지가 열리면 확장이 자동으로 검증을 보내고,
-            결과는 <strong>아래 목록</strong>과 <strong>쿠팡 검증 이력</strong>에 쌓입니다.
-            이 사이트에 먼저 로그인해 두세요. 로그인 전에 쿠팡을 열었다면 로그인하는 순간
-            대기 중이던 항목이 전송됩니다.
+            버튼을 누르면 확장 프로그램이 쿠팡 주문목록을 보이지 않는 탭으로 열어 <strong>고른 주문만</strong>
+            읽고 검증을 보냅니다. 결과는 <strong>아래 목록</strong>과 <strong>쿠팡 검증 이력</strong>에 쌓입니다.
+            이 사이트와 쿠팡에 둘 다 로그인돼 있어야 합니다. 쿠팡 주문목록을 직접 열었을 때는 읽지 않습니다.
           </div>
 
         </div>
@@ -3404,6 +3647,12 @@
               새로고침
             </button>
           </span>
+        </div>
+
+        <!-- 10/12 — 방금 버튼으로 읽은 결과만 보는 중 -->
+        <div class="scan-filter-bar" id="coupangScanFilterBar" style="display:none">
+          <span id="coupangScanFilterLabel"></span>
+          <button type="button" class="mini-btn" onclick="clearCoupangScanFilter()">전체 보기</button>
         </div>
 
         <div class="coupang-result-summary">
