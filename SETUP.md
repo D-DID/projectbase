@@ -34,11 +34,13 @@ gradlew bootRun
 http://localhost:8080 → 회원가입 → 로그인. 관리자 기능이 필요하면 DB 에서
 `UPDATE user SET user_role = 'ADMIN' WHERE email = '내이메일';`
 
-## 4. 크롬 확장 (0.6.1)
+리콜 데이터는 서버가 뜰 때(20초 뒤)와 6시간마다 **자동 갱신**된다(10/31) — 최근 7일 공표분, 인증키 필요. 콘솔에 `[RecallAutoSync] 기동 끝 — …` 줄이 나오면 된 것. 인증키가 없으면 `조회 실패한 날 [...]` 이 찍힌다. 끄려면 `application.properties` 에 `recall.auto-sync.enabled=false`.
+
+## 4. 크롬 확장 (0.6.2)
 
 1. `chrome://extensions` → 오른쪽 위 **개발자 모드** 켜기
 2. **압축해제된 확장 프로그램을 로드합니다** → `underfaker-extension` 폴더
-3. 웹 화면(localhost:8080)을 **새로고침**(F5) — 화면에 '확장 프로그램 연결됨 (v0.6.1)'이 보이면 성공
+3. 웹 화면(localhost:8080)을 **새로고침**(F5) — 화면에 '확장 프로그램 연결됨 (v0.6.2)'이 보이면 성공
 4. 확장 폴더를 바꾼 뒤에는 `chrome://extensions` 에서 ⟳ → 웹 화면도 F5
 
 확장이 하는 일:

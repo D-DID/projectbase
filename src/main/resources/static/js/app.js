@@ -675,7 +675,8 @@ const URL_READ_ERROR_TEXT = {
 };
 
 /* URL 로 채우는 칸 — 새로 불러올 때 앞 상품 값이 남지 않게 먼저 비운다 */
-const URL_FILL_FIELDS = ['productName', 'modelName', 'makerName', 'certNum', 'thumbnailUrl'];
+/* 10/31 — brandName 추가: ③ 공표문 화면에서 브랜드를 가져오므로, 다른 상품으로 바뀔 때 같이 비운다 */
+const URL_FILL_FIELDS = ['productName', 'brandName', 'modelName', 'makerName', 'certNum', 'thumbnailUrl'];
 
 function setInputMode(mode) {
   const prev = inputMode;
@@ -924,7 +925,8 @@ var captureExtras = null;   // { kcStatus, kcText } — 가져온 KC 칸 원문(
 var captureSourceKey = null; // 마지막으로 가져온 상품 페이지(주소에서 # 뒤를 뺀 것)
 var captureSeen = {};        // 이미 넣은 가져오기 id — 같은 값이 두 번 와도 한 번만
 
-const CAPTURE_FIELD_LABEL = { productName: '제품명', modelName: '모델명', makerName: '제조사', certNum: 'KC 인증번호' };
+/* 10/31 — 확장 0.6.2 부터 브랜드도 온다(제품안전정보센터 리콜 공표문 '브랜드명') */
+const CAPTURE_FIELD_LABEL = { productName: '제품명', brandName: '브랜드', modelName: '모델명', makerName: '제조사', certNum: 'KC 인증번호' };
 
 function setCaptureMsg(message, kind) {
   const el = document.getElementById('captureMsg');
@@ -1032,7 +1034,11 @@ function onCapture(c) {
   if (!val('thumbnailUrl')) missing.push('사진');
   let msg = filled.length
       ? '채운 칸: ' + filled.join('·') + '.'
-      : '가져온 글에서 제품명·모델명·제조사·KC 칸을 찾지 못했습니다. 아래 \'가져온 글 보기\'에서 복사해 넣어 주세요.';
+      : '가져온 글에서 제품명·브랜드·모델명·제조사·KC 칸을 찾지 못했습니다. 아래 \'가져온 글 보기\'에서 복사해 넣어 주세요.';
+  /* 10/31 — 공표문 상세에는 제품명 칸이 없어 이름이 '모델명' 칸에 있다. 확장(0.6.2)이 제품명 칸으로 옮겼으면 알린다 */
+  if (c.kind === 'text' && c.fields && c.fields.nameFromModel) {
+    msg += ' 공표문 \'모델명\' 칸의 이름은 제품명 칸에 넣었습니다(KC 번호 + 제품명으로 대조).';
+  }
   if (missing.length) msg += ' 아직 빈 칸: ' + missing.join('·') + ' — 같은 메뉴로 더 가져오거나 직접 입력하세요.';
   else msg += ' 값을 확인·수정한 뒤 [리콜 여부 확인하기]를 누르세요.';
   setCaptureMsg(msg, filled.length ? 'ok' : 'err');
@@ -1212,6 +1218,38 @@ const STATUS_LABEL = {
 };
 
 
+/* 10/31 — 제품안전정보센터 리콜 공표문 원문 주소. recallUid 는 공공데이터 API 의 recallUid 그대로라
+   게시판 상세 주소에 같은 번호를 넣으면 그 공표문이 열린다(검색엔진에 색인된 상세 주소 형식 — 10/31 확인). */
+const SAFETYKOREA_RECALL_URL = 'https://www.safetykorea.kr/recall/ajax/recallBoard?recallUid=';
+
+function recallSourceUrl(recallUid) {
+  const n = Number(recallUid);
+  return Number.isFinite(n) && n > 0 ? SAFETYKOREA_RECALL_URL + encodeURIComponent(String(Math.trunc(n))) : null;
+}
+
+/* 일치·의심일 때만 원문 링크를 보인다. 불일치·확인불가는 대조한 공표문이 없거나 '가장 가까운 후보'일 뿐이라 숨긴다 */
+function renderRecallSource(d, state) {
+  const box = document.getElementById('recallSourceBox');
+  const link = document.getElementById('recallSourceLink');
+  if (!box || !link) return;
+  const url = (state === 'MATCH' || state === 'PARTIAL') ? recallSourceUrl(d && d.recallUid) : null;
+  if (!url) {
+    box.style.display = 'none';
+    link.removeAttribute('href');
+    return;
+  }
+  link.href = url;
+  link.textContent = '제품안전정보센터 리콜 공표문 원문 보기 (공표번호 ' + d.recallUid + ') ↗';
+  const note = document.getElementById('recallSourceNote');
+  if (note) {
+    note.textContent = state === 'MATCH'
+        ? '판정은 대조 결과입니다. 공표문 원문의 제품명·모델명·인증번호·사진을 직접 확인하세요.'
+        : '의심 단계입니다. 공표문 원문의 모델명·인증번호·사진을 내 제품과 직접 비교해 확인하세요.';
+  }
+  box.style.display = '';
+}
+
+
 /* ==================================================
    RENDER — 입력 쪽
 ================================================== */
@@ -1255,6 +1293,7 @@ function render(d) {
 
   text('recallProduct', d.recallProductName);
   text('recallCert', d.recallCertNum);
+  renderRecallSource(d, fr);
   text('recallBrand', d.recallBrandName);
   text('recallModel', d.recallModelName);
   /* 9/27 — maker_name 은 실데이터에서 거의 비어 있다. 백엔드 Recall.resolveMakerName() 과 같은 규칙으로
@@ -1338,15 +1377,17 @@ function setResultState(fr, score, d) {
   if (fr === 'MATCH') {
     notice.className = 'result-notice match';
     notice.innerHTML =
-        '<strong>⚠ 리콜 대상 제품입니다.</strong><br>' +
-        '제품 사용을 중지하고 아래 <strong>소비자 행동요령</strong>을 확인하세요.';
+        '<strong>⚠ 리콜 공표문과 일치합니다.</strong><br>' +
+        'KC 인증번호(또는 품번)와 제품명이 공표문과 맞습니다. 제품 사용을 중지하고 아래 <strong>소비자 행동요령</strong>과 ' +
+        '<strong>공표문 원문</strong>을 확인하세요.';
 
   } else if (fr === 'PARTIAL') {
     notice.className = 'result-notice partial';
     notice.innerHTML =
         '<strong>🔎 리콜 의심 제품입니다.</strong><br>' +
-        '제품명이나 브랜드가 리콜 공표문과 닮았지만 인증번호·모델명으로 100% 확인되지는 않았습니다. ' +
-        '아래 판정 근거의 항목별 유사도를 확인하세요.';
+        '제품명이나 KC 인증번호·품번 중 일부만 리콜 공표문과 맞아 같은 제품이라고 확정하지 않았습니다 ' +
+        '(예: 번호는 같은데 제품명이 다름 — 같은 번호로 여러 제품이 공표된 경우가 있음). ' +
+        '아래 <strong>공표문 원문</strong>의 모델명·인증번호·사진을 내 제품과 직접 비교하세요.';
 
   } else if (fr === 'MISSING') {
     notice.className = 'result-notice missing';

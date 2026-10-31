@@ -282,8 +282,9 @@ public class MatchingService {
         }
         double score = similarityCalculator.weightedScore(comparisons);
         Decision decision = decisionResolver.resolve(score, profile, comparisons);
-        return new Scored(recall, profile, comparisons, score, decision,
-                buildReason(comparisons, score, profile));
+        String reason = buildReason(comparisons, score, profile);
+        String note = decisionResolver.note(comparisons);   // 10/31 — 2단계 판정으로 의심이 된 이유
+        return new Scored(recall, profile, comparisons, score, decision, note == null ? reason : reason + " · " + note);
     }
 
     /**

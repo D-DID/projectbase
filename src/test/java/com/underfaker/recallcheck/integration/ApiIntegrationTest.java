@@ -1,8 +1,11 @@
 package com.underfaker.recallcheck.integration;
 
 import com.jayway.jsonpath.JsonPath;
+import com.underfaker.recallcheck.dto.response.RangeSyncResponse;
 import com.underfaker.recallcheck.entity.Recall;
+import com.underfaker.recallcheck.repository.ApiSyncLogRepository;
 import com.underfaker.recallcheck.repository.RecallRepository;
+import com.underfaker.recallcheck.service.sync.RecallAutoSyncScheduler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +29,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -51,6 +55,12 @@ class ApiIntegrationTest {
 
     @Autowired
     RecallRepository recallRepository;
+
+    @Autowired
+    RecallAutoSyncScheduler recallAutoSync;
+
+    @Autowired
+    ApiSyncLogRepository apiSyncLogRepository;
 
     MockMvc mvc;
 
@@ -131,6 +141,20 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void KC_인증번호만_같고_제품명이_다르면_의심_근거에_이유가_남는다() throws Exception {
+        String token = login();
+        String body = manual(token, "{\"productName\":\"아기 물티슈 100매\",\"certNum\":\"" + CHESS_CERT + "\"}");
+        assertEquals("PARTIAL", JsonPath.read(body, "$.data.resultState"));
+        assertEquals(CHESS_UID, ((Number) JsonPath.read(body, "$.data.recallUid")).longValue());
+        Integer id = JsonPath.read(body, "$.data.verificationId");
+        String evidence = mvc.perform(get("/api/verifications/" + id + "/evidence").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String reason = JsonPath.read(evidence, "$.data.reason");
+        assertTrue(reason.contains("KC 인증번호는 같지만 제품명이 달라"), reason);
+    }
+
+    @Test
     void 제품명만_같으면_의심까지() throws Exception {
         String token = login();
         String body = manual(token, "{\"productName\":\"테스트 원목 체스 세트\"}");
@@ -191,5 +215,27 @@ class ApiIntegrationTest {
     @Test
     void API_문서가_열린다() throws Exception {
         mvc.perform(get("/v3/api-docs")).andExpect(status().isOk());
+    }
+
+    /**
+     * 10/31 — 리콜 자동 갱신. 이 테스트에서 Open API 는 닿지 않는 주소다(application-it.properties).
+     * 예외 없이 끝나고 못 받은 날을 돌려주며, 관리자 계정이 없으면 이력(api_sync_log) 행을 남기지 않는다.
+     * 범위는 최근 7일 이상(DB 마지막 공표일 20260916 이 더 오래됐으면 그날부터, 최대 90일).
+     */
+    @Test
+    void 리콜_자동_갱신은_API가_닿지_않아도_멈추지_않는다() {
+        long logs = apiSyncLogRepository.count();
+        RangeSyncResponse r = recallAutoSync.run("테스트");
+        assertNotNull(r);
+        assertTrue(r.daysScanned() >= 7 && r.daysScanned() <= 90, "훑은 날 " + r.daysScanned());
+        assertEquals(r.daysScanned(), r.failedDates().size());
+        assertEquals(logs, apiSyncLogRepository.count());
+    }
+
+    /** 10/31 — 화면 주소(/swagger-ui.html)도 로그인 없이 열린다(→ /swagger-ui/index.html 로 넘어간다) */
+    @Test
+    void Swagger_화면이_로그인_없이_열린다() throws Exception {
+        mvc.perform(get("/swagger-ui.html")).andExpect(status().is3xxRedirection());
+        mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk());
     }
 }

@@ -1080,6 +1080,26 @@
     }
 
 
+    /* 10/31 — 리콜 공표문 원문 링크 */
+    .recall-source {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border: 1px solid #f0c36d;
+      border-radius: 10px;
+      background: #fffaf0;
+    }
+    .recall-source a {
+      font-weight: 700;
+      color: #b45309;
+      text-decoration: underline;
+      word-break: break-all;
+    }
+    .recall-source-note {
+      margin: 6px 0 0;
+      font-size: 0.88em;
+      color: #6b7280;
+    }
+
     .compare-row:last-child {
       border-bottom: 0;
     }
@@ -2718,7 +2738,8 @@
         <div class="capture-box" id="captureBox" style="display:none">
           <ol class="capture-steps">
             <li>쇼핑몰 상품 페이지에서 <b>마우스 오른쪽 버튼 → UnderFaker — 품명 확인에 넣기</b></li>
-            <li><b>상품정보 영역 드래그</b> → 상품명이나 상품정보 표(품명 및 모델명·제조자·KC 인증정보)를 사각형으로 감싸기</li>
+            <li><b>상품정보 영역 드래그</b> → 상품명이나 상품정보 표(품명 및 모델명·제조자·KC 인증정보)를 사각형으로 감싸기.
+              <a href="https://www.safetykorea.kr/recall/ajax/recallBoard" target="_blank" rel="noopener noreferrer">제품안전정보센터 리콜 공표문</a> 상세 화면의 표(모델명·브랜드명·사업자명·인증/신고번호)도 됩니다</li>
             <li><b>상품 사진 영역 드래그</b> → 대표 사진을 감싸기 (사진 위에서 우클릭 → '이 사진을 썸네일로 넣기'도 됩니다)</li>
             <li>이 화면으로 돌아와 채워진 값을 확인·수정한 뒤 <b>[리콜 여부 확인하기]</b></li>
           </ol>
@@ -3420,6 +3441,14 @@
                 </div>
 
 
+              </div>
+
+              <!-- 10/31 — 일치·의심 결과에서 제품안전정보센터 리콜 공표문 원문을 사용자가 직접 확인하게 링크를 둔다 -->
+              <div class="recall-source" id="recallSourceBox" style="display:none">
+                <a id="recallSourceLink" href="#" target="_blank" rel="noopener noreferrer">
+                  제품안전정보센터 리콜 공표문 원문 보기 ↗
+                </a>
+                <p class="recall-source-note" id="recallSourceNote"></p>
               </div>
 
             </div>

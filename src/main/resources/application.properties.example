@@ -54,6 +54,20 @@ openapi.safety-korea.recall-publish-date=20260916
 # 트랜잭션 하나 안에서 HTTP 호출이 수백 번 일어난다. 그럴 땐 값을 줘서 끊는 게 안전하다.
 openapi.safety-korea.recall-sync-max=0
 
+# 10/31 — 리콜 데이터 자동 갱신(RecallAutoSyncScheduler). 이 줄들이 없어도 아래 기본값으로 켜진 채 돈다.
+# 서버가 뜰 때 한 번(20초 뒤) + 6시간마다, 최근 7일 공표분을 다시 받는다(DB 마지막 공표일이 더 오래됐으면 그날부터, 최대 90일).
+# 사진 없는 리콜은 최신 공표문부터 30건씩 사진을 채운다. 인증키(auth-key)가 있어야 받아진다.
+# 끄려면 enabled=false. 동기화 이력(api_sync_log)은 ADMIN 계정 중 id 가 가장 작은 계정으로 남는다(없으면 서버 로그에만).
+#recall.auto-sync.enabled=true
+#recall.auto-sync.run-on-startup=true
+#recall.auto-sync.startup-delay-ms=20000
+#recall.auto-sync.cron=0 20 */6 * * *
+#recall.auto-sync.zone=Asia/Seoul
+#recall.auto-sync.lookback-days=7
+#recall.auto-sync.max-catch-up-days=90
+#recall.auto-sync.image-limit=30
+#recall.auto-sync.admin-id=
+
 # ---------------------------------------------------------------- OCR 모듈 — 10/10 삭제
 # 10/1 결정으로 OCR(CLOVA·Python OCR)은 쓰지 않는다. 클래스·설정을 지웠다.
 # 각자 application.properties 에 남아 있는 ocr.base-url / clova.ocr.* 줄은 지워도 되고 남겨도 된다(읽는 코드 없음).

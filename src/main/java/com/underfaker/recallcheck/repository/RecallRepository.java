@@ -96,6 +96,13 @@ public interface RecallRepository extends JpaRepository<Recall, Long> {
     @Query("SELECT MAX(r.syncedAt) FROM Recall r")
     java.time.LocalDateTime findLatestSyncedAt();
 
+    /**
+     * 10/31 — DB 에 있는 가장 늦은 공표일(yyyyMMdd, 없으면 null). 자동 갱신(RecallAutoSyncScheduler)이
+     * 서버가 꺼져 있던 동안의 빈틈을 어디부터 받을지 정할 때 쓴다(SyncWindow). CHAR(8) 이라 문자열 MAX 가 곧 최신 날짜다.
+     */
+    @Query("SELECT MAX(r.publishDate) FROM Recall r")
+    String findLatestPublishDate();
+
     @Query("SELECT DISTINCT r.recallProductName FROM Recall r WHERE r.recallProductName IS NOT NULL")
     List<String> findDistinctProductNames();
 }

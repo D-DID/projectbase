@@ -28,6 +28,28 @@ public class MatchingProperties {
     private Profile unidentified = new Profile(
             Weight.unidentifiedDefaults(), Threshold.unidentifiedDefaults());
 
+    /** 10/31 — 일치·의심을 가르는 제품명 기준(DecisionResolver). matching.rule.* */
+    private Rule rule = new Rule();
+
+    /**
+     * 10/31 팀장 결정 — 2단계 판정의 제품명 기준. 잠정치다(라벨링 데이터셋으로 맞출 것).
+     *
+     * nameMatch: KC 인증번호·품번이 완전히 같을 때 '일치'로 확정하는 제품명 유사도 하한(기본 0.5).
+     *   판매글 상품명은 수식어·옵션이 붙어 공표문 이름과 같을 수 없다('핑크풋 슬라임 대용량 3종 세트' ↔ '핑크풋 슬라임' 73%).
+     * nameSuspectOtherCert: KC 인증번호가 <b>다른데도</b> '의심'으로 올리는 제품명 유사도 하한(기본 0.9).
+     *   0.5 로 두면 다른 KC 번호의 정상 제품이 이름이 비슷한 다른 공표문마다 의심이 된다
+     *   (리콜 4,092건 자기 대조: 제품 1개당 50% 이상 6.2건, 90% 이상 0.06건 — 지금 규칙의 0.07건과 비슷).
+     */
+    public static class Rule {
+        private double nameMatch = 0.5;
+        private double nameSuspectOtherCert = 0.9;
+
+        public double getNameMatch() { return nameMatch; }
+        public void setNameMatch(double nameMatch) { this.nameMatch = nameMatch; }
+        public double getNameSuspectOtherCert() { return nameSuspectOtherCert; }
+        public void setNameSuspectOtherCert(double v) { this.nameSuspectOtherCert = v; }
+    }
+
     public static class Weight {
         private double modelName;
         private double certNum;
@@ -176,6 +198,8 @@ public class MatchingProperties {
     public void setWeight(Weight weight) { this.weight = weight; }
     public Threshold getThreshold() { return threshold; }
     public void setThreshold(Threshold threshold) { this.threshold = threshold; }
+    public Rule getRule() { return rule; }
+    public void setRule(Rule rule) { this.rule = rule; }
     public Profile getUnidentified() { return unidentified; }
     public void setUnidentified(Profile unidentified) { this.unidentified = unidentified; }
 }

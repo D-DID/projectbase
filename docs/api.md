@@ -60,7 +60,9 @@
 | **input** | 저장된 입력값 `{productName, brandName, modelName, makerName, barcodeNum, certNum, thumbnailUrl, kcStatus, kcText}` — 리콜 후보가 없어도(불일치) 내려온다. 결과 화면 '내가 입력한 제품' (10/31) |
 | recallCertNum | 매칭된 공표문의 KC 인증번호(콤마 구분 목록일 수 있음). 없으면 null (10/31) |
 
-판정 규칙(요약): **일치**는 KC 인증번호·품번(모델명)·인증 모델명이 완전히 같을 때만(10/31 — 제품명 등 텍스트만 100%면 **의심**). 사진 찾기(2차) 근거는 최대 **의심**.
+판정 규칙(요약, 10/31 2단계): **일치** = KC 인증번호 완전일치 + 제품명 유사도 50% 이상(`matching.rule.name-match`), 또는 품번(모델명)·인증 모델명 완전일치. **의심** = KC 번호만 같고 제품명이 다름 · 품번은 같은데 KC 번호가 다름 · 제품명 90% 이상(`matching.rule.name-suspect-other-cert`)인데 KC 번호가 다름 · 종합 점수가 partial 임계값 이상. 사진 찾기(2차) 근거는 최대 **의심**. 의심이 된 이유는 `/evidence` 의 `reason` 끝에 붙는다.
+
+**공표문 원문 링크**: `https://www.safetykorea.kr/recall/ajax/recallBoard?recallUid={recallUid}` — `recallUid` 는 공공데이터 API 의 recallUid 그대로다. 웹 결과 화면은 일치·의심일 때 이 링크를 보여 준다.
 
 **같은 입력 다시 확인(10/31)**: 같은 사용자·채널(WEB/EXTENSION)에서 제품명·브랜드·모델명·제조사·바코드·KC 인증번호·KC 칸 상태가 모두 같은 입력이면 새 검증을 만들지 않고 기존 `verificationId` 를 돌려준다. 그 사이 리콜 DB 가 갱신됐으면(recall.synced_at) 다시 판정한다. URL·사진 업로드 검증은 묶지 않는다.
 
@@ -85,6 +87,8 @@
 | GET | `/logs` | page, size | 동기화 이력 |
 
 절차는 `db/README.md`, Postman 은 `db/recall-backfill.postman_collection.json`.
+
+**자동 갱신(10/31, `RecallAutoSyncScheduler`)**: 위 API 를 부르지 않아도 서버가 뜰 때 한 번(20초 뒤)과 6시간마다(00:20·06:20·12:20·18:20, Asia/Seoul) 최근 7일 공표분을 `/recalls/range` 와 같은 코드로 다시 받고(본문만, upsert), 사진 없는 리콜 30건의 사진을 채운다. DB 마지막 공표일이 7일보다 오래됐으면 그날부터 받는다(최대 90일 — 더 오래된 빈틈은 `/recalls/range`). 이력은 ADMIN 계정(가장 작은 id)으로 `/logs` 에 남고, 관리자 계정이 없으면 서버 로그(`[RecallAutoSync]`)에만 남는다. 설정은 `recall.auto-sync.*`(`application.properties.example`), 끄려면 `recall.auto-sync.enabled=false`.
 
 ## 오류 코드
 
