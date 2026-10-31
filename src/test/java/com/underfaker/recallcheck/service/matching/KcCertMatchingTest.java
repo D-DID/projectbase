@@ -62,7 +62,9 @@ class KcCertMatchingTest {
         Decision before = decide(seller, recall);
         Decision after = decide(PINK_FOOT_CERT.applyTo(seller), recall);
 
-        assertNotEquals(Decision.MATCH, before);   // 원문 그대로는 인증번호·모델명 확정 근거가 없다
+        // 10/30 — 번호가 하나여도 원문에서 뽑아 대조하도록 고쳐서(MatchingService.addCertNumComparison),
+        // KC 인증 DB 조회가 실패해도(키 없음·NOT_FOUND) 원문만으로 일치가 난다. 조회 뒤에도 그대로 일치.
+        assertEquals(Decision.MATCH, before);
         assertEquals(Decision.MATCH, after);
     }
 

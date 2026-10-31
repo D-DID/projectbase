@@ -55,6 +55,8 @@ gradlew test
 - 10/30 에 추가한 테스트 3개는 폴더가 깊어 `Claude outputs\1030\` 에 있다 → `copy-tests.cmd` 를 먼저 한 번 실행
 - `RecallCheckApplicationTests` 는 DB·설정이 있어야 통과한다
 - 매칭 엣지케이스 20개: `gradlew test --tests "*EdgeCaseScenariosTest"` (표는 `docs/edge-cases.md`)
+- 통합 테스트(10/31): `gradlew test --tests "*ApiIntegrationTest"` — 메모리 DB(H2)·무작위 JWT 키로 돈다. MySQL·인증키 없이 된다
+- API 문서(10/31): 서버 실행 후 http://localhost:8080/swagger-ui.html → `/api/auth/login` 으로 토큰을 받아 [Authorize]에 넣고 호출
 
 ## 자주 막히는 것
 
@@ -67,6 +69,8 @@ gradlew test
 | 웹 화면에 '확장 프로그램 미감지' | 확장 로드 후 웹 화면 새로고침 안 함 |
 | 확장 콘솔 'Extension context invalidated' | 확장을 새로고침한 뒤 열려 있던 페이지 — 그 페이지 F5 |
 | 로그인·회원가입 400(C001) | Postman 본문을 raw → JSON 으로 |
+| 사진 올리기가 500 또는 '너무 큽니다' | `application.properties` 의 `spring.servlet.multipart.max-file-size`(기본 1MB) — `.example` 처럼 10MB 로. 사진은 `app.upload.dir`(기본 ./uploads, git 제외)에 저장된다 |
+| 같은 제품이 이력에 여러 번 보임 | 10/31 이전에 쌓인 중복 — `db/dedupe-verifications.sql`(미리보기 → 건수 확인 → 삭제 순서) |
 | 구매이력 '읽는 도중 오류', 확장 로그 줄 번호가 예전과 같음 | 서비스워커가 옛 코드로 돌고 있음 → `chrome://extensions` ⟳ → 웹 화면 F5 |
 | 작업 창이 화면에 남거나 탭이 안 닫힘 | `background.js` 위쪽 `HIDDEN_WORK_WINDOW = false` → 예전처럼 현재 창의 비활성 탭으로 읽는다 |
 | 사진으로 찾기 '같은 사진 없음' | 사진이 작거나 같은 사진이 실린 웹 문서가 없음. 0.6.1 부터 상세 대표사진·큰 사진(492px)으로 먼저 찾는다 |

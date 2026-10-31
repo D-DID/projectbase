@@ -43,10 +43,14 @@ public class DecisionResolver {
      *
      * 팀장 결정(9/27): 결과는 [일치 / 의심 / 항목누락 / 불일치] 로 보여 주고, 일치는 100% 일 때만 쓴다.
      * 텍스트 유사도 0.85 같은 점수로는 "같은 제품"을 확정할 수 없다 — 판매글 상품명은 공표문과
-     * 표기가 늘 조금씩 다르기 때문이다. 그래서 MATCH 는 아래 둘 중 하나일 때만 낸다.
-     *   (1) 식별자(인증번호·모델명)가 정규화 후 완전히 같다 — 그 항목 점수 1.0
-     *   (2) 비교한 텍스트 항목 전부가 100% (이미지판독 행은 빼고 본다 — 사진은 확정 근거가 아니다)
+     * 표기가 늘 조금씩 다르기 때문이다. 그래서 MATCH 는 식별자(인증번호·모델명·인증 모델명)가
+     * 정규화 후 완전히 같을 때(그 항목 점수 1.0)만 낸다.
      * 나머지는 점수가 partial 임계값 이상이면 PARTIAL(의심), 아니면 NO_MATCH.
+     *
+     * 10/31 팀장 결정 — 예전에는 "(2) 비교한 텍스트 항목 전부 100%"도 일치였다. 그래서 제품명 한 칸만 넣어도
+     * 이름이 같으면 일치가 됐고, 리콜 4,092건 자기 대조에서 서로 다른 공표문끼리 5쌍이 일치로 나왔다
+     * ("비눗방울" 같은 일반명). 리콜 오탐(안전한 제품을 리콜이라 단정)이 법적으로 가장 위험해서
+     * 식별자 없이 텍스트(제품명·제조사·브랜드)만 100% 면 '의심'까지만 올린다.
      *
      * matching.threshold.match / matching.unidentified.threshold.match 는 더 이상 쓰지 않는다
      * (프로퍼티 바인딩이 깨지지 않게 필드는 남겨 둔다). partial 임계값은 그대로 쓴다.
@@ -72,8 +76,6 @@ public class DecisionResolver {
         if (comparisons == null || comparisons.isEmpty()) {
             return false;
         }
-        boolean anyText = false;
-        boolean allTextExact = true;
         for (FieldComparison c : comparisons) {
             // 10/10 — 사진 찾기(2차)로 얻은 값(imageLabel·imageCertNum·imageModelName)은 확정 근거가 아니다.
             // 판매자가 적은 값이 아니라 같은 사진이 실린 다른 페이지에서 가져온 값이라 최대 '의심'(팀장 결정 10/10).
@@ -83,10 +85,9 @@ public class DecisionResolver {
             if (IDENTIFIER_FIELDS.contains(c.field()) && c.score() >= EXACT) {
                 return true;
             }
-            anyText = true;
-            allTextExact &= c.score() >= EXACT;
         }
-        return anyText && allTextExact;
+        // 10/31 — 식별자 완전일치가 없으면 텍스트가 전부 100% 여도 일치가 아니다(위 resolve 주석)
+        return false;
     }
 
     /** 사진 찾기(2차)에서 온 항목인가 — 이름이 "image" 로 시작한다 */

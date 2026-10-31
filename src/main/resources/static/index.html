@@ -2692,14 +2692,26 @@
         </div>
 
 
-        <!-- 10/12 — 멘토링 피드백: ① 직접 입력 / ② 쿠팡 URL 붙여넣기(확장이 상세페이지를 읽어 칸을 채움) -->
+        <!-- 10/12 — 멘토링 피드백: ① 직접 입력 / ② 상품 URL 붙여넣기(쿠팡은 확장, 다른 쇼핑몰은 서버가 읽어 칸을 채움 — 10/31) -->
         <div class="input-mode" role="tablist" aria-label="입력 방식">
           <button type="button" class="input-mode-btn active" id="modeManualBtn" role="tab"
                   onclick="setInputMode('manual')">① 직접 입력</button>
           <button type="button" class="input-mode-btn" id="modeUrlBtn" role="tab"
-                  onclick="setInputMode('url')">② 쿠팡 URL 붙여넣기</button>
+                  onclick="setInputMode('url')">② 상품 URL 붙여넣기</button>
           <button type="button" class="input-mode-btn" id="modeCaptureBtn" role="tab"
                   onclick="setInputMode('capture')">③ 쇼핑몰 화면에서 드래그</button>
+          <button type="button" class="input-mode-btn" id="modePhotoBtn" role="tab"
+                  onclick="setInputMode('photo')">④ 제품 사진 올리기</button>
+        </div>
+
+        <!-- 10/31 — FR-004 사진 업로드 검증: 제품 사진 한 장으로 같은 사진이 실린 웹 문서를 찾아 대조(OCR 없음, 최대 '의심') -->
+        <div class="url-read-box" id="photoBox" style="display:none">
+          <label for="photoFile">제품 사진 (JPG·PNG·GIF·WEBP, 8MB 이하)</label>
+          <div class="url-read-row">
+            <input id="photoFile" type="file" accept="image/jpeg,image/png,image/gif,image/webp">
+            <button type="button" class="mini-btn" id="photoVerifyBtn" onclick="verifyByPhoto()">사진으로 확인하기</button>
+          </div>
+          <p class="url-read-msg idle" id="photoMsg">사진 속 글자는 읽지 않습니다. 같은 사진이 실린 웹 문서에서 여러 사이트에 반복된 상품명·KC 번호·모델명으로 리콜 공표문과 대조합니다. 판매자가 적은 값이 아니라 결과는 최대 '의심'입니다. (Google Vision 사용 — 월 사용 상한 있음)</p>
         </div>
 
         <!-- 10/12 — 확장 0.6.0: 쇼핑몰 상품 페이지에서 우클릭 → 영역 드래그로 글·사진을 가져와 아래 칸을 채운다 -->
@@ -2719,10 +2731,10 @@
         </div>
 
         <div class="url-read-box" id="urlReadBox" style="display:none">
-          <label for="productUrl">쿠팡 상품 페이지 주소</label>
+          <label for="productUrl">상품 페이지 주소 (쿠팡·다른 쇼핑몰)</label>
           <div class="url-read-row">
             <input id="productUrl" type="url" inputmode="url" autocomplete="off"
-                   placeholder="https://www.coupang.com/vp/products/…">
+                   placeholder="https://www.coupang.com/vp/products/… 또는 다른 쇼핑몰 상품 주소">
             <button type="button" class="mini-btn" id="urlReadBtn" onclick="readProductUrl()">불러오기</button>
           </div>
           <p class="url-read-msg idle" id="urlReadMsg"></p>

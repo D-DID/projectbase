@@ -9,14 +9,17 @@ import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
 import com.underfaker.recallcheck.dto.internal.ExtractionNotes;
 import com.underfaker.recallcheck.dto.internal.FieldComparison;
 import com.underfaker.recallcheck.dto.internal.ImageInsight;
+import com.underfaker.recallcheck.dto.internal.InputFingerprint;
 import com.underfaker.recallcheck.dto.internal.KcLookup;
 import com.underfaker.recallcheck.dto.internal.MatchCandidate;
 import com.underfaker.recallcheck.dto.internal.MatchOutcome;
 import com.underfaker.recallcheck.dto.internal.ResultView;
+import com.underfaker.recallcheck.dto.internal.UrlExtraction;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
 import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
 import com.underfaker.recallcheck.dto.response.KcCertResponse;
 import com.underfaker.recallcheck.dto.response.MatchEvidenceResponse;
+import com.underfaker.recallcheck.dto.response.UrlPreviewResponse;
 import com.underfaker.recallcheck.dto.response.ProductInputResponse;
 import com.underfaker.recallcheck.dto.response.VerificationHistoryResponse;
 import com.underfaker.recallcheck.dto.response.VerificationResultResponse;
@@ -28,6 +31,7 @@ import com.underfaker.recallcheck.entity.enums.Decision;
 import com.underfaker.recallcheck.entity.enums.FinalResult;
 import com.underfaker.recallcheck.entity.enums.InputType;
 import com.underfaker.recallcheck.entity.enums.VerificationChannel;
+import com.underfaker.recallcheck.entity.enums.VerificationStatus;
 import com.underfaker.recallcheck.exception.BusinessException;
 import com.underfaker.recallcheck.exception.ErrorCode;
 import com.underfaker.recallcheck.repository.ExtractionRepository;
@@ -36,6 +40,8 @@ import com.underfaker.recallcheck.repository.RecallRepository;
 import com.underfaker.recallcheck.repository.VerificationRepository;
 import com.underfaker.recallcheck.security.CustomUserDetailsService;
 import com.underfaker.recallcheck.service.extraction.ExtractionService;
+import com.underfaker.recallcheck.service.extraction.ImageStore;
+import com.underfaker.recallcheck.service.extraction.WebTextExtractor;
 import com.underfaker.recallcheck.service.kc.KcLookupService;
 import com.underfaker.recallcheck.service.matching.MatchingService;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +54,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -77,6 +84,10 @@ public class VerificationService {
     private final GoogleVisionClient visionClient;
     /** 10/3 — KC 인증번호 → 인증 DB 조회(KC인증 연동). 예외를 던지지 않는다. */
     private final KcLookupService kcLookupService;
+    /** 10/31 — FR-005 URL 자동 추출(상품 페이지 받기 + 파싱). 예외를 던지지 않는다. */
+    private final WebTextExtractor webTextExtractor;
+    /** 10/31 — FR-004 사진 업로드 검증의 원본 저장소 */
+    private final ImageStore imageStore;
 
     /**
      * 자기 자신의 프록시 참조. verifyByManualInputBatch() 안에서 verifyByManualInput() 을
@@ -88,11 +99,127 @@ public class VerificationService {
     @Autowired
     private VerificationService self;
 
-    /** FR-003 URL 입력 검증 (미구현) */
-    @Transactional
+    /**
+     * FR-003·005 URL 입력 검증(10/31 구현) — 서버가 상품 페이지를 받아 식별 정보를 뽑고(WebTextExtractor),
+     * 직접입력과 같은 흐름(KC 조회 → 대조 → 판정)을 탄다. 검증은 input_type=URL, channel=WEB 으로 남는다.
+     *
+     * 페이지 받기(최대 12초)와 KC 조회는 트랜잭션 밖에서 한다(DB 커넥션을 잡고 기다리지 않게 — 10/3·10/10 과 같은 이유).
+     * 쿠팡처럼 서버 접속을 막는 쇼핑몰은 V003 + 확장 안내, 식별 정보를 못 찾으면 V004(직접 입력 안내).
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VerificationResultResponse verifyByUrl(UrlVerifyRequest request) {
-        throw new BusinessException(ErrorCode.NOT_IMPLEMENTED,
-                "URL 자동 추출(FR-005)은 아직 구현 중입니다. 직접 입력 검증을 사용해 주세요.");
+        requireUserId();
+        String url = request.url().trim();
+        ManualInputRequest req = withAllCertNumbers(readUrlOrThrow(url).toRequest());
+        KcLookup kc = excludedOverseas(req) != null ? null : kcLookupService.lookup(req.certNum());
+        return self.verifyUrlWithKc(url, req, kc);
+    }
+
+    /**
+     * 10/31 — URL 미리 읽기. 검증을 저장하지 않고 뽑은 값만 돌려준다(웹 ② 방식이 칸 채우기에 쓴다).
+     * 실패 규칙은 verifyByUrl 과 같다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public UrlPreviewResponse previewUrl(UrlVerifyRequest request) {
+        requireUserId();
+        String url = request.url().trim();
+        return UrlPreviewResponse.of(url, readUrlOrThrow(url));
+    }
+
+    private UrlExtraction readUrlOrThrow(String url) {
+        UrlExtraction ex = webTextExtractor.read(url);
+        return switch (ex.status()) {
+            case OK -> ex;
+            case BLOCKED_SITE -> throw new BusinessException(ErrorCode.PAGE_FETCH_FAILED,
+                    "이 쇼핑몰(" + ex.site() + ")은 서버 접속을 막아 서버에서 읽을 수 없습니다. "
+                            + "쿠팡 상품은 크롬 확장으로 불러오세요(② 쿠팡 URL 붙여넣기 · ③ 영역 드래그).");
+            case NOT_ALLOWED -> throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "열 수 없는 주소입니다(내부망 주소이거나 주소 형식이 잘못됐습니다).");
+            case FETCH_FAILED -> throw new BusinessException(ErrorCode.PAGE_FETCH_FAILED,
+                    "상품 페이지를 불러오지 못했습니다(쇼핑몰 차단·시간 초과·HTML 아님). "
+                            + "③ 영역 드래그나 ① 직접 입력을 쓰세요.");
+            case EMPTY -> throw new BusinessException(ErrorCode.EXTRACTION_EMPTY,
+                    "페이지는 열었지만 제품명·모델명·KC 인증번호를 찾지 못했습니다. ③ 영역 드래그나 ① 직접 입력을 쓰세요.");
+        };
+    }
+
+    /**
+     * FR-004 사진 업로드 검증(10/31 구현) — 사용자가 올린 제품 사진으로 '사진으로 찾기'와 같은 2차 흐름을 탄다.
+     *
+     * OCR(FR-006)은 10/1 스코프 컷이라 사진 속 글자는 읽지 않는다. 대신 Google Vision 웹 검색으로 같은 사진이 실린
+     * 웹 문서를 찾고, 서로 다른 사이트 2곳 이상에서 반복된 상품명·KC 번호·모델명으로 공표문을 대조한다(10/10 최종 흐름 2차).
+     * 판매자가 적은 값이 아니라 결과는 최대 '의심'이다. 반복된 값을 못 찾으면 '확인불가'.
+     *
+     * 사진 저장(디스크)·Vision 호출(수 초)은 트랜잭션 밖에서 한다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public VerificationResultResponse verifyByImage(byte[] imageBytes) {
+        requireUserId();
+        if (!visionClient.isAvailable()) {
+            throw new BusinessException(ErrorCode.IMAGE_CHECK_UNAVAILABLE,
+                    "Google Vision 이 설정되지 않았거나 이번 달 사용 상한에 닿아 사진으로 확인할 수 없습니다.");
+        }
+        String imagePath = imageStore.save(imageBytes);   // 형식·크기 검사(V002) 포함
+        ImageInsight insight = visionClient.annotateBytes(imageBytes);
+        if (insight.failed()) {
+            throw new BusinessException(ErrorCode.IMAGE_CHECK_UNAVAILABLE,
+                    "사진 판독 호출에 실패했습니다. 잠시 후 다시 올려 주세요.");
+        }
+        return self.verifyImageWithInsight(imagePath, insight);
+    }
+
+    /**
+     * 10/31 — 사진 업로드 검증 본체(트랜잭션). verifyByImage 가 Vision 호출을 끝낸 뒤 프록시로 부른다.
+     * 외부에서 직접 부르지 말 것.
+     */
+    @Transactional
+    public VerificationResultResponse verifyImageWithInsight(String imagePath, ImageInsight insight) {
+        Long userId = requireUserId();
+        Verification verification = verificationRepository.save(Verification.builder()
+                .userId(userId)
+                .inputType(InputType.IMAGE)
+                .imagePath(imagePath)
+                .channel(VerificationChannel.WEB)
+                .build());
+        Long id = verification.getId();
+        ExtractedProduct product = extractionService.extractFromImage(id, insight.productName());
+        if (!insight.isUsable()) {
+            extractionService.markImageCheck(id, ExtractionNotes.ImageCheck.NONE);
+            verification.complete(FinalResult.UNKNOWN);
+            return toResult(verification, null, null);
+        }
+        extractionService.saveImageInsight(id, insight);
+        extractionService.markImageCheck(id, ExtractionNotes.ImageCheck.FOUND);
+        MatchOutcome outcome = matchingService.matchByImage(id, product, insight);
+        List<MatchCandidate> candidates = outcome.candidates();
+        recordEvidence(id, candidates);
+        if (candidates.isEmpty()) {
+            verification.complete(FinalResult.NO_MATCH);
+            return toResult(verification, null, null);
+        }
+        MatchCandidate best = candidates.get(0);
+        verification.complete(toFinalResult(best.decision()));
+        Recall recall = best.decision() == Decision.NO_MATCH
+                ? null
+                : recallRepository.findById(best.recallUid()).orElse(null);
+        return toResult(verification, best, recall);
+    }
+
+    /**
+     * 10/31 — URL 검증 본체(트랜잭션). verifyByUrl 이 페이지 읽기·KC 조회를 끝낸 뒤 프록시로 부른다.
+     * 외부에서 직접 부르지 말 것.
+     */
+    @Transactional
+    public VerificationResultResponse verifyUrlWithKc(String url, ManualInputRequest request, KcLookup kc) {
+        Long userId = requireUserId();
+        Verification verification = verificationRepository.save(Verification.builder()
+                .userId(userId)
+                .inputType(InputType.URL)
+                .inputUrl(url)
+                .channel(VerificationChannel.WEB)
+                .build());
+        ExtractedProduct product = extractionService.extractFromUrl(verification.getId(), request);
+        return judge(verification, product, request, kc);
     }
 
     /**
@@ -117,10 +244,16 @@ public class VerificationService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VerificationResultResponse verifyByManualInput(ManualInputRequest request, VerificationChannel channel) {
-        requireUserId();
+        Long userId = requireUserId();
         // 10/10 — 최종 흐름 1차는 KC 인증번호 기준이다. 확장 0.4.4 는 KC 칸의 첫 번호만 certNum 으로 보내므로
         // KC 칸 원문(kcText)에 남은 번호까지 모아 판정에 쓴다(KcCertNumbers.joinAll).
         ManualInputRequest req = withAllCertNumbers(request);
+        // 10/31 — 검증 이력 중복 정리. 같은 사용자·채널에 같은 입력으로 끝난 검증이 있으면 새로 쌓지 않는다.
+        // KC 조회(외부 API)도 다시 하지 않는다. 그 사이 리콜 DB 가 갱신됐으면 그 검증을 다시 판정한다.
+        Long sameId = self.findSameInput(userId, channel, req);
+        if (sameId != null) {
+            return self.reuseVerification(sameId);
+        }
         // 10/10 — 해외직구·구매대행 상품은 판단하지 않는다(팀장 결정). KC 조회도 하지 않는다.
         // 단 어린이제품은 판단한다 — 구매대행도 KC 표시가 없으면 금지(어린이제품법 제30조). excludedOverseas 참조.
         boolean overseas = excludedOverseas(req) != null;
@@ -189,7 +322,15 @@ public class VerificationService {
                 .build());
 
         ExtractedProduct product = extractionService.extractFromManualInput(verification.getId(), request);
+        return judge(verification, product, request, kc);
+    }
 
+    /**
+     * 10/31 — 저장된 입력으로 판정해 검증을 끝낸다(직접입력·확장·URL 공통). 트랜잭션 안에서 부른다.
+     * (10/30 까지 verifyByManualInputWithKc 본문이던 것을 URL 검증과 같이 쓰려고 뺐다 — 동작은 같다)
+     */
+    private VerificationResultResponse judge(Verification verification, ExtractedProduct product,
+                                             ManualInputRequest request, KcLookup kc) {
         // 10/10 — 해외직구·구매대행 상품은 판단하지 않는다(팀장 결정: 국외 제품은 판단 대상이 아니다).
         // 입력은 이력에 남기고, 판정은 UNKNOWN 으로 저장한다(final_result ENUM). 화면에는 '판단 제외'(ResultView.EXCLUDED).
         // 어린이제품은 빼지 않고 판단한다 — 메모만 남겨 화면에 제30조 안내를 붙인다.
@@ -221,6 +362,7 @@ public class VerificationService {
         MatchOutcome outcome = matchingService.matchWithImage(verification.getId(), product);
         extractionService.saveImageInsight(verification.getId(), outcome.insight());
         List<MatchCandidate> candidates = outcome.candidates();
+        recordEvidence(verification.getId(), candidates);
 
         if (candidates.isEmpty()) {
             verification.complete(FinalResult.NO_MATCH);
@@ -262,6 +404,99 @@ public class VerificationService {
             }
         }
         return results;
+    }
+
+    /** 같은 입력 후보를 몇 건까지 비교할지 — 제품명이 같은 검증이 이보다 많으면 최근 것만 본다 */
+    private static final int SAME_INPUT_SCAN = 20;
+
+    /**
+     * 10/31 — 검증 이력 중복 정리: 이 사용자·채널에서 같은 입력(InputFingerprint)으로 끝난 가장 최근 검증 id.
+     * 없으면 null. 제품명(없으면 KC 인증번호)으로 후보를 좁힌 뒤 나머지 항목을 비교한다.
+     * verifyByManualInput 이 프록시로 부른다.
+     */
+    public Long findSameInput(Long userId, VerificationChannel channel, ManualInputRequest request) {
+        InputFingerprint key = InputFingerprint.of(request);
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        List<Verification> found;
+        PageRequest page = PageRequest.of(0, SAME_INPUT_SCAN);
+        if (request.productName() != null && !request.productName().isBlank()) {
+            found = verificationRepository.findSameProductName(userId, channel, VerificationStatus.DONE,
+                    request.productName(), page);
+        } else if (request.certNum() != null && !request.certNum().isBlank()) {
+            found = verificationRepository.findSameCertNum(userId, channel, VerificationStatus.DONE,
+                    request.certNum(), page);
+        } else {
+            return null;
+        }
+        for (Verification v : found) {
+            if (v.getInputUrl() != null || v.getImagePath() != null) {
+                continue; // URL·사진 업로드 검증은 입력 방식이 달라 묶지 않는다
+            }
+            if (InputFingerprint.same(key, InputFingerprint.of(extractionService.primaryRow(v.getId())))) {
+                return v.getId();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 10/31 — 같은 입력의 기존 검증을 다시 쓴다(새 행을 만들지 않는다).
+     *
+     * - 마지막 확인 뒤에 리콜 DB 가 적재·갱신됐으면(recall.synced_at) 저장된 입력으로 다시 판정한다
+     *   — 구매 뒤에 새로 공표된 리콜도 다시 스캔하면 잡힌다. 사진 확인(FOUND)을 했던 건은 그 결과까지 넣어 다시 채점한다.
+     * - 아니면 판정은 그대로 두고 '마지막 확인 시각'(updated_at)만 갱신한다 — 이력 목록 맨 위로 올라온다.
+     * verifyByManualInput 이 프록시로 부른다.
+     */
+    @Transactional
+    public VerificationResultResponse reuseVerification(Long verificationId) {
+        Verification verification = findOwned(verificationId);
+        LocalDateTime latestSync = recallRepository.findLatestSyncedAt();
+        LocalDateTime checked = verification.getUpdatedAt() != null
+                ? verification.getUpdatedAt() : verification.getCreatedAt();
+        if (latestSync != null && checked != null && latestSync.isAfter(checked)) {
+            rejudge(verification);
+        }
+        verification.touch();
+        log.info("[Verification] 같은 입력 — 기존 검증 {} 을(를) 다시 씀(새로 쌓지 않음)", verificationId);
+        return getResult(verificationId);
+    }
+
+    /** 10/31 — 저장된 입력(extraction)으로 다시 판정한다. 판단 제외(해외직구)·빈 입력은 그대로 둔다. */
+    private void rejudge(Verification verification) {
+        Long id = verification.getId();
+        Extraction primary = extractionService.primaryRow(id);
+        String rawText = primary == null ? null : primary.getRawText();
+        if (ExtractionNotes.excludedOverseas(rawText)) {
+            return;
+        }
+        ExtractedProduct product = extractionService.loadMerged(id);
+        if (product == null || product.isEmpty()) {
+            return;
+        }
+        MatchOutcome outcome;
+        if (ExtractionNotes.imageCheck(rawText) == ExtractionNotes.ImageCheck.FOUND) {
+            outcome = matchingService.matchByImage(id, product, extractionService.loadImageInsight(id));
+        } else {
+            matchResultRepository.deleteByVerificationId(id);
+            outcome = matchingService.matchWithImage(id, product);
+        }
+        List<MatchCandidate> candidates = outcome.candidates();
+        recordEvidence(id, candidates);
+        FinalResult result = candidates.isEmpty() ? FinalResult.NO_MATCH : toFinalResult(candidates.get(0).decision());
+        log.info("[Verification] 리콜 DB 갱신 뒤 다시 판정 — 검증 {}: {} → {}", id, verification.getFinalResult(), result);
+        verification.complete(result);
+    }
+
+    /** 10/31 — 대표 후보의 항목별 대조표를 판정 당시 값으로 남긴다(판정 근거 스냅샷). 후보가 없으면 지운다 */
+    private void recordEvidence(Long verificationId, List<MatchCandidate> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            extractionService.saveEvidence(verificationId, null, null);
+            return;
+        }
+        MatchCandidate best = candidates.get(0);
+        extractionService.saveEvidence(verificationId, best.recallUid(), best.comparisons());
     }
 
     /** FR-013 판정 결과·리콜 사유·행동요령 */
@@ -353,6 +588,7 @@ public class VerificationService {
 
         MatchOutcome outcome = matchingService.matchByImage(verificationId, product, insight);
         List<MatchCandidate> candidates = outcome.candidates();
+        recordEvidence(verificationId, candidates);
         if (candidates.isEmpty()) {
             verification.complete(FinalResult.NO_MATCH);
             return toResult(verification, null, null);
@@ -414,6 +650,14 @@ public class VerificationService {
         if (recall == null) {
             return List.of();
         }
+        // 10/31 — 판정 때 남긴 스냅샷이 지금 대표 후보 것이면 그대로 쓴다(규칙이 바뀌어도 과거 근거가 그대로 보인다).
+        // 10/31 이전 검증·스냅샷이 없는 건은 예전처럼 다시 계산한다.
+        Extraction primary = extractionService.primaryRow(verificationId);
+        ExtractionNotes.EvidenceSnapshot snapshot =
+                ExtractionNotes.evidence(primary == null ? null : primary.getRawText());
+        if (snapshot != null && snapshot.recallUid().equals(recall.getRecallUid())) {
+            return snapshot.rows();
+        }
         ExtractedProduct product = extractionService.loadMerged(verificationId);
         if (product == null) {
             return List.of();
@@ -435,9 +679,10 @@ public class VerificationService {
     public PageResponse<VerificationHistoryResponse> getMyHistory(
             int page, int size, VerificationChannel channel) {
         Long userId = requireUserId();
+        // 10/31 — 마지막으로 확인한 순서(updated_at). 같은 입력을 다시 확인하면 그 검증이 맨 위로 온다
         Page<Verification> found = channel == null
-                ? verificationRepository.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(page, size))
-                : verificationRepository.findByUserIdAndChannelOrderByCreatedAtDesc(
+                ? verificationRepository.findByUserIdOrderByUpdatedAtDescIdDesc(userId, PageRequest.of(page, size))
+                : verificationRepository.findByUserIdAndChannelOrderByUpdatedAtDescIdDesc(
                         userId, channel, PageRequest.of(page, size));
 
         // 9/13 추가 — summarize() 버그 수정(아래 참고) 때문에 필요해진 배치 조회. 페이지당 한 번만
@@ -459,7 +704,8 @@ public class VerificationService {
                     v.getStatus(), v.getFinalResult(), v.getCreatedAt(),
                     view.resultState(), view.imageCheck(), view.imageCheckAvailable(), view.missingReason(),
                     ExtractionNotes.kcStatusName(rawText), ExtractionNotes.kcText(rawText),
-                    kcLookupName(rawText), kcCertState(rawText));
+                    kcLookupName(rawText), kcCertState(rawText),
+                    v.getUpdatedAt() != null ? v.getUpdatedAt() : v.getCreatedAt());
         }));
     }
 
@@ -524,14 +770,15 @@ public class VerificationService {
      * extraction.product_name 이 있으면 그걸 우선 쓰고, 없을 때만 기존 폴백으로 떨어진다.
      */
     private String summarize(Verification v, Extraction extraction) {
+        // 10/31 — URL 검증도 뽑은 상품명이 있으면 상품명을 먼저 보여 준다(주소는 상품명이 없을 때만)
+        if (extraction != null && extraction.getProductName() != null) {
+            return extraction.getProductName();
+        }
         if (v.getInputUrl() != null) {
             return v.getInputUrl();
         }
         if (v.getImagePath() != null) {
-            return v.getImagePath();
-        }
-        if (extraction != null && extraction.getProductName() != null) {
-            return extraction.getProductName();
+            return "사진 업로드";
         }
         return "직접 입력";
     }

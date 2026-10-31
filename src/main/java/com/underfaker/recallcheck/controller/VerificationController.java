@@ -5,14 +5,20 @@ import com.underfaker.recallcheck.common.PageResponse;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
 import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
 import com.underfaker.recallcheck.dto.response.MatchEvidenceResponse;
+import com.underfaker.recallcheck.dto.response.UrlPreviewResponse;
 import com.underfaker.recallcheck.dto.response.VerificationHistoryResponse;
 import com.underfaker.recallcheck.dto.response.VerificationResultResponse;
 import com.underfaker.recallcheck.entity.enums.VerificationChannel;
+import com.underfaker.recallcheck.exception.BusinessException;
+import com.underfaker.recallcheck.exception.ErrorCode;
 import com.underfaker.recallcheck.service.VerificationService;
+import com.underfaker.recallcheck.service.extraction.ImageStore;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 /** FR-003,004,008,013,014,015 — 검증 전체 */
@@ -23,10 +29,35 @@ public class VerificationController {
 
     private final VerificationService verificationService;
 
-    /** FR-003 URL 입력 검증 */
+    /**
+     * FR-003·005 URL 입력 검증(10/31 구현) — 서버가 상품 페이지를 받아 제품명·모델명·제조사·KC 인증번호를 뽑고 판정한다.
+     * 쿠팡처럼 서버 접속을 막는 쇼핑몰은 V003(크롬 확장 안내), 식별 정보를 못 찾으면 V004.
+     */
     @PostMapping("/url")
     public ApiResponse<VerificationResultResponse> verifyByUrl(@Valid @RequestBody UrlVerifyRequest request) {
         return ApiResponse.success(verificationService.verifyByUrl(request));
+    }
+
+    /** 10/31 — URL 미리 읽기. 검증을 저장하지 않고 뽑은 값만 돌려준다(웹 ② 방식이 칸 채우기에 씀). 실패 규칙은 /url 과 같다 */
+    @PostMapping("/url/preview")
+    public ApiResponse<UrlPreviewResponse> previewUrl(@Valid @RequestBody UrlVerifyRequest request) {
+        return ApiResponse.success(verificationService.previewUrl(request));
+    }
+
+    /**
+     * FR-004 사진 업로드 검증(10/31 구현) — multipart 의 file 한 장(JPG·PNG·GIF·WEBP, 8MB 이하).
+     * OCR 없이 Google Vision 웹 검색으로 같은 사진이 실린 문서에서 반복된 상품명·KC 번호·모델명을 찾아 대조한다. 최대 '의심'.
+     */
+    @PostMapping(value = "/image", consumes = "multipart/form-data")
+    public ApiResponse<VerificationResultResponse> verifyByImage(@RequestPart("file") MultipartFile file)
+            throws IOException {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ErrorCode.UNSUPPORTED_IMAGE, "사진 파일을 골라 주세요.");
+        }
+        if (file.getSize() > ImageStore.MAX_BYTES) {
+            throw new BusinessException(ErrorCode.UNSUPPORTED_IMAGE, "사진이 너무 큽니다(최대 8MB).");
+        }
+        return ApiResponse.success(verificationService.verifyByImage(file.getBytes()));
     }
 
     /** FR-008 사용자 직접 입력 검증 — 추출부터 4단계 판정까지 */

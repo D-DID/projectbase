@@ -79,6 +79,11 @@ public class Extraction {
      * 새 컬럼 대신 raw_text 를 쓰는 이유는 ImageInsight.RAW_TEXT_BEGIN 주석 참조
      * (ddl-auto=validate 라 컬럼을 늘리면 ALTER 안 한 DB 에서 기동 실패).
      */
+    /** 10/31 — 메모 블록을 바꿀 때(판정 근거 스냅샷). 이 행의 raw_text 를 통째로 바꾼다 */
+    public void replaceRawText(String rawText) {
+        this.rawText = rawText == null || rawText.isBlank() ? null : rawText;
+    }
+
     public void appendRawText(String block) {
         if (block == null || block.isBlank()) {
             return;

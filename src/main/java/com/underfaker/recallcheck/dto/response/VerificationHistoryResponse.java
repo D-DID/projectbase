@@ -45,6 +45,21 @@ public record VerificationHistoryResponse(
         /* 10/3 — KC 인증 DB 조회 결과(FOUND/NOT_FOUND/UNAVAILABLE)와 인증상태 원문("적합"·"기간만료" 등).
            인증번호가 없었거나 10/3 이전 검증이면 null */
         String kcLookup,
-        String kcCertState
+        String kcCertState,
+
+        /* 10/31 — 마지막으로 확인한 시각(updated_at). 같은 입력을 다시 확인하면 새 검증을 쌓지 않고 이 값만 바뀐다.
+           이력 목록은 이 순서로 정렬된다 */
+        LocalDateTime checkedAt
 ) {
+
+    /** 10/31 이전 형태(checkedAt 없음) 호환용 */
+    public VerificationHistoryResponse(Long verificationId, InputType inputType, VerificationChannel channel,
+                                       String inputSummary, String makerName, VerificationStatus status,
+                                       FinalResult finalResult, LocalDateTime createdAt, String resultState,
+                                       String imageCheck, Boolean imageCheckAvailable, String missingReason,
+                                       String kcStatus, String kcText, String kcLookup, String kcCertState) {
+        this(verificationId, inputType, channel, inputSummary, makerName, status, finalResult, createdAt,
+                resultState, imageCheck, imageCheckAvailable, missingReason, kcStatus, kcText, kcLookup,
+                kcCertState, null);
+    }
 }

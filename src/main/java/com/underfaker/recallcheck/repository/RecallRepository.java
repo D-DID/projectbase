@@ -89,6 +89,13 @@ public interface RecallRepository extends JpaRepository<Recall, Long> {
      * 적재된 품목 분류명(recall_product_name) 목록 — 중복 제거.
      * 10/1 추가. 품목명 키워드 적재(RecallSyncService.syncByKeywords)가 출발 키워드로 쓴다.
      */
+    /**
+     * 10/31 — 리콜 DB 를 마지막으로 적재·갱신한 시각(없으면 null). 같은 입력을 다시 확인할 때
+     * 이 시각이 기존 검증보다 늦으면 새 공표문이 들어왔을 수 있어 다시 판정한다(VerificationService#reuseVerification).
+     */
+    @Query("SELECT MAX(r.syncedAt) FROM Recall r")
+    java.time.LocalDateTime findLatestSyncedAt();
+
     @Query("SELECT DISTINCT r.recallProductName FROM Recall r WHERE r.recallProductName IS NOT NULL")
     List<String> findDistinctProductNames();
 }

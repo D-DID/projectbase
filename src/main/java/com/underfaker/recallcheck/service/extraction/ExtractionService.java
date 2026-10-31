@@ -2,6 +2,7 @@ package com.underfaker.recallcheck.service.extraction;
 
 import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
 import com.underfaker.recallcheck.dto.internal.ExtractionNotes;
+import com.underfaker.recallcheck.dto.internal.FieldComparison;
 import com.underfaker.recallcheck.dto.internal.ImageInsight;
 import com.underfaker.recallcheck.dto.internal.KcLookup;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
@@ -24,9 +25,21 @@ public class ExtractionService {
     private final WebTextExtractor webTextExtractor;
     private final IdentityMerger identityMerger;
 
-    /** FR-005 경로 — URL 에서 추출 (미구현) */
-    public ExtractedProduct extractFromUrl(Long verificationId, String url) {
-        throw new UnsupportedOperationException("TODO: FR-005 URL 파싱 미구현");
+    /**
+     * FR-005 경로(10/31 구현) — 서버가 상품 페이지에서 뽑은 값(WebTextExtractor)을 source=URL 로 저장하고 통합한다.
+     * 칸·[detail] 블록(KC 칸 상태·원문)은 직접입력과 같다.
+     */
+    public ExtractedProduct extractFromUrl(Long verificationId, ManualInputRequest parsed) {
+        return saveAndMerge(verificationId, SourceType.URL, parsed);
+    }
+
+    /**
+     * FR-004 경로(10/31) — 사진 업로드 검증. 판매자 입력이 없으므로 사진으로 찾은 상품명(여러 사이트에서 반복된 제목)만
+     * source=IMAGE 행에 둔다. 못 찾았으면 상품명도 비어 있다(판정 '확인불가').
+     */
+    public ExtractedProduct extractFromImage(Long verificationId, String productNameFromImage) {
+        return saveAndMerge(verificationId, SourceType.IMAGE,
+                new ManualInputRequest(productNameFromImage, null, null, null, null, null, null, null, null));
     }
 
     /**
@@ -35,6 +48,10 @@ public class ExtractionService {
      * 현재 유일하게 end-to-end 로 동작하는 경로다.
      */
     public ExtractedProduct extractFromManualInput(Long verificationId, ManualInputRequest request) {
+        return saveAndMerge(verificationId, SourceType.MANUAL, request);
+    }
+
+    private ExtractedProduct saveAndMerge(Long verificationId, SourceType source, ManualInputRequest request) {
         ExtractedProduct manual = new ExtractedProduct(
                 request.productName(), request.brandName(), request.modelName(),
                 request.makerName(), request.barcodeNum(), request.certNum(),
@@ -42,7 +59,7 @@ public class ExtractionService {
 
         extractionRepository.save(Extraction.builder()
                 .verificationId(verificationId)
-                .source(SourceType.MANUAL)
+                .source(source)
                 .productName(request.productName())
                 .brandName(request.brandName())
                 .modelName(request.modelName())
@@ -61,6 +78,21 @@ public class ExtractionService {
                 .toList();
 
         return sources.isEmpty() ? manual : identityMerger.merge(sources);
+    }
+
+    /**
+     * 10/31 — 판정 근거 스냅샷을 남긴다(ExtractionNotes.evidenceBlock). 이전 스냅샷은 지우고 새로 붙인다.
+     * 대표 후보가 없으면 지우기만 한다.
+     */
+    public void saveEvidence(Long verificationId, Long recallUid, List<FieldComparison> comparisons) {
+        Extraction target = primaryRow(verificationId);
+        if (target == null) {
+            return;
+        }
+        target.replaceRawText(ExtractionNotes.withoutBlocks(target.getRawText(),
+                ExtractionNotes.EVIDENCE_BEGIN, ExtractionNotes.EVIDENCE_END));
+        target.appendRawText(ExtractionNotes.evidenceBlock(recallUid, comparisons));
+        extractionRepository.save(target);
     }
 
     /**

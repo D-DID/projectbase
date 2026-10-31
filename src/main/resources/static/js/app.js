@@ -665,11 +665,11 @@ var urlReadExtras = null;   // { kcStatus, kcText } — 마지막으로 URL 에�
 var urlReadPending = null;  // { requestId, timer }
 
 const URL_READ_ERROR_TEXT = {
-  NOT_COUPANG_PRODUCT: '쿠팡 상품 페이지 주소만 읽을 수 있습니다. (예: https://www.coupang.com/vp/products/…)',
+  NOT_HTTP: 'http 또는 https 로 시작하는 상품 페이지 주소를 넣어 주세요.',
   TIMEOUT: '상품 페이지가 제때 열리지 않았습니다. 잠시 후 다시 눌러 주세요.',
   UNREADABLE: '상품 페이지를 읽지 못했습니다(쿠팡 차단·구조 변경 가능). 직접 입력으로 넣어 주세요.',
   CONTEXT_LOST: '확장 프로그램이 새로고침돼 연결이 끊겼습니다. 이 페이지를 새로고침(F5)해 주세요.',
-  NO_EXTENSION: '확장 프로그램(0.5.0 이상)이 있어야 URL 로 불러올 수 있습니다. 설치가 어려우면 ① 직접 입력을 쓰세요.',
+  NO_EXTENSION: '쿠팡 주소는 확장 프로그램(0.5.0 이상)이 있어야 불러올 수 있습니다(쿠팡이 서버 접속을 막음). 설치가 어려우면 ① 직접 입력을 쓰세요.',
   BUSY: '확장 프로그램이 쿠팡 구매이력을 읽는 중이라 지금은 불러올 수 없습니다. 끝난 뒤 다시 눌러 주세요.',
   SLOW: '응답이 너무 늦습니다. 잠시 후 다시 누르거나 ① 직접 입력을 쓰세요.'
 };
@@ -679,13 +679,17 @@ const URL_FILL_FIELDS = ['productName', 'modelName', 'makerName', 'certNum', 'th
 
 function setInputMode(mode) {
   const prev = inputMode;
-  inputMode = (mode === 'url' || mode === 'capture') ? mode : 'manual';
+  inputMode = (mode === 'url' || mode === 'capture' || mode === 'photo') ? mode : 'manual';
   const manualBtn = document.getElementById('modeManualBtn');
   const urlBtn = document.getElementById('modeUrlBtn');
   const captureBtn = document.getElementById('modeCaptureBtn');
   if (manualBtn) manualBtn.classList.toggle('active', inputMode === 'manual');
   if (urlBtn) urlBtn.classList.toggle('active', inputMode === 'url');
   if (captureBtn) captureBtn.classList.toggle('active', inputMode === 'capture');
+  const photoBtn = document.getElementById('modePhotoBtn');
+  if (photoBtn) photoBtn.classList.toggle('active', inputMode === 'photo');
+  const pbox = document.getElementById('photoBox');
+  if (pbox) pbox.style.display = inputMode === 'photo' ? '' : 'none';
   const box = document.getElementById('urlReadBox');
   if (box) box.style.display = inputMode === 'url' ? '' : 'none';
   const cbox = document.getElementById('captureBox');
@@ -699,13 +703,16 @@ function setInputMode(mode) {
     paintCaptureIntro();
     return;
   }
+  if (inputMode === 'photo') {
+    return;
+  }
   if (inputMode === 'manual') {
     urlReadExtras = null;
     setUrlReadMsg('', 'idle');
-  } else if (!extensionSupports('url-read')) {
-    setUrlReadMsg(URL_READ_ERROR_TEXT.NO_EXTENSION, 'err');
   } else {
-    setUrlReadMsg('쿠팡 상품 페이지 주소를 붙여 넣고 [불러오기]를 누르세요. 확장 프로그램이 상품명·모델명·제조사·KC 인증번호·사진 주소를 채웁니다.', 'idle');
+    /* 10/31 — 쿠팡은 확장이, 다른 쇼핑몰은 서버가 읽는다(POST /api/verifications/url/preview) */
+    setUrlReadMsg('상품 페이지 주소를 붙여 넣고 [불러오기]를 누르세요. 상품명·모델명·제조사·KC 인증번호·사진 주소를 채웁니다. ' +
+        '쿠팡 주소는 확장 프로그램이, 다른 쇼핑몰 주소는 서버가 읽습니다.', 'idle');
   }
 }
 
@@ -719,11 +726,15 @@ function setUrlReadMsg(message, kind) {
 function readProductUrl() {
   const url = val('productUrl');
   if (!url) {
-    setUrlReadMsg('쿠팡 상품 페이지 주소를 붙여 넣어 주세요.', 'err');
+    setUrlReadMsg('상품 페이지 주소를 붙여 넣어 주세요.', 'err');
+    return;
+  }
+  if (!/^https?:\/\/\S+$/i.test(url)) {
+    setUrlReadMsg(URL_READ_ERROR_TEXT.NOT_HTTP, 'err');
     return;
   }
   if (!/^https?:\/\/([a-z0-9-]+\.)*coupang\.com\//i.test(url)) {
-    setUrlReadMsg(URL_READ_ERROR_TEXT.NOT_COUPANG_PRODUCT, 'err');
+    readProductUrlByServer(url);
     return;
   }
   if (!extensionSupports('url-read')) {
@@ -760,7 +771,44 @@ function finishUrlRead(res) {
     setUrlReadMsg(URL_READ_ERROR_TEXT[res.error] || ('불러오지 못했습니다 (' + res.error + ').'), 'err');
     return;
   }
-  const info = res.info;
+  applyUrlInfo(res.info);
+}
+
+/* 10/31 — 쿠팡이 아닌 쇼핑몰: 서버가 페이지를 받아 읽는다(검증은 저장하지 않음). 실패하면 서버 문구 그대로 */
+async function readProductUrlByServer(url) {
+  if (urlReadPending) return;
+  urlReadExtras = null;
+  urlReadPending = { requestId: 's' + Date.now(), timer: null };
+  const btn = document.getElementById('urlReadBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '불러오는 중…';
+  }
+  setUrlReadMsg('서버가 상품 페이지를 읽는 중입니다(최대 15초)…', 'busy');
+  let r = null;
+  try {
+    r = await call('/api/verifications/url/preview', 'POST', { url: url });
+  } finally {
+    urlReadPending = null;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '불러오기';
+    }
+  }
+  if (!r || !r.json || !r.json.success || !r.json.data) {
+    const msg = (r && r.json && r.json.message) || ('불러오지 못했습니다 (오류 ' + (r ? r.status : '-') + ').');
+    setUrlReadMsg(msg, 'err');
+    return;
+  }
+  const d = r.json.data;
+  applyUrlInfo({
+    title: d.productName, modelName: d.modelName, makerName: d.makerName, certNum: d.certNum,
+    image: d.thumbnailUrl, kcStatus: d.kcStatus, kcText: d.kcText
+  });
+}
+
+/* URL 로 읽은 값으로 칸을 채운다(확장·서버 공통) */
+function applyUrlInfo(info) {
   const filled = [];
   URL_FILL_FIELDS.forEach(function (id) {
     const el = document.getElementById(id);
@@ -781,9 +829,79 @@ function finishUrlRead(res) {
 
   const kcNote = info.certNum ? ''
       : (info.kcStatus === 'NONE' ? ' KC 칸이 없거나 KC 대상이 아니라고 표기된 상품입니다.'
-          : ' KC 인증정보 칸에 번호가 없습니다' + (info.kcText ? '("' + info.kcText + '")' : '') + '.');
+          : (!info.kcStatus ? ' KC 인증정보 칸을 찾지 못했습니다.'
+              : ' KC 인증정보 칸에 번호가 없습니다' + (info.kcText ? '("' + info.kcText + '")' : '') + '.'));
   setUrlReadMsg((filled.length ? '채운 칸: ' + filled.join('·') + '.' : '채울 값을 찾지 못했습니다.') + kcNote +
       ' 값을 확인·수정한 뒤 [리콜 여부 확인하기]를 누르세요.', filled.length ? 'ok' : 'err');
+}
+
+/* 10/31 — ④ 제품 사진 올리기(FR-004). multipart 라 call()(JSON) 대신 fetch 를 직접 쓴다 */
+async function verifyByPhoto() {
+  const input = document.getElementById('photoFile');
+  const file = input && input.files && input.files[0];
+  const msg = function (m, kind) {
+    const el = document.getElementById('photoMsg');
+    if (!el) return;
+    el.textContent = m;
+    el.className = 'url-read-msg ' + (kind || 'idle');
+  };
+  if (!file) {
+    msg('사진 파일을 골라 주세요.', 'err');
+    return;
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    msg('사진이 너무 큽니다. 8MB 이하로 올려 주세요.', 'err');
+    return;
+  }
+  if (DEMO_MODE) {
+    msg('더미 모드에서는 사진 판독을 하지 않습니다.', 'err');
+    return;
+  }
+  const btn = document.getElementById('photoVerifyBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '사진 확인 중…';
+  }
+  msg('사진을 올리고 같은 사진이 실린 웹 문서를 찾는 중입니다(10~30초)…', 'busy');
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const h = {};
+    if (token && token !== DEMO_TOKEN) h['Authorization'] = 'Bearer ' + token;
+    let res = null;
+    let json = null;
+    try {
+      res = await fetch(API + '/api/verifications/image', { method: 'POST', headers: h, body: form });
+      try { json = await res.json(); } catch (e) { json = null; }
+    } catch (e) {
+      msg('서버에 연결하지 못했습니다.', 'err');
+      return;
+    }
+    if (res.status === 401) {
+      handleUnauthorized();
+      return;
+    }
+    if (!json || !json.success || !json.data) {
+      msg((json && json.message) || ('사진으로 확인하지 못했습니다 (오류 ' + res.status + ').'), 'err');
+      return;
+    }
+    const result = json.data;
+    msg(result.imageProductName
+        ? '같은 사진이 실린 여러 사이트에서 "' + result.imageProductName + '"(으)로 찾았습니다. 아래 결과를 확인하세요.'
+        : '같은 사진이 실린 웹 문서에서 반복된 상품명·KC 번호를 찾지 못했습니다. 아래 결과를 확인하세요.', 'ok');
+    lastInput = emptyInput();
+    renderInput(lastInput);
+    render(result);
+    const panel = document.getElementById('resultScreen');
+    if (panel) panel.classList.add('show');
+    if (result.verificationId) loadEvidence(result.verificationId);
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '사진으로 확인하기';
+    }
+  }
 }
 
 window.addEventListener('underfaker-url-result', function (e) {
@@ -1047,7 +1165,7 @@ const LABEL = {
 };
 
 const SUBLABEL = {
-  MATCH: '리콜 대상 제품과 일치합니다 (인증번호·모델명 등 100% 일치).',
+  MATCH: '리콜 대상 제품과 일치합니다 (KC 인증번호·모델명이 완전히 같음).',
   PARTIAL: '리콜 제품과 닮았습니다. 확인이 필요합니다.',
   MISSING: 'KC 인증번호가 없어 KC 번호로 판단하지 못했습니다.',
   NO_MATCH: '일치하는 리콜 공표문을 찾지 못했습니다. 안전하다는 뜻은 아닙니다.',
@@ -1476,7 +1594,9 @@ function renderComparisons(comparisons, decision) {
   const table =
           '<table class="evidence-table">' +
           '<thead><tr>' +
-          '<th>항목</th><th>내 입력값</th><th>공표문 값</th><th>유사도</th>' +
+          /* 10/31 — 머리글이 칸과 어긋나 있었다(첫 칸이 항목+입력값인데 '항목'·'내 입력값' 두 칸으로 적혀 공표문 값 위에 '내 입력값'이 보였음).
+             노션 완료 기준: 항목별 입력값·공표문값·텍스트 유사도·이미지 유사도 4열 */
+          '<th>항목 · 내 입력값</th><th>공표문 값</th><th>텍스트 유사도</th><th>이미지 유사도</th>' +
           '</tr></thead>' +
           '<tbody>' + rows + '</tbody></table>';
 
@@ -1613,7 +1733,7 @@ function renderHistoryList(targetId, items) {
     const icon = v.channel === 'EXTENSION' ? '🛒' : '🧸';
 
     const sub = [
-      fmtDateTime(v.createdAt),
+      fmtDateTime(v.checkedAt || v.createdAt), /* 10/31 — 마지막으로 확인한 시각(같은 입력 재확인 시 갱신) */
       v.makerName || '',
       kcHint(v),
       kcDbHint(v)
