@@ -2,6 +2,7 @@ package com.underfaker.recallcheck.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.underfaker.recallcheck.common.CoupangThumbnail;
 import com.underfaker.recallcheck.common.WebPageIdentifiers;
 import com.underfaker.recallcheck.dto.internal.ImageInsight;
 import lombok.extern.slf4j.Slf4j;
@@ -299,7 +300,19 @@ public class GoogleVisionClient {
         if (!isEnabled() || imageUrl == null || imageUrl.isBlank()) {
             return ImageInsight.NONE;
         }
-        byte[] bytes = download(imageUrl.trim());
+        String original = imageUrl.trim();
+        // 10/30 — 쿠팡 썸네일은 큰 크기 주소를 먼저 받아 본다(작은 썸네일은 같은 사진을 못 찾는다). 못 받으면 원래 주소.
+        String larger = CoupangThumbnail.larger(original);
+        byte[] bytes = null;
+        if (!larger.equals(original)) {
+            bytes = download(larger);
+            if (bytes != null) {
+                log.info("[Vision] 쿠팡 썸네일을 큰 사진({}x{})으로 받아 판독한다", CoupangThumbnail.LARGE, CoupangThumbnail.LARGE);
+            }
+        }
+        if (bytes == null) {
+            bytes = download(original);
+        }
         if (bytes != null) {
             return annotateBytes(bytes);
         }

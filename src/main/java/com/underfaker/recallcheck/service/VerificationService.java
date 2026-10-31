@@ -17,6 +17,7 @@ import com.underfaker.recallcheck.dto.request.ManualInputRequest;
 import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
 import com.underfaker.recallcheck.dto.response.KcCertResponse;
 import com.underfaker.recallcheck.dto.response.MatchEvidenceResponse;
+import com.underfaker.recallcheck.dto.response.ProductInputResponse;
 import com.underfaker.recallcheck.dto.response.VerificationHistoryResponse;
 import com.underfaker.recallcheck.dto.response.VerificationResultResponse;
 import com.underfaker.recallcheck.entity.Extraction;
@@ -552,6 +553,11 @@ public class VerificationService {
         return primary == null ? null : KcCertResponse.of(KcLookup.fromRawText(primary.getRawText()));
     }
 
+    /** 10/31 — 결과 화면 '내가 입력한 제품'용 저장된 입력값. 리콜 후보가 없어도 채운다(헝겊책 실측: 전부 '-'로 나왔음). */
+    private ProductInputResponse inputOf(Verification v) {
+        return ProductInputResponse.of(extractionService.primaryRow(v.getId()));
+    }
+
     private VerificationResultResponse toResult(Verification v, MatchCandidate best, Recall r) {
         ResultView rv = viewOf(v);
         return new VerificationResultResponse(
@@ -571,7 +577,8 @@ public class VerificationService {
                 r == null ? null : r.getPublishDate(),
                 v.getCreatedAt(),
                 rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason(),
-                kcOf(v), rv.imageProductName(), rv.imageCertNum(), rv.imageModelName());
+                kcOf(v), rv.imageProductName(), rv.imageCertNum(), rv.imageModelName(),
+                inputOf(v), r == null ? null : r.getCertNum());
     }
 
     private VerificationResultResponse toResultFrom(Verification v, MatchResult m, Recall r) {
@@ -592,6 +599,7 @@ public class VerificationService {
                 r == null ? null : r.getPublishDate(),
                 v.getCreatedAt(),
                 rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason(),
-                kcOf(v), rv.imageProductName(), rv.imageCertNum(), rv.imageModelName());
+                kcOf(v), rv.imageProductName(), rv.imageCertNum(), rv.imageModelName(),
+                inputOf(v), r == null ? null : r.getCertNum());
     }
 }

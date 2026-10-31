@@ -121,12 +121,25 @@ if (!DEMO_MODE && tokenExpired(token)) {
    이력에서 과거 건을 열 때는 /evidence 의 comparisons[].inputValue 로 채운다. */
 let lastInput = emptyInput();
 
+/* 10/31 — 대조할 리콜 후보가 없으면 근거(comparisons)가 비어 결과 화면 '내가 입력한 제품'이 전부 '-'로 나왔다.
+   목록에서 이미 받은 상품명(inputSummary)을 verificationId 별로 기억해 두고, 비어 있으면 제품명 칸을 채운다. */
+const historySummaryById = {};
+
+function fillInputFromSummary(id) {
+  const s = historySummaryById[id];
+  const el = document.getElementById('inputProduct');
+  if (!s || s === '직접 입력' || !el || (el.textContent && el.textContent !== '-')) return;
+  text('inputProduct', s);
+  if (!lastInput.productName) lastInput.productName = s;
+}
+
 /* DEMO_MODE 이력. localStorage 를 쓰지 않는다(P0-2). 새로고침하면 사라진다. */
 const DEMO_HISTORY = { WEB: [], EXTENSION: [] };
 const DEMO_EVIDENCE = {};
 
 function emptyInput() {
   return {
+    kcText: null,
     productName: null,
     brandName: null,
     modelName: null,
@@ -1089,11 +1102,18 @@ function renderInput(input) {
 
   const i = input || emptyInput();
 
+  /* 10/31 — 대조 축(제품명 + KC 인증번호)을 위에, 공표문 쪽과 같은 줄 순서로. 바코드는 대조 항목이 아니라 뺐다.
+     KC 번호가 없으면 KC 칸 원문(예: '상세페이지 참조')을 그대로 보여 준다 */
   text('inputProduct', i.productName);
-  text('inputBrand', i.brandName);
+  text('inputCert', i.certNum || i.kcText || null);
   text('inputModel', i.modelName);
-  text('inputBarcode', i.barcodeNum);
+  text('inputMaker', i.makerName);
+  text('inputBrand', i.brandName);
 }
+
+/* 10/31 — 서버가 결과에 저장된 입력값(input)을 내려주면 그것을 쓴다. 그때는 판정 근거의 inputValue 로 덮지 않는다
+   (근거의 제품명은 대조에 쓴 일부 문구라 원래 입력과 다를 수 있다). 예전 서버면 false 라 예전처럼 근거로 채운다. */
+let inputFromServer = false;
 
 
 /* ==================================================
@@ -1109,7 +1129,14 @@ function render(d) {
 
   setResultState(fr, d.similarityScore, d);
 
+  inputFromServer = !!d.input;
+  if (d.input) {
+    lastInput = Object.assign(emptyInput(), d.input);
+    renderInput(lastInput);
+  }
+
   text('recallProduct', d.recallProductName);
+  text('recallCert', d.recallCertNum);
   text('recallBrand', d.recallBrandName);
   text('recallModel', d.recallModelName);
   /* 9/27 — maker_name 은 실데이터에서 거의 비어 있다. 백엔드 Recall.resolveMakerName() 과 같은 규칙으로
@@ -1262,6 +1289,11 @@ function kcCertHtml(d) {
     const state = esc(kc.certState || '상태 정보 없음');
     warn = !!kc.needsAttention;
     body = (warn ? '⚠ 인증상태 <strong>' + state + '</strong>' : '인증상태 ' + state) + ' — ' + facts;
+    if (/기간만료/.test(kc.certState || '')) {
+      /* 10/31 — 근거: 어린이제품 안전 특별법 제22조⑤ "안전확인의 유효기간은 5년으로 하되, 안전확인의 신고가 수리된 날부터 기산" */
+      body += '<br>인증 유효기간이 지난 번호입니다(어린이제품 안전확인은 신고 수리일부터 5년). ' +
+              '리콜 여부와는 별개입니다 — 판매자에게 지금 유효한 KC 인증번호를 확인해 보세요.';
+    }
     body += '<br>인증 모델명이 리콜 공표문 모델명과 같을 때만 판정 근거로 씁니다(아래 판정 근거의 \'인증 모델명\').';
     if (!warn) body += '<br>인증 여부는 리콜·안전 여부와 별개입니다.';
   } else if (kc.status === 'NOT_FOUND') {
@@ -1345,6 +1377,7 @@ async function checkImage(id, btn) {
     }
     const evidence = await loadEvidence(id);
     if (evidence) applyEvidenceInputs(evidence.comparisons);
+    fillInputFromSummary(id);
   } finally {
     imageCheckBusy = false;
     if (btn && btn.isConnected && btn.disabled) {
@@ -1466,7 +1499,7 @@ function renderComparisons(comparisons, decision) {
    이력에서 과거 건을 열 때 쓴다(그때는 lastInput 이 없다). */
 function applyEvidenceInputs(comparisons) {
 
-  if (!comparisons) return;
+  if (!comparisons || inputFromServer) return;
 
   const filled = emptyInput();
 
@@ -1476,7 +1509,6 @@ function applyEvidenceInputs(comparisons) {
     if (c.field in filled) filled[c.field] = c.inputValue || null;
   });
 
-  text('inputBarcode', null); /* 바코드는 대조 항목이 아니라 근거에 안 들어온다 */
   lastInput = filled;
 }
 
@@ -1576,6 +1608,7 @@ function renderHistoryList(targetId, items) {
 
   list.innerHTML = items.map(function (v) {
 
+    if (v && v.verificationId != null && v.inputSummary) historySummaryById[v.verificationId] = v.inputSummary;
     const fr = stateOf(v);
     const icon = v.channel === 'EXTENSION' ? '🛒' : '🧸';
 
@@ -1647,6 +1680,7 @@ async function openHistoryItem(id) {
 
   const evidence = await loadEvidence(id);
   if (evidence) applyEvidenceInputs(evidence.comparisons);
+  fillInputFromSummary(id);
 }
 
 
@@ -1847,10 +1881,13 @@ function onScanStatus(s) {
     const secs = s.elapsedMs ? Math.round(s.elapsedMs / 1000) : null;
     const avg = (s.avgReadMs !== null && s.avgReadMs !== undefined)
         ? ' · 상세페이지 한 건당 평균 ' + (s.avgReadMs / 1000).toFixed(1) + '초' : '';
+    /* 10/30 — 유아·어린이 제품만 읽는다. 건너뛴 건수를 같이 알린다(확장 0.6.1) */
+    const skipped = s.skipped ? ' 유아·어린이 제품이 아닌 ' + s.skipped + '건은 건너뛰었습니다.' : '';
+    const notKc = s.notKc ? ' 상세페이지상 KC 대상이 아닌 ' + s.notKc + '건(식품·위생용품 등)은 뺐습니다.' : '';
     finishScanUi(s.found
-        ? label + ' — ' + s.found + '건을 읽어 ' + (s.sent || 0) + '건 확인했습니다' +
-          (secs !== null ? ' (' + secs + '초' + avg + ')' : '') + '.'
-        : label + ' — 읽을 주문이 없습니다' + (s.mode === 'date' ? ' (그날 주문이 없거나 주문목록 앞쪽 ' + (s.pagesRead || 0) + '쪽 안에 없음)' : '') + '.',
+        ? label + ' — 유아·어린이 제품 ' + s.found + '건을 읽어 ' + (s.sent || 0) + '건 확인했습니다' +
+          (secs !== null ? ' (' + secs + '초' + avg + ')' : '') + '.' + skipped + notKc
+        : label + ' — 읽을 유아·어린이 제품 주문이 없습니다' + (s.mode === 'date' ? ' (그날 주문이 없거나 주문목록 앞쪽 ' + (s.pagesRead || 0) + '쪽 안에 없음)' : '') + '.' + skipped,
         s.found ? 'ok' : 'idle');
     loadCoupangRecent();
   } else if (s.phase === 'error') {
@@ -1972,7 +2009,11 @@ function productKey(v) {
 function summarizeCoupang(items) {
   const seen = new Set();
   const unique = [];
-  (items || []).forEach(function (v) {
+  /* 10/30 — 유아·어린이 제품만 본다(팀장 요청). 확장이 'KC 대상 아님'(식품·위생용품·화장품 고시, 비대상 분류)으로
+     읽어 보낸 예전 기록은 이 화면 집계·목록에서 뺀다. 쿠팡 검증이력 화면에는 그대로 남는다. */
+  const all = items || [];
+  const notKcCount = all.filter(v => v && v.kcStatus === 'NONE').length;
+  all.filter(v => !(v && v.kcStatus === 'NONE')).forEach(function (v) {
     const key = productKey(v);
     if (seen.has(key)) return;
     seen.add(key);
@@ -1995,6 +2036,10 @@ function summarizeCoupang(items) {
   const kcKnown = done.filter(v => !!v.kcStatus && stateOf(v) !== 'EXCLUDED');
   const kcTarget = kcKnown.filter(v => KC_TARGET[v.kcStatus]).length;
   const kcNone = kcKnown.filter(v => v.kcStatus === 'NONE').length;
+  /* 10/31 — KC 인증 DB 조회 상태. 리콜 판정과 별개라 '리콜 의심'에는 넣지 않고 요약 문구에만 따로 센다 */
+  const kcExpired = done.filter(v => v.kcLookup === 'FOUND' && /기간만료/.test(v.kcCertState || '')).length;
+  const kcWarn = done.filter(v => v.kcLookup === 'NOT_FOUND' ||
+      (v.kcLookup === 'FOUND' && v.kcCertState && v.kcCertState !== '적합' && !/기간만료/.test(v.kcCertState))).length;
 
   return {
     unique: unique,
@@ -2012,7 +2057,10 @@ function summarizeCoupang(items) {
     kcTarget: kcTarget,
     kcNone: kcNone,
     pending: unique.filter(v => v.status === 'PENDING').length,
-    failed: unique.filter(v => v.status === 'FAILED').length
+    failed: unique.filter(v => v.status === 'FAILED').length,
+    notKcHidden: notKcCount,
+    kcExpired: kcExpired,
+    kcWarn: kcWarn
   };
 }
 
@@ -2055,6 +2103,8 @@ function updateCoupangResultCard(f) {
             (f.missingCheckable ? ' (사진으로 찾기 가능 ' + f.missingCheckable + '개)' : ''));
   }
   if (f.excluded) extra.push('(어린이제품이 아닌) 해외직구·구매대행 판단 제외 ' + f.excluded + '개');
+  if (f.kcExpired) extra.push('KC 인증 기간만료 ' + f.kcExpired + '개(리콜과 별개 — 제품을 눌러 확인)');
+  if (f.kcWarn) extra.push('KC 인증 상태 주의 ' + f.kcWarn + '개(인증취소·DB에 없는 번호 등)');
   if (f.pending) extra.push('확인 중 ' + f.pending + '개');
   if (f.failed) extra.push('처리 실패 ' + f.failed + '개');
 

@@ -2,6 +2,7 @@ package com.underfaker.recallcheck.service.matching;
 
 import com.underfaker.recallcheck.common.KcCertNumbers;
 import com.underfaker.recallcheck.common.ListingTextCleaner;
+import com.underfaker.recallcheck.common.TextNormalizer;
 import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
 import com.underfaker.recallcheck.dto.internal.FieldComparison;
 import com.underfaker.recallcheck.dto.internal.ImageInsight;
@@ -326,8 +327,7 @@ public class MatchingService {
         addProductNameComparison(comparisons, product.productName(),
                 recall.getRecallModelName(), recall.getRecallProductName(), profile);
 
-        addComparison(comparisons, "makerName",
-                product.makerName(), recall.resolveMakerName(), profile);
+        addMakerComparison(comparisons, product.makerName(), recall.resolveMakerName(), profile);
 
         if (product.brandName() == null || product.brandName().isBlank()) {
             // 9/27 — 쿠팡 구매이력(확장)은 브랜드를 따로 보내지 않는다. 상품명 안에서 찾는다.
@@ -540,6 +540,22 @@ public class MatchingService {
         }
     }
 
+    /**
+     * 10/30 — 제조사 대조. "주식회사 세주" 와 "(주)세주" 처럼 회사 형태 표기만 다른 값이 50% 로 깎였다(통합테스트 E14).
+     * 리콜 공표문 4,092건 중 2,448건의 회사명에 회사 형태(주식회사·(주)·㈜ 등)가 붙어 있다.
+     * 회사 형태를 뗀 값으로 재고, 근거표에는 원문을 그대로 보여 준다(TextNormalizer.companyName).
+     */
+    private void addMakerComparison(List<FieldComparison> out, String input, String official, MatchProfile profile) {
+        String normalizedInput = TextNormalizer.companyName(input);
+        String normalizedOfficial = TextNormalizer.companyName(official);
+        if (normalizedInput == null || normalizedOfficial == null) {
+            return;
+        }
+        double score = similarityCalculator.similarity(normalizedInput, normalizedOfficial);
+        out.add(new FieldComparison("makerName", input, official, score,
+                similarityCalculator.weightOf("makerName", profile)));
+    }
+
     /** 단일 값 대조 */
     private void addComparison(List<FieldComparison> out, String field,
                                String input, String official, MatchProfile profile) {
@@ -703,7 +719,10 @@ public class MatchingService {
     private void addCertNumComparison(List<FieldComparison> out, String field, String weightField,
                                       String input, String officialList, MatchProfile profile) {
         List<String> numbers = KcCertNumbers.extract(input);
-        List<String> inputs = numbers.size() > 1 ? numbers : java.util.Collections.singletonList(input);
+        // 10/30 — 번호가 하나만 있어도 원문 대신 뽑은 번호로 잰다. 예전에는 둘 이상일 때만 뽑아서
+        // "KC 인증번호 : CB067R227-2006 (어린이제품 안전확인)" 처럼 설명이 섞인 칸이 원문째 비교돼
+        // 같은 번호인데도 완전일치가 안 났다(통합테스트 E02). KC 인증 DB 조회가 실패(NOT_FOUND·키 없음)하면 그대로 남았다.
+        List<String> inputs = numbers.isEmpty() ? java.util.Collections.singletonList(input) : numbers;
         FieldComparison best = null;
         for (String one : inputs) {
             List<FieldComparison> tmp = new ArrayList<>();
