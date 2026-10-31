@@ -992,6 +992,7 @@ function onCapture(c) {
   if (key) captureSourceKey = key;
 
   const filled = [];
+  let keptProductName = false;
   function put(id, value, label) {
     const el = document.getElementById(id);
     if (!el || !value) return;
@@ -1015,6 +1016,11 @@ function onCapture(c) {
   } else {
     const f = c.fields || {};
     Object.keys(CAPTURE_FIELD_LABEL).forEach(function (k) {
+      /* 10/31 — '품명 및 모델명'·공표문 '모델명' 칸에서 나온 이름은, 같은 페이지에서 먼저 가져온 제품명(상품 제목)을 덮지 않는다 */
+      if (k === 'productName' && f.nameFromModel && val('productName')) {
+        keptProductName = true;
+        return;
+      }
       put(k, f[k], CAPTURE_FIELD_LABEL[k]);
     });
     if (f.kcText || f.certNum) {
@@ -1035,9 +1041,9 @@ function onCapture(c) {
   let msg = filled.length
       ? '채운 칸: ' + filled.join('·') + '.'
       : '가져온 글에서 제품명·브랜드·모델명·제조사·KC 칸을 찾지 못했습니다. 아래 \'가져온 글 보기\'에서 복사해 넣어 주세요.';
-  /* 10/31 — 공표문 상세에는 제품명 칸이 없어 이름이 '모델명' 칸에 있다. 확장(0.6.2)이 제품명 칸으로 옮겼으면 알린다 */
-  if (c.kind === 'text' && c.fields && c.fields.nameFromModel) {
-    msg += ' 공표문 \'모델명\' 칸의 이름은 제품명 칸에 넣었습니다(KC 번호 + 제품명으로 대조).';
+  /* 10/31 — 공표문 '모델명'·쇼핑몰 '품명 및 모델명' 칸의 이름은 확장(0.6.2)이 제품명 칸으로 옮긴다. 옮겼으면 알린다 */
+  if (c.kind === 'text' && c.fields && c.fields.nameFromModel && !keptProductName) {
+    msg += ' \'' + (c.fields.nameFromLabel || '모델명') + '\' 칸의 이름은 제품명 칸에 넣었습니다(KC 번호 + 제품명으로 대조).';
   }
   if (missing.length) msg += ' 아직 빈 칸: ' + missing.join('·') + ' — 같은 메뉴로 더 가져오거나 직접 입력하세요.';
   else msg += ' 값을 확인·수정한 뒤 [리콜 여부 확인하기]를 누르세요.';
@@ -1437,33 +1443,65 @@ function setResultState(fr, score, d) {
 /* 10/3 — KC인증 연동. 입력한 KC 인증번호로 KC 인증 DB(제품안전정보센터)를 조회한 결과.
    리콜 판정(일치/의심/불일치)과는 별개 정보다 — 인증이 '적합'이어도 안전하다는 뜻이 아니다(9/30 원칙).
    서버 VerificationResultResponse.kc (KcCertResponse). 인증번호를 안 넣었으면 null 이라 아무것도 안 그린다. */
+/* 10/31 — KC 인증상태 원문을 단계로 나눈다(리콜 판정과 별개).
+   기간만료와 취소·효력상실은 다른 일이라 같은 경고로 묶지 않는다(팀 검토 10/31).
+     valid   '적합'
+     expired '기간만료' — 신고 유효기간(안전확인 5년)이 지난 것. 만료 전에 출고·통관한 재고는 계속 팔 수 있다
+             (한국제품안전관리원 KC인증 불편신고 FAQ — 「어린이제품 안전 특별법」 시행규칙 제29조①)
+     action  그 밖의 상태 — 안전인증취소·효력상실·사용금지 N개월·개선명령 등 행정처분
+     unknown 상태 값이 비어 있음 */
+function kcStateLevel(state) {
+  const s = String(state || '').trim();
+  if (!s) return 'unknown';
+  if (s === '적합') return 'valid';
+  if (/기간\s*만료/.test(s)) return 'expired';
+  return 'action';
+}
+
 function kcCertHtml(d) {
   const kc = d && d.kc;
   if (!kc || !kc.status) return '';
   let body;
-  let warn = false;
+  /* tone: '' 보통 · check 확인 필요(주황) · danger 처분(빨강) · muted 판정 보류(회색) */
+  let tone = '';
   if (kc.status === 'FOUND') {
     const facts = [kc.certNum, kc.modelName, kc.certDate ? fmtDate(kc.certDate) + ' 인증' : null]
             .filter(Boolean).map(esc).join(' · ');
     const state = esc(kc.certState || '상태 정보 없음');
-    warn = !!kc.needsAttention;
-    body = (warn ? '⚠ 인증상태 <strong>' + state + '</strong>' : '인증상태 ' + state) + ' — ' + facts;
-    if (/기간만료/.test(kc.certState || '')) {
-      /* 10/31 — 근거: 어린이제품 안전 특별법 제22조⑤ "안전확인의 유효기간은 5년으로 하되, 안전확인의 신고가 수리된 날부터 기산" */
-      body += '<br>인증 유효기간이 지난 번호입니다(어린이제품 안전확인은 신고 수리일부터 5년). ' +
-              '리콜 여부와는 별개입니다 — 판매자에게 지금 유효한 KC 인증번호를 확인해 보세요.';
+    const level = kcStateLevel(kc.certState);
+    if (level === 'expired') {
+      /* 10/31 — 근거: 어린이제품 안전 특별법 제22조 — 안전확인의 유효기간 5년(신고일부터 기산).
+         만료 전 출고·통관 재고는 만료 뒤에도 유통·판매 가능(한국제품안전관리원 FAQ, 시행규칙 제29조①).
+         지금 파는 물량의 통관 시점은 공개 정보로 알 수 없다 → '불법'으로 단정하지 않고 '확인 필요'로 둔다 */
+      tone = 'check';
+      body = 'ⓘ 확인 필요 · 인증상태 <strong>' + state + '</strong> — ' + facts +
+              '<br>신고 유효기간(어린이제품 안전확인은 신고일부터 5년)이 지난 번호입니다. ' +
+              '만료 전에 출고(국내 제조)·통관(수입)을 마친 재고는 만료 뒤에도 유통·판매할 수 있어(한국제품안전관리원 안내), ' +
+              '이것만으로 판매가 불법이라고 볼 수는 없습니다.' +
+              '<br>지금 파는 물량이 언제 출고·통관됐는지는 확인할 수 없습니다 — 판매자에게 통관 시점이나 지금 유효한 KC 번호를 확인해 보세요. ' +
+              '리콜 여부와는 별개이며, 안전하다는 뜻도 아닙니다.';
+    } else if (level === 'action') {
+      tone = 'danger';
+      body = '⚠ 인증상태 <strong>' + state + '</strong> — ' + facts +
+              '<br>적합·기간만료가 아닌 상태입니다(인증 취소·효력상실·사용금지·개선명령 등 행정처분). ' +
+              '기간만료와는 다릅니다 — 제품안전정보센터에서 처분 내용과 대상 모델을 확인하세요. 리콜 판정과는 별개입니다.';
+    } else {
+      body = '인증상태 ' + state + ' — ' + facts;
     }
     body += '<br>인증 모델명이 리콜 공표문 모델명과 같을 때만 판정 근거로 씁니다(아래 판정 근거의 \'인증 모델명\').';
-    if (!warn) body += '<br>인증 여부는 리콜·안전 여부와 별개입니다.';
+    if (level === 'valid') body += '<br>인증 여부는 리콜·안전 여부와 별개입니다.';
   } else if (kc.status === 'NOT_FOUND') {
-    warn = true;
-    body = esc(kc.certNum || '') + ' — KC 인증 DB에서 이 번호를 찾지 못했습니다. 번호를 다시 확인해 주세요.';
+    tone = 'check';
+    body = 'ⓘ 확인 필요 · ' + esc(kc.certNum || '') +
+            ' — KC 인증 DB에서 이 번호를 찾지 못했습니다(신고정보 없음). 번호를 다시 확인해 주세요.';
   } else {
-    body = 'KC 인증 DB를 지금 조회하지 못했습니다' + (kc.certNum ? ' (' + esc(kc.certNum) + ')' : '') +
+    tone = 'muted';
+    body = '판정 보류 — KC 인증 DB를 지금 조회하지 못했습니다' + (kc.certNum ? ' (' + esc(kc.certNum) + ')' : '') +
             '. 리콜 대조는 입력한 정보로 그대로 진행했습니다.';
   }
-  return '<br><span class="kc-cert" style="display:block;margin-top:8px;font-size:0.92em;' +
-          (warn ? 'color:#b45309;' : '') + '">🔖 KC 인증 조회: ' + body + '</span>';
+  const color = { check: 'color:#b45309;', danger: 'color:#b91c1c;', muted: 'color:#6b7280;' }[tone] || '';
+  return '<br><span class="kc-cert kc-' + (tone || 'ok') + '" style="display:block;margin-top:8px;font-size:0.92em;' +
+          color + '">🔖 KC 인증 조회: ' + body + '</span>';
 }
 
 /* 9/27 — 사진으로 찾기 버튼과 결과 문구. 서버가 imageCheckAvailable 을 내려줄 때만 버튼을 보인다
@@ -2198,9 +2236,9 @@ function summarizeCoupang(items) {
   const kcTarget = kcKnown.filter(v => KC_TARGET[v.kcStatus]).length;
   const kcNone = kcKnown.filter(v => v.kcStatus === 'NONE').length;
   /* 10/31 — KC 인증 DB 조회 상태. 리콜 판정과 별개라 '리콜 의심'에는 넣지 않고 요약 문구에만 따로 센다 */
-  const kcExpired = done.filter(v => v.kcLookup === 'FOUND' && /기간만료/.test(v.kcCertState || '')).length;
+  const kcExpired = done.filter(v => v.kcLookup === 'FOUND' && kcStateLevel(v.kcCertState) === 'expired').length;
   const kcWarn = done.filter(v => v.kcLookup === 'NOT_FOUND' ||
-      (v.kcLookup === 'FOUND' && v.kcCertState && v.kcCertState !== '적합' && !/기간만료/.test(v.kcCertState))).length;
+      (v.kcLookup === 'FOUND' && kcStateLevel(v.kcCertState) === 'action')).length;
 
   return {
     unique: unique,
@@ -2264,8 +2302,8 @@ function updateCoupangResultCard(f) {
             (f.missingCheckable ? ' (사진으로 찾기 가능 ' + f.missingCheckable + '개)' : ''));
   }
   if (f.excluded) extra.push('(어린이제품이 아닌) 해외직구·구매대행 판단 제외 ' + f.excluded + '개');
-  if (f.kcExpired) extra.push('KC 인증 기간만료 ' + f.kcExpired + '개(리콜과 별개 — 제품을 눌러 확인)');
-  if (f.kcWarn) extra.push('KC 인증 상태 주의 ' + f.kcWarn + '개(인증취소·DB에 없는 번호 등)');
+  if (f.kcExpired) extra.push('KC 신고 기간만료 ' + f.kcExpired + '개(확인 필요 — 만료 전 통관 재고는 판매 가능, 리콜과 별개)');
+  if (f.kcWarn) extra.push('KC 인증 취소·처분 또는 DB에 없는 번호 ' + f.kcWarn + '개(리콜과 별개 — 제품을 눌러 확인)');
   if (f.pending) extra.push('확인 중 ' + f.pending + '개');
   if (f.failed) extra.push('처리 실패 ' + f.failed + '개');
 
