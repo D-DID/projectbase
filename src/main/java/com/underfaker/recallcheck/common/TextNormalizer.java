@@ -126,6 +126,27 @@ public final class TextNormalizer {
     }
 
     /**
+     * 10/30 — 회사 형태 표기. 앞뒤 어디에 붙어도 뗀다: "주식회사 세주" · "(주)세주" · "㈜ 명신에프엔에스" · "세주 Co., Ltd."
+     * 한글은 단어 경계가 없어 "주식회사" 가 회사 이름 한가운데 있어도 떼지만, 실제 회사명에 그렇게 들어간 예는 없다.
+     */
+    private static final Pattern COMPANY_FORM = Pattern.compile(
+            "주식회사|유한책임회사|유한회사|합자회사|합명회사|농업회사법인|사단법인|재단법인|[(（]\\s*(?:주|유|합|사|재)\\s*[)）]|[㈜㈲]"
+                    + "|\\b(?:co\\.?\\s*,?\\s*ltd|ltd|inc|corp(?:oration)?)\\b\\.?",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * 10/30 — 제조사·수입사 이름 정규화. 회사 형태를 뗀 뒤 normalize() 와 같은 규칙.
+     * 회사 형태만 있고 이름이 없으면(예: "(주)") 원문 normalize() 결과를 돌려준다.
+     */
+    public static String companyName(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String stripped = normalize(COMPANY_FORM.matcher(raw).replaceAll(" "));
+        return stripped != null ? stripped : normalize(raw);
+    }
+
+    /**
      * 모델명 전용 정규화 — 영문·숫자·한글만 남긴다.
      * 일반 normalize() 와 달리 목록에 없는 기호까지 전부 떨어뜨린다.
      *

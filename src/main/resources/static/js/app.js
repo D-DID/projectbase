@@ -121,12 +121,25 @@ if (!DEMO_MODE && tokenExpired(token)) {
    이력에서 과거 건을 열 때는 /evidence 의 comparisons[].inputValue 로 채운다. */
 let lastInput = emptyInput();
 
+/* 10/31 — 대조할 리콜 후보가 없으면 근거(comparisons)가 비어 결과 화면 '내가 입력한 제품'이 전부 '-'로 나왔다.
+   목록에서 이미 받은 상품명(inputSummary)을 verificationId 별로 기억해 두고, 비어 있으면 제품명 칸을 채운다. */
+const historySummaryById = {};
+
+function fillInputFromSummary(id) {
+  const s = historySummaryById[id];
+  const el = document.getElementById('inputProduct');
+  if (!s || s === '직접 입력' || !el || (el.textContent && el.textContent !== '-')) return;
+  text('inputProduct', s);
+  if (!lastInput.productName) lastInput.productName = s;
+}
+
 /* DEMO_MODE 이력. localStorage 를 쓰지 않는다(P0-2). 새로고침하면 사라진다. */
 const DEMO_HISTORY = { WEB: [], EXTENSION: [] };
 const DEMO_EVIDENCE = {};
 
 function emptyInput() {
   return {
+    kcText: null,
     productName: null,
     brandName: null,
     modelName: null,
@@ -166,6 +179,8 @@ document.addEventListener('DOMContentLoaded', function () {
   showScreen('verifyScreen');
   if (token) announceTokenToExtension();
   else if (!DEMO_MODE) announceLogoutToExtension();
+  /* 10/12 — 이 화면이 없을 때 쇼핑몰에서 가져온 값(확장 0.6.0)이 있으면 받는다 */
+  pullPendingCaptures();
 });
 
 
@@ -195,17 +210,32 @@ function extensionVersion() {
   return v && v.trim() ? v.trim() : null;
 }
 
+/* 10/12 — 확장 0.5.0 부터 <html data-underfaker-features="scan,url-read"> 를 붙인다.
+   scan     = 쿠팡 구매이력 '최근 N건 읽기'·'구매일자 읽기' 버튼
+   url-read = 품명 확인 '쿠팡 URL 붙여넣기' 자동 기입
+   capture  = 품명 확인 '쇼핑몰 화면에서 드래그'(0.6.0 — 우클릭 메뉴로 영역의 글·사진 가져오기) */
+function extensionSupports(feature) {
+  const f = document.documentElement.getAttribute('data-underfaker-features') || '';
+  return f.split(',').map(function (x) { return x.trim(); }).indexOf(feature) >= 0;
+}
+
 function paintExtensionStatus() {
   const el = document.getElementById('extensionStatus');
+  paintScanControls();
   if (!el) return;
 
   const v = extensionVersion();
-  if (v) {
+  if (v && !extensionSupports('scan')) {
+    /* 10/12 — 0.4.x 는 연결은 되지만 읽기 버튼(0.5.0)을 못 쓴다 */
+    el.className = 'extension-status missing';
+    el.textContent = '확장 프로그램 v' + v + ' 연결됨 — 아래 읽기 버튼은 0.5.0 이상에서 됩니다. ' +
+        'chrome://extensions 에서 새 버전 폴더를 다시 불러온 뒤 이 페이지를 새로고침하세요.';
+  } else if (v) {
     el.className = 'extension-status ok';
     el.textContent = '✓ 확장 프로그램 연결됨 (v' + v + ')';
   } else {
     el.className = 'extension-status missing';
-    el.textContent = '확장 프로그램 미감지 — chrome://extensions 에서 설치(0.3.2 이상) 후 이 페이지 새로고침';
+    el.textContent = '확장 프로그램 미감지 — chrome://extensions 에서 설치(0.5.0 이상) 후 이 페이지 새로고침';
   }
 }
 
@@ -625,6 +655,281 @@ function logout() {
 
 
 /* ==================================================
+   10/12 — 품명으로 제품 확인: ① 직접 입력 / ② 쿠팡 URL 붙여넣기 (멘토링 피드백)
+   ② 는 확장(0.5.0)이 그 상품 상세페이지를 보이지 않는 탭으로 읽어 값을 돌려준다(서버에서 쿠팡을 열면 403).
+   채운 값은 그대로 고칠 수 있고, '리콜 여부 확인하기'는 두 방식 모두 같은 버튼이다.
+================================================== */
+
+var inputMode = 'manual';
+var urlReadExtras = null;   // { kcStatus, kcText } — 마지막으로 URL 에서 읽은 KC 칸
+var urlReadPending = null;  // { requestId, timer }
+
+const URL_READ_ERROR_TEXT = {
+  NOT_COUPANG_PRODUCT: '쿠팡 상품 페이지 주소만 읽을 수 있습니다. (예: https://www.coupang.com/vp/products/…)',
+  TIMEOUT: '상품 페이지가 제때 열리지 않았습니다. 잠시 후 다시 눌러 주세요.',
+  UNREADABLE: '상품 페이지를 읽지 못했습니다(쿠팡 차단·구조 변경 가능). 직접 입력으로 넣어 주세요.',
+  CONTEXT_LOST: '확장 프로그램이 새로고침돼 연결이 끊겼습니다. 이 페이지를 새로고침(F5)해 주세요.',
+  NO_EXTENSION: '확장 프로그램(0.5.0 이상)이 있어야 URL 로 불러올 수 있습니다. 설치가 어려우면 ① 직접 입력을 쓰세요.',
+  BUSY: '확장 프로그램이 쿠팡 구매이력을 읽는 중이라 지금은 불러올 수 없습니다. 끝난 뒤 다시 눌러 주세요.',
+  SLOW: '응답이 너무 늦습니다. 잠시 후 다시 누르거나 ① 직접 입력을 쓰세요.'
+};
+
+/* URL 로 채우는 칸 — 새로 불러올 때 앞 상품 값이 남지 않게 먼저 비운다 */
+const URL_FILL_FIELDS = ['productName', 'modelName', 'makerName', 'certNum', 'thumbnailUrl'];
+
+function setInputMode(mode) {
+  const prev = inputMode;
+  inputMode = (mode === 'url' || mode === 'capture') ? mode : 'manual';
+  const manualBtn = document.getElementById('modeManualBtn');
+  const urlBtn = document.getElementById('modeUrlBtn');
+  const captureBtn = document.getElementById('modeCaptureBtn');
+  if (manualBtn) manualBtn.classList.toggle('active', inputMode === 'manual');
+  if (urlBtn) urlBtn.classList.toggle('active', inputMode === 'url');
+  if (captureBtn) captureBtn.classList.toggle('active', inputMode === 'capture');
+  const box = document.getElementById('urlReadBox');
+  if (box) box.style.display = inputMode === 'url' ? '' : 'none';
+  const cbox = document.getElementById('captureBox');
+  if (cbox) cbox.style.display = inputMode === 'capture' ? '' : 'none';
+  /* 다른 방식으로 바꾸면 그 방식에서 따로 들고 있던 KC 칸 원문은 버린다(칸에 채운 값은 그대로 둔다) */
+  if (prev !== inputMode) {
+    if (prev === 'url') urlReadExtras = null;
+    if (prev === 'capture') resetCaptureState();
+  }
+  if (inputMode === 'capture') {
+    paintCaptureIntro();
+    return;
+  }
+  if (inputMode === 'manual') {
+    urlReadExtras = null;
+    setUrlReadMsg('', 'idle');
+  } else if (!extensionSupports('url-read')) {
+    setUrlReadMsg(URL_READ_ERROR_TEXT.NO_EXTENSION, 'err');
+  } else {
+    setUrlReadMsg('쿠팡 상품 페이지 주소를 붙여 넣고 [불러오기]를 누르세요. 확장 프로그램이 상품명·모델명·제조사·KC 인증번호·사진 주소를 채웁니다.', 'idle');
+  }
+}
+
+function setUrlReadMsg(message, kind) {
+  const el = document.getElementById('urlReadMsg');
+  if (!el) return;
+  el.textContent = message || '';
+  el.className = 'url-read-msg ' + (kind || 'idle');
+}
+
+function readProductUrl() {
+  const url = val('productUrl');
+  if (!url) {
+    setUrlReadMsg('쿠팡 상품 페이지 주소를 붙여 넣어 주세요.', 'err');
+    return;
+  }
+  if (!/^https?:\/\/([a-z0-9-]+\.)*coupang\.com\//i.test(url)) {
+    setUrlReadMsg(URL_READ_ERROR_TEXT.NOT_COUPANG_PRODUCT, 'err');
+    return;
+  }
+  if (!extensionSupports('url-read')) {
+    setUrlReadMsg(URL_READ_ERROR_TEXT.NO_EXTENSION, 'err');
+    return;
+  }
+  if (urlReadPending) return;
+  /* 앞에서 불러온 상품의 KC 칸이 이번 상품 확인 요청에 실리지 않게 지운다 */
+  urlReadExtras = null;
+  const requestId = 'u' + Date.now();
+  const btn = document.getElementById('urlReadBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '불러오는 중…';
+  }
+  setUrlReadMsg('상품 페이지를 읽는 중입니다(보이지 않는 탭에서 5~20초)…', 'busy');
+  urlReadPending = {
+    requestId: requestId,
+    timer: setTimeout(function () { finishUrlRead({ requestId: requestId, ok: false, error: 'SLOW' }); }, 45000)
+  };
+  window.dispatchEvent(new CustomEvent('underfaker-url-read', { detail: JSON.stringify({ requestId: requestId, url: url }) }));
+}
+
+function finishUrlRead(res) {
+  if (!urlReadPending || !res || res.requestId !== urlReadPending.requestId) return;
+  clearTimeout(urlReadPending.timer);
+  urlReadPending = null;
+  const btn = document.getElementById('urlReadBtn');
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = '불러오기';
+  }
+  if (!res.ok || !res.info) {
+    setUrlReadMsg(URL_READ_ERROR_TEXT[res.error] || ('불러오지 못했습니다 (' + res.error + ').'), 'err');
+    return;
+  }
+  const info = res.info;
+  const filled = [];
+  URL_FILL_FIELDS.forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  function put(id, value, label) {
+    const el = document.getElementById(id);
+    if (!el || !value) return;
+    el.value = value;
+    filled.push(label);
+  }
+  put('productName', info.title, '제품명');
+  put('modelName', info.modelName, '모델명');
+  put('makerName', info.makerName, '제조사');
+  put('certNum', info.certNum, 'KC 인증번호');
+  if (info.image && !thumbnailUrlProblem(info.image)) put('thumbnailUrl', info.image, '사진 주소');
+  urlReadExtras = { kcStatus: info.kcStatus || null, kcText: info.kcText || null };
+
+  const kcNote = info.certNum ? ''
+      : (info.kcStatus === 'NONE' ? ' KC 칸이 없거나 KC 대상이 아니라고 표기된 상품입니다.'
+          : ' KC 인증정보 칸에 번호가 없습니다' + (info.kcText ? '("' + info.kcText + '")' : '') + '.');
+  setUrlReadMsg((filled.length ? '채운 칸: ' + filled.join('·') + '.' : '채울 값을 찾지 못했습니다.') + kcNote +
+      ' 값을 확인·수정한 뒤 [리콜 여부 확인하기]를 누르세요.', filled.length ? 'ok' : 'err');
+}
+
+window.addEventListener('underfaker-url-result', function (e) {
+  let res = null;
+  try { res = typeof e.detail === 'string' ? JSON.parse(e.detail) : null; } catch (err) { res = null; }
+  finishUrlRead(res);
+});
+
+
+/* ==================================================
+   10/12 — ③ 쇼핑몰 화면에서 드래그 (확장 0.6.0)
+   쇼핑몰 상품 페이지에서 우클릭 → UnderFaker → 영역 드래그. 확장이 그 안의 글(또는 사진 주소)을 읽고
+   칸(제품명·모델명·제조사·KC 인증번호)을 나눠 이 화면에 보낸다(underfaker-capture).
+   같은 상품 페이지에서 여러 번 가져오면(상품명 → 정보 표 → 사진) 찾은 칸만 덮어 쓴다.
+   다른 상품 페이지에서 가져오면 앞 상품 값이 남지 않게 먼저 비운다.
+   이 화면이 닫혀 있을 때 가져온 값은 확장이 맡아 뒀다가, 화면이 뜰 때 넘겨준다(underfaker-capture-pull).
+================================================== */
+
+var captureExtras = null;   // { kcStatus, kcText } — 가져온 KC 칸 원문(서버가 번호를 다시 뽑는다)
+var captureSourceKey = null; // 마지막으로 가져온 상품 페이지(주소에서 # 뒤를 뺀 것)
+var captureSeen = {};        // 이미 넣은 가져오기 id — 같은 값이 두 번 와도 한 번만
+
+const CAPTURE_FIELD_LABEL = { productName: '제품명', modelName: '모델명', makerName: '제조사', certNum: 'KC 인증번호' };
+
+function setCaptureMsg(message, kind) {
+  const el = document.getElementById('captureMsg');
+  if (!el) return;
+  el.textContent = message || '';
+  el.className = 'url-read-msg ' + (kind || 'idle');
+}
+
+/* ③ 에서 다른 방식으로 바꿀 때 — KC 칸 원문만 버린다. 마지막 상품 페이지는 기억해서,
+   나중에 다른 상품을 가져오면 그때 앞 상품 값을 비운다 */
+function resetCaptureState() {
+  captureExtras = null;
+}
+
+function paintCaptureIntro() {
+  if (!extensionSupports('capture')) {
+    setCaptureMsg('확장 프로그램 0.6.0 이상이 있어야 쇼핑몰 화면에서 가져올 수 있습니다. ' +
+        'chrome://extensions 에서 새 버전 폴더를 다시 불러온 뒤 이 페이지를 새로고침하세요.', 'err');
+    return;
+  }
+  if (!captureSourceKey) {
+    setCaptureMsg('아직 가져온 값이 없습니다. 위 순서대로 쇼핑몰 화면에서 가져오면 아래 칸이 자동으로 채워집니다.', 'idle');
+  }
+  pullPendingCaptures();
+}
+
+function pullPendingCaptures() {
+  try {
+    window.dispatchEvent(new CustomEvent('underfaker-capture-pull'));
+  } catch (e) { /* noop */ }
+}
+
+function captureKey(url) {
+  return typeof url === 'string' ? url.split('#')[0] : '';
+}
+
+function flashFilled(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.add('just-filled');
+  setTimeout(function () { el.classList.remove('just-filled'); }, 2500);
+}
+
+/** @returns {boolean} 받아서 칸에 넣었는가 */
+function onCapture(c) {
+  if (!c || typeof c !== 'object' || (c.kind !== 'text' && c.kind !== 'image')) return false;
+  if (c.id) {
+    if (captureSeen[c.id]) return true;
+    captureSeen[c.id] = true;
+  }
+  showScreen('verifyScreen');
+  if (inputMode !== 'capture') setInputMode('capture');
+
+  const key = captureKey(c.pageUrl);
+  if (key && captureSourceKey && key !== captureSourceKey) {
+    /* 다른 상품 페이지 — 앞 상품 값이 섞이지 않게 비운다 */
+    URL_FILL_FIELDS.forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    captureExtras = null;
+  }
+  if (key) captureSourceKey = key;
+
+  const filled = [];
+  function put(id, value, label) {
+    const el = document.getElementById(id);
+    if (!el || !value) return;
+    el.value = String(value).slice(0, 255);
+    filled.push(label);
+    flashFilled(id);
+  }
+
+  if (c.kind === 'image') {
+    const problem = thumbnailUrlProblem(c.imageUrl);
+    if (problem) {
+      setCaptureMsg('사진을 넣지 못했습니다. ' + problem, 'err');
+      return true;
+    }
+    const el = document.getElementById('thumbnailUrl');
+    if (el) {
+      el.value = c.imageUrl;
+      flashFilled('thumbnailUrl');
+    }
+    filled.push('사진 주소');
+  } else {
+    const f = c.fields || {};
+    Object.keys(CAPTURE_FIELD_LABEL).forEach(function (k) {
+      put(k, f[k], CAPTURE_FIELD_LABEL[k]);
+    });
+    if (f.kcText || f.certNum) {
+      captureExtras = { kcStatus: f.kcStatus || null, kcText: f.kcText || null };
+    }
+    const pre = document.getElementById('capturePreview');
+    if (pre) pre.textContent = c.text || '';
+    const src = document.getElementById('captureSource');
+    if (src) src.textContent = '가져온 페이지: ' + (c.pageTitle || '') + (c.pageUrl ? ' (' + c.pageUrl + ')' : '');
+    const box = document.getElementById('capturePreviewBox');
+    if (box) box.style.display = '';
+  }
+
+  const missing = [];
+  if (!val('productName')) missing.push('제품명');
+  if (!val('certNum')) missing.push('KC 인증번호');
+  if (!val('thumbnailUrl')) missing.push('사진');
+  let msg = filled.length
+      ? '채운 칸: ' + filled.join('·') + '.'
+      : '가져온 글에서 제품명·모델명·제조사·KC 칸을 찾지 못했습니다. 아래 \'가져온 글 보기\'에서 복사해 넣어 주세요.';
+  if (missing.length) msg += ' 아직 빈 칸: ' + missing.join('·') + ' — 같은 메뉴로 더 가져오거나 직접 입력하세요.';
+  else msg += ' 값을 확인·수정한 뒤 [리콜 여부 확인하기]를 누르세요.';
+  setCaptureMsg(msg, filled.length ? 'ok' : 'err');
+  return true;
+}
+
+window.addEventListener('underfaker-capture', function (e) {
+  let c = null;
+  try { c = typeof e.detail === 'string' ? JSON.parse(e.detail) : null; } catch (err) { c = null; }
+  /* 받았다고 확장에 알린다 — 안 받으면 확장이 맡아 두고 새로고침을 안내한다 */
+  if (onCapture(c)) e.preventDefault();
+});
+
+
+/* ==================================================
    VERIFY
 ================================================== */
 
@@ -671,6 +976,13 @@ async function verify() {
       certNum: val('certNum'),
       thumbnailUrl: thumbnailUrl
     };
+    /* 10/12 — 쿠팡 URL 로 불러왔거나 쇼핑몰 화면에서 가져왔으면 KC 칸 원문도 같이 보낸다. KC 번호가 여러 개면 서버가 원문에서 모두 뽑아
+       조회·대조한다(KcCertNumbers.joinAll). 직접 입력 모드로 바꾸면 비운다. */
+    const extras = inputMode === 'url' ? urlReadExtras : (inputMode === 'capture' ? captureExtras : null);
+    if (extras) {
+      lastInput.kcStatus = extras.kcStatus || null;
+      lastInput.kcText = extras.kcText || null;
+    }
 
     let result = null;
 
@@ -790,11 +1102,18 @@ function renderInput(input) {
 
   const i = input || emptyInput();
 
+  /* 10/31 — 대조 축(제품명 + KC 인증번호)을 위에, 공표문 쪽과 같은 줄 순서로. 바코드는 대조 항목이 아니라 뺐다.
+     KC 번호가 없으면 KC 칸 원문(예: '상세페이지 참조')을 그대로 보여 준다 */
   text('inputProduct', i.productName);
-  text('inputBrand', i.brandName);
+  text('inputCert', i.certNum || i.kcText || null);
   text('inputModel', i.modelName);
-  text('inputBarcode', i.barcodeNum);
+  text('inputMaker', i.makerName);
+  text('inputBrand', i.brandName);
 }
+
+/* 10/31 — 서버가 결과에 저장된 입력값(input)을 내려주면 그것을 쓴다. 그때는 판정 근거의 inputValue 로 덮지 않는다
+   (근거의 제품명은 대조에 쓴 일부 문구라 원래 입력과 다를 수 있다). 예전 서버면 false 라 예전처럼 근거로 채운다. */
+let inputFromServer = false;
 
 
 /* ==================================================
@@ -810,7 +1129,14 @@ function render(d) {
 
   setResultState(fr, d.similarityScore, d);
 
+  inputFromServer = !!d.input;
+  if (d.input) {
+    lastInput = Object.assign(emptyInput(), d.input);
+    renderInput(lastInput);
+  }
+
   text('recallProduct', d.recallProductName);
+  text('recallCert', d.recallCertNum);
   text('recallBrand', d.recallBrandName);
   text('recallModel', d.recallModelName);
   /* 9/27 — maker_name 은 실데이터에서 거의 비어 있다. 백엔드 Recall.resolveMakerName() 과 같은 규칙으로
@@ -963,6 +1289,11 @@ function kcCertHtml(d) {
     const state = esc(kc.certState || '상태 정보 없음');
     warn = !!kc.needsAttention;
     body = (warn ? '⚠ 인증상태 <strong>' + state + '</strong>' : '인증상태 ' + state) + ' — ' + facts;
+    if (/기간만료/.test(kc.certState || '')) {
+      /* 10/31 — 근거: 어린이제품 안전 특별법 제22조⑤ "안전확인의 유효기간은 5년으로 하되, 안전확인의 신고가 수리된 날부터 기산" */
+      body += '<br>인증 유효기간이 지난 번호입니다(어린이제품 안전확인은 신고 수리일부터 5년). ' +
+              '리콜 여부와는 별개입니다 — 판매자에게 지금 유효한 KC 인증번호를 확인해 보세요.';
+    }
     body += '<br>인증 모델명이 리콜 공표문 모델명과 같을 때만 판정 근거로 씁니다(아래 판정 근거의 \'인증 모델명\').';
     if (!warn) body += '<br>인증 여부는 리콜·안전 여부와 별개입니다.';
   } else if (kc.status === 'NOT_FOUND') {
@@ -1046,6 +1377,7 @@ async function checkImage(id, btn) {
     }
     const evidence = await loadEvidence(id);
     if (evidence) applyEvidenceInputs(evidence.comparisons);
+    fillInputFromSummary(id);
   } finally {
     imageCheckBusy = false;
     if (btn && btn.isConnected && btn.disabled) {
@@ -1167,7 +1499,7 @@ function renderComparisons(comparisons, decision) {
    이력에서 과거 건을 열 때 쓴다(그때는 lastInput 이 없다). */
 function applyEvidenceInputs(comparisons) {
 
-  if (!comparisons) return;
+  if (!comparisons || inputFromServer) return;
 
   const filled = emptyInput();
 
@@ -1177,7 +1509,6 @@ function applyEvidenceInputs(comparisons) {
     if (c.field in filled) filled[c.field] = c.inputValue || null;
   });
 
-  text('inputBarcode', null); /* 바코드는 대조 항목이 아니라 근거에 안 들어온다 */
   lastInput = filled;
 }
 
@@ -1277,6 +1608,7 @@ function renderHistoryList(targetId, items) {
 
   list.innerHTML = items.map(function (v) {
 
+    if (v && v.verificationId != null && v.inputSummary) historySummaryById[v.verificationId] = v.inputSummary;
     const fr = stateOf(v);
     const icon = v.channel === 'EXTENSION' ? '🛒' : '🧸';
 
@@ -1348,6 +1680,7 @@ async function openHistoryItem(id) {
 
   const evidence = await loadEvidence(id);
   if (evidence) applyEvidenceInputs(evidence.comparisons);
+  fillInputFromSummary(id);
 }
 
 
@@ -1395,6 +1728,200 @@ function refreshCoupang() {
   loadCoupangRecent();
 }
 
+
+/* ==================================================
+   10/12 — 쿠팡 구매이력 읽기 버튼 (멘토링 피드백: 다 읽어서 오래 걸린다)
+   a. 최근 N건(10/30) 읽기   b. 구매일자(하루) 읽기
+   이 화면 → (window 이벤트) → 확장 auth-bridge → background 가 쿠팡 주문목록을 보이지 않는 탭으로 열어
+   고른 주문만 상세페이지를 읽고 서버로 보낸다. 진행 상황은 underfaker-scan-status 이벤트로 돌아온다.
+   이벤트 내용은 JSON 문자열로 주고받는다(확장 쪽 세계와 객체를 바로 나누지 못한다).
+================================================== */
+
+var coupangScanFilter = null;   // { ids: Set<verificationId>, label } — 이번 조회 결과만 보기
+var coupangScanBusy = false;
+var coupangScanWatchdog = null;
+var coupangScanReq = null;      // 이 화면에서 보낸 요청 { mode, limit, date } — 상태 문구에 쓴다
+var coupangScanId = null;       // 확장이 정한 이번 읽기 번호 — 다른 읽기의 늦은 소식을 걸러낸다
+
+const SCAN_ERROR_TEXT = {
+  BUSY: '이미 읽는 중입니다. 끝난 뒤 다시 눌러 주세요.',
+  LOGIN_REQUIRED: '확장 프로그램이 UnderFaker 로그인 정보를 아직 받지 못했습니다. 로그아웃 후 다시 로그인해 주세요.',
+  BAD_LIMIT: '읽을 건수는 10건 또는 30건만 고를 수 있습니다.',
+  BAD_DATE: '구매일자를 다시 골라 주세요.',
+  NO_PAGE: '쿠팡 주문목록을 열지 못했습니다. 이 브라우저에서 쿠팡에 로그인돼 있는지 확인해 주세요.',
+  DATE_UNREADABLE: '쿠팡 주문목록에서 주문일을 읽지 못했습니다. 쿠팡 화면 구조가 달라졌을 수 있습니다 — 최근 N건 읽기를 써 주세요.',
+  TAB_FAILED: '쿠팡 주문목록 탭을 열지 못했습니다.',
+  CONTEXT_LOST: '확장 프로그램이 새로고침돼 이 페이지와 연결이 끊겼습니다. 이 페이지를 새로고침(F5)해 주세요.',
+  NO_EXTENSION: '확장 프로그램이 응답하지 않습니다. 확장 0.5.0 이상을 설치하고 이 페이지를 새로고침해 주세요.',
+  FAILED: '읽는 도중 오류가 났습니다. 들어온 결과까지만 아래에 보입니다. 다시 눌러 주세요.',
+  STALLED: '확장 프로그램의 진행 소식이 1분 넘게 없습니다. 아래 목록에 들어온 결과를 확인하고, 필요하면 다시 눌러 주세요.'
+};
+
+/* 진행 소식이 이 시간 넘게 없으면 멈춘 것으로 보고 버튼을 다시 켠다(확장 service worker 가 중간에 꺼진 경우 등).
+   상세페이지 한 건은 최대 25초라 그보다 넉넉히 둔다. */
+const SCAN_STALL_MS = 60000;
+
+function armScanWatchdog(ms, errorKey) {
+  clearTimeout(coupangScanWatchdog);
+  coupangScanWatchdog = setTimeout(function () {
+    if (coupangScanBusy) {
+      finishScanUi(SCAN_ERROR_TEXT[errorKey], 'err');
+      loadCoupangRecent();
+    }
+  }, ms);
+}
+
+function todayYmd() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function ymdKorean(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || '');
+  return m ? Number(m[1]) % 100 + '년 ' + Number(m[2]) + '월 ' + Number(m[3]) + '일' : ymd;
+}
+
+function paintScanControls() {
+  const supported = extensionSupports('scan');
+  ['scanRecentBtn', 'scanDateBtn'].forEach(function (id) {
+    const b = document.getElementById(id);
+    if (b) b.disabled = coupangScanBusy || !supported || DEMO_MODE;
+  });
+  const dateEl = document.getElementById('scanDate');
+  if (dateEl) {
+    dateEl.max = todayYmd();
+    if (!dateEl.value) dateEl.value = todayYmd();
+  }
+  if (!supported && !coupangScanBusy) {
+    setScanStatus(DEMO_MODE ? '더미 모드에서는 쿠팡을 읽지 않습니다.'
+        : '확장 프로그램 0.5.0 이상이 있어야 읽기 버튼을 쓸 수 있습니다.', 'idle');
+  }
+}
+
+function setScanStatus(textValue, kind) {
+  const el = document.getElementById('scanStatus');
+  if (!el) return;
+  el.textContent = textValue || '';
+  el.className = 'scan-status ' + (kind || 'idle');
+}
+
+function scanLabel(mode, limit, date) {
+  return mode === 'recent' ? '최근 ' + limit + '건' : ymdKorean(date) + ' 구매';
+}
+
+function startCoupangScan(mode) {
+  if (coupangScanBusy) return;
+  if (!token) {
+    updateLoginMessages();
+    setScanStatus('먼저 로그인해 주세요.', 'err');
+    return;
+  }
+  if (!extensionSupports('scan')) {
+    setScanStatus(SCAN_ERROR_TEXT.NO_EXTENSION, 'err');
+    return;
+  }
+  const req = { mode: mode };
+  if (mode === 'recent') {
+    req.limit = Number((document.getElementById('scanLimit') || {}).value || 10);
+  } else {
+    req.date = (document.getElementById('scanDate') || {}).value || '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.date)) {
+      setScanStatus(SCAN_ERROR_TEXT.BAD_DATE, 'err');
+      return;
+    }
+    if (req.date > todayYmd()) {
+      setScanStatus('오늘 이후 날짜는 고를 수 없습니다.', 'err');
+      return;
+    }
+  }
+  coupangScanBusy = true;
+  coupangScanFilter = null;
+  coupangScanReq = req;
+  coupangScanId = null;
+  paintScanControls();
+  setScanStatus(scanLabel(mode, req.limit, req.date) + ' 읽기를 요청했습니다…', 'busy');
+  /* 확장이 10초 안에 받았다는 답(started/error)을 주지 않으면 연결 문제로 본다 */
+  armScanWatchdog(10000, 'NO_EXTENSION');
+  window.dispatchEvent(new CustomEvent('underfaker-scan-start', { detail: JSON.stringify(req) }));
+}
+
+function finishScanUi(message, kind) {
+  clearTimeout(coupangScanWatchdog);
+  coupangScanBusy = false;
+  paintScanControls();
+  setScanStatus(message, kind);
+}
+
+function onScanStatus(s) {
+  if (!s || !s.phase) return;
+  if (!coupangScanBusy) return; // 이 화면에서 시작한 읽기가 아니다(끝난 뒤 늦게 온 소식 포함)
+  /* 이번 읽기 번호를 처음 받은 값으로 정하고, 다른 번호의 소식은 버린다 */
+  if (s.scanId) {
+    if (coupangScanId === null) coupangScanId = s.scanId;
+    else if (s.scanId !== coupangScanId) return;
+  }
+  const req = coupangScanReq || {};
+  const label = scanLabel(s.mode || req.mode, s.limit || req.limit, s.date || req.date);
+  if (s.phase === 'listing' || s.phase === 'reading' || s.phase === 'started') armScanWatchdog(SCAN_STALL_MS, 'STALLED');
+  if (s.phase === 'started') {
+    /* 쿠팡 주문목록 한 쪽이 20초 넘게 안 오면 확장이 NO_PAGE 를 보낸다.
+       확장이 'listing' 을 먼저 보냈으면 그 문구를 덮지 않는다 */
+    const cur = document.getElementById('scanStatus');
+    if (!cur || !/쪽 읽는 중|읽는 중 \d/.test(cur.textContent)) setScanStatus(label + ' — 쿠팡 주문목록을 여는 중…', 'busy');
+  } else if (s.phase === 'listing') {
+    setScanStatus(label + ' — 주문목록 ' + (s.page || 1) + '쪽 읽는 중' +
+        (s.found ? ' (고른 상품 ' + s.found + '건)' : '') + '…', 'busy');
+  } else if (s.phase === 'reading') {
+    setScanStatus(label + ' — 고른 상품 ' + (s.total || 0) + '건의 상세페이지(KC 인증정보) 읽는 중 ' +
+        (s.done || 0) + '/' + (s.total || 0) + '…', 'busy');
+    loadCoupangRecent();
+  } else if (s.phase === 'done') {
+    const ids = new Set(s.verificationIds || []);
+    coupangScanFilter = { ids: ids, label: label };
+    const secs = s.elapsedMs ? Math.round(s.elapsedMs / 1000) : null;
+    const avg = (s.avgReadMs !== null && s.avgReadMs !== undefined)
+        ? ' · 상세페이지 한 건당 평균 ' + (s.avgReadMs / 1000).toFixed(1) + '초' : '';
+    /* 10/30 — 유아·어린이 제품만 읽는다. 건너뛴 건수를 같이 알린다(확장 0.6.1) */
+    const skipped = s.skipped ? ' 유아·어린이 제품이 아닌 ' + s.skipped + '건은 건너뛰었습니다.' : '';
+    const notKc = s.notKc ? ' 상세페이지상 KC 대상이 아닌 ' + s.notKc + '건(식품·위생용품 등)은 뺐습니다.' : '';
+    finishScanUi(s.found
+        ? label + ' — 유아·어린이 제품 ' + s.found + '건을 읽어 ' + (s.sent || 0) + '건 확인했습니다' +
+          (secs !== null ? ' (' + secs + '초' + avg + ')' : '') + '.' + skipped + notKc
+        : label + ' — 읽을 유아·어린이 제품 주문이 없습니다' + (s.mode === 'date' ? ' (그날 주문이 없거나 주문목록 앞쪽 ' + (s.pagesRead || 0) + '쪽 안에 없음)' : '') + '.' + skipped,
+        s.found ? 'ok' : 'idle');
+    loadCoupangRecent();
+  } else if (s.phase === 'error') {
+    finishScanUi(label + ' — ' + (SCAN_ERROR_TEXT[s.error] || ('읽지 못했습니다 (' + s.error + ')')), 'err');
+    if (s.verificationIds && s.verificationIds.length) {
+      coupangScanFilter = { ids: new Set(s.verificationIds), label: label + ' (중간까지)' };
+    }
+    loadCoupangRecent();
+  }
+}
+
+window.addEventListener('underfaker-scan-status', function (e) {
+  let s = null;
+  try { s = typeof e.detail === 'string' ? JSON.parse(e.detail) : null; } catch (err) { s = null; }
+  onScanStatus(s);
+});
+
+function paintScanFilterBar() {
+  const bar = document.getElementById('coupangScanFilterBar');
+  if (!bar) return;
+  if (!coupangScanFilter) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = '';
+  text('coupangScanFilterLabel', '이번 조회 결과만 보는 중: ' + coupangScanFilter.label +
+      ' (' + coupangScanFilter.ids.size + '건)');
+}
+
+function clearCoupangScanFilter() {
+  coupangScanFilter = null;
+  loadCoupangRecent();
+}
+
 async function loadCoupangRecent() {
 
   if (coupangLoading) return;
@@ -1422,6 +1949,12 @@ async function loadCoupangRecent() {
       }
       items = (r.json.data && r.json.data.content) || [];
     }
+
+    /* 10/12 — 방금 버튼으로 읽은 결과만 보여 준다(확장이 돌려준 검증 id). '전체 보기'로 푼다. */
+    if (coupangScanFilter) {
+      items = items.filter(function (v) { return coupangScanFilter.ids.has(v.verificationId); });
+    }
+    paintScanFilterBar();
 
     const finder = summarizeCoupang(items);
     updateCoupangResultCard(finder);
@@ -1476,7 +2009,11 @@ function productKey(v) {
 function summarizeCoupang(items) {
   const seen = new Set();
   const unique = [];
-  (items || []).forEach(function (v) {
+  /* 10/30 — 유아·어린이 제품만 본다(팀장 요청). 확장이 'KC 대상 아님'(식품·위생용품·화장품 고시, 비대상 분류)으로
+     읽어 보낸 예전 기록은 이 화면 집계·목록에서 뺀다. 쿠팡 검증이력 화면에는 그대로 남는다. */
+  const all = items || [];
+  const notKcCount = all.filter(v => v && v.kcStatus === 'NONE').length;
+  all.filter(v => !(v && v.kcStatus === 'NONE')).forEach(function (v) {
     const key = productKey(v);
     if (seen.has(key)) return;
     seen.add(key);
@@ -1499,6 +2036,10 @@ function summarizeCoupang(items) {
   const kcKnown = done.filter(v => !!v.kcStatus && stateOf(v) !== 'EXCLUDED');
   const kcTarget = kcKnown.filter(v => KC_TARGET[v.kcStatus]).length;
   const kcNone = kcKnown.filter(v => v.kcStatus === 'NONE').length;
+  /* 10/31 — KC 인증 DB 조회 상태. 리콜 판정과 별개라 '리콜 의심'에는 넣지 않고 요약 문구에만 따로 센다 */
+  const kcExpired = done.filter(v => v.kcLookup === 'FOUND' && /기간만료/.test(v.kcCertState || '')).length;
+  const kcWarn = done.filter(v => v.kcLookup === 'NOT_FOUND' ||
+      (v.kcLookup === 'FOUND' && v.kcCertState && v.kcCertState !== '적합' && !/기간만료/.test(v.kcCertState))).length;
 
   return {
     unique: unique,
@@ -1516,7 +2057,10 @@ function summarizeCoupang(items) {
     kcTarget: kcTarget,
     kcNone: kcNone,
     pending: unique.filter(v => v.status === 'PENDING').length,
-    failed: unique.filter(v => v.status === 'FAILED').length
+    failed: unique.filter(v => v.status === 'FAILED').length,
+    notKcHidden: notKcCount,
+    kcExpired: kcExpired,
+    kcWarn: kcWarn
   };
 }
 
@@ -1559,6 +2103,8 @@ function updateCoupangResultCard(f) {
             (f.missingCheckable ? ' (사진으로 찾기 가능 ' + f.missingCheckable + '개)' : ''));
   }
   if (f.excluded) extra.push('(어린이제품이 아닌) 해외직구·구매대행 판단 제외 ' + f.excluded + '개');
+  if (f.kcExpired) extra.push('KC 인증 기간만료 ' + f.kcExpired + '개(리콜과 별개 — 제품을 눌러 확인)');
+  if (f.kcWarn) extra.push('KC 인증 상태 주의 ' + f.kcWarn + '개(인증취소·DB에 없는 번호 등)');
   if (f.pending) extra.push('확인 중 ' + f.pending + '개');
   if (f.failed) extra.push('처리 실패 ' + f.failed + '개');
 

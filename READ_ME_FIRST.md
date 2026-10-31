@@ -1,3 +1,5 @@
+> **10/30 — 이 문서는 9월 초 전체 소스 적용 안내(옛 내용)다. 지금 세팅은 [README.md](README.md) → [SETUP.md](SETUP.md) 를 본다.**
+
 # 전체 소스 적용본 (엔티티 DDL 정합 + JWT 인증 구현 포함)
 
 앞서 보낸 recallcheck-entities.zip / recallcheck-auth.zip 이 적용되지 않은 것으로 확인되어

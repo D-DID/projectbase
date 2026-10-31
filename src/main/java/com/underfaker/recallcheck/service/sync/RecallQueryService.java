@@ -102,8 +102,10 @@ public class RecallQueryService {
 
         String certKey = fieldNormalizer.searchKey(product.certNum());
         // 10/10 — 인증번호가 여러 개("A, B" — KcCertNumbers.joinAll)면 번호마다 찾는다. 이어 붙인 채로는 아무것도 안 걸린다.
+        // 10/30 — 번호가 하나여도 원문 대신 뽑은 번호로 찾는다. "KC 인증번호 : CB067R227-2006 (어린이제품)" 처럼
+        // 설명이 섞인 칸은 원문째 정규화하면 LIKE 에 아무것도 안 걸렸다(MatchingService.addCertNumComparison 과 같은 수정).
         List<String> certNumbers = KcCertNumbers.extract(product.certNum());
-        if (certNumbers.size() > 1) {
+        if (!certNumbers.isEmpty()) {
             for (String number : certNumbers) {
                 String key = fieldNormalizer.searchKey(number);
                 if (key != null) {

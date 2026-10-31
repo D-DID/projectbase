@@ -48,8 +48,29 @@ public record VerificationResultResponse(
 
         /* 10/10 — 사진으로 찾은 페이지 본문에서 서로 다른 사이트 2곳 이상 같은 KC 인증번호·모델명(제품번호). 없으면 null */
         String imageCertNum,
-        String imageModelName
+        String imageModelName,
+
+        /* 10/31 — 결과 화면 '내가 입력한 제품'. 리콜 후보가 없어도(불일치) 입력값은 보여야 한다. 입력 행이 없으면 null */
+        ProductInputResponse input,
+
+        /* 10/31 — 매칭된 공표문의 KC 인증번호(콤마 구분 목록일 수 있음). 대조 축이 제품명 + KC 인증번호라 화면에 나란히 보인다 */
+        String recallCertNum
 ) {
+
+    /** 10/31 이전 형태(입력값·공표문 인증번호 없음) 호환용. */
+    public VerificationResultResponse(Long verificationId, FinalResult finalResult, Double similarityScore,
+                                      Long recallUid, String recallProductName, String recallBrandName,
+                                      String recallModelName, String recallTypeName, String recallMeans,
+                                      String recallCmpnyName, String makerName, String harmDscr,
+                                      String accidentCaseDscr, String publishActionDscr, String publishDate,
+                                      LocalDateTime createdAt, String resultState, String imageCheck,
+                                      Boolean imageCheckAvailable, String missingReason, KcCertResponse kc,
+                                      String imageProductName, String imageCertNum, String imageModelName) {
+        this(verificationId, finalResult, similarityScore, recallUid, recallProductName, recallBrandName,
+                recallModelName, recallTypeName, recallMeans, recallCmpnyName, makerName, harmDscr,
+                accidentCaseDscr, publishActionDscr, publishDate, createdAt, resultState, imageCheck,
+                imageCheckAvailable, missingReason, kc, imageProductName, imageCertNum, imageModelName, null, null);
+    }
 
     /** 10/10 이전 형태(사진 KC 번호·모델명 없음) 호환용. */
     public VerificationResultResponse(Long verificationId, FinalResult finalResult, Double similarityScore,
@@ -63,7 +84,7 @@ public record VerificationResultResponse(
         this(verificationId, finalResult, similarityScore, recallUid, recallProductName, recallBrandName,
                 recallModelName, recallTypeName, recallMeans, recallCmpnyName, makerName, harmDscr,
                 accidentCaseDscr, publishActionDscr, publishDate, createdAt, resultState, imageCheck,
-                imageCheckAvailable, missingReason, kc, imageProductName, null, null);
+                imageCheckAvailable, missingReason, kc, imageProductName, null, null, null, null);
     }
 
     /** 10/7 이전 형태(사진 상품명 없음) 호환용 — 다른 호출부가 있어도 컴파일이 깨지지 않게 둔다. */
@@ -77,6 +98,6 @@ public record VerificationResultResponse(
         this(verificationId, finalResult, similarityScore, recallUid, recallProductName, recallBrandName,
                 recallModelName, recallTypeName, recallMeans, recallCmpnyName, makerName, harmDscr,
                 accidentCaseDscr, publishActionDscr, publishDate, createdAt, resultState, imageCheck,
-                imageCheckAvailable, missingReason, kc, null, null, null);
+                imageCheckAvailable, missingReason, kc, null, null, null, null, null);
     }
 }
