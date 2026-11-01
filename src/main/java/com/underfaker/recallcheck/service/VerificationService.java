@@ -825,7 +825,8 @@ public class VerificationService {
                 v.getCreatedAt(),
                 rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason(),
                 kcOf(v), rv.imageProductName(), rv.imageCertNum(), rv.imageModelName(),
-                inputOf(v), r == null ? null : r.getCertNum());
+                inputOf(v), r == null ? null : r.getCertNum(),
+                v.getChannel() == null ? null : v.getChannel().name());
     }
 
     private VerificationResultResponse toResultFrom(Verification v, MatchResult m, Recall r) {
@@ -847,6 +848,7 @@ public class VerificationService {
                 v.getCreatedAt(),
                 rv.resultState(), rv.imageCheck(), rv.imageCheckAvailable(), rv.missingReason(),
                 kcOf(v), rv.imageProductName(), rv.imageCertNum(), rv.imageModelName(),
-                inputOf(v), r == null ? null : r.getCertNum());
+                inputOf(v), r == null ? null : r.getCertNum(),
+                v.getChannel() == null ? null : v.getChannel().name());
     }
 }

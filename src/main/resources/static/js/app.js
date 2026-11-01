@@ -176,7 +176,7 @@ document.addEventListener('DOMContentLoaded', function () {
   paintHeader();
   bindEnterKeys();
   bindCategoryChips();
-  showScreen('verifyScreen');
+  applyRoute(); // 10/31 — 주소 # 의 화면(없으면 품명 확인). 새로고침해도 같은 화면
   if (token) announceTokenToExtension();
   else if (!DEMO_MODE) announceLogoutToExtension();
   /* 10/12 — 이 화면이 없을 때 쇼핑몰에서 가져온 값(확장 0.6.0)이 있으면 받는다 */
@@ -465,7 +465,55 @@ function handleUnauthorized() {
    SCREEN
 ================================================== */
 
-function showScreen(id) {
+/* 10/31 — 브라우저 뒤로 가기.
+   한 페이지 안에서 화면만 바꾸는 구조(SPA)라, 예전에는 뒤로 가기를 누르면 앞 화면이 아니라 localhost:8080 을 떠났다.
+   화면을 바꿀 때마다 주소 # 에 남기고(history.pushState), 뒤로·앞으로 가기(popstate)에서 그 화면을 다시 연다.
+     #verify  #history  #history-coupang  #coupang  #procedure  #login  #result/{검증 id}
+   새로고침해도 같은 화면이 열린다(#result 는 로그인돼 있어야 결과를 다시 불러온다). */
+const SCREEN_ROUTE = {
+  verifyScreen: 'verify', historyScreen: 'history', coupangScreen: 'coupang',
+  procedureScreen: 'procedure', loginScreen: 'login'
+};
+let routing = false; // 뒤로·앞으로 가기로 화면을 여는 중 — 기록을 새로 쌓지 않고 바꿔 쓴다
+
+function setRoute(route, replace) {
+  if (!route) return;
+  const hash = '#' + route;
+  if (location.hash === hash) return;
+  try {
+    if (replace || routing) history.replaceState({ route: route }, '', hash);
+    else history.pushState({ route: route }, '', hash);
+  } catch (e) { /* file:// 등 — 기록 없이 화면만 바꾼다 */ }
+}
+
+/* 주소 # 에 맞는 화면을 연다(처음 열 때·뒤로·앞으로 가기) */
+function applyRoute() {
+  const h = (location.hash || '').replace(/^#\/?/, '');
+  const m = h.match(/^result\/(\d+)$/);
+  routing = true;
+  try {
+    if (m) {
+      showScreen('verifyScreen', 'result/' + m[1]);
+      openHistoryItem(m[1]);
+    } else if (h === 'history') goHistory();
+    else if (h === 'history-coupang') goCoupangVerificationHistory();
+    else if (h === 'coupang') goCoupangHistory();
+    else if (h === 'procedure') goProcedure();
+    else if (h === 'login' && !token) showScreen('loginScreen');
+    else showScreen('verifyScreen');
+  } finally {
+    routing = false;
+  }
+}
+
+window.addEventListener('popstate', applyRoute);
+
+/**
+ * @param id    화면 id(.screen)
+ * @param route 주소 # 에 남길 값. 없으면 화면 기본값(SCREEN_ROUTE)
+ * @param opts  { replace: true } — 기록을 쌓지 않고 지금 칸을 바꾼다(로그인 직후 등)
+ */
+function showScreen(id, route, opts) {
 
   document.querySelectorAll('.screen')
       .forEach(el => el.classList.remove('active'));
@@ -499,6 +547,8 @@ function showScreen(id) {
   } else {
     stopCoupangPolling();
   }
+
+  setRoute(route || SCREEN_ROUTE[id] || 'verify', opts && opts.replace);
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -557,7 +607,7 @@ function openCoupang() {
 }
 
 function goCoupangVerificationHistory() {
-  showScreen('historyScreen');
+  showScreen('historyScreen', 'history-coupang');
   if (!token) return;
   showHistoryType('coupang');
 }
@@ -600,7 +650,7 @@ async function login() {
     paintHeader();
     show('authMsg', '더미 로그인되었습니다.', true);
 
-    setTimeout(function () { showScreen('verifyScreen'); }, 150);
+    setTimeout(function () { showScreen('verifyScreen', null, { replace: true }); }, 150);
     return;
   }
 
@@ -624,7 +674,7 @@ async function login() {
     paintHeader();
     show('authMsg', '로그인되었습니다.', true);
 
-    setTimeout(function () { showScreen('verifyScreen'); }, 300);
+    setTimeout(function () { showScreen('verifyScreen', null, { replace: true }); }, 300); // 뒤로 가기로 로그인 화면에 안 돌아가게
 
   } else {
     show('authMsg',
@@ -895,7 +945,10 @@ async function verifyByPhoto() {
     render(result);
     const panel = document.getElementById('resultScreen');
     if (panel) panel.classList.add('show');
-    if (result.verificationId) loadEvidence(result.verificationId);
+    if (result.verificationId) {
+      setRoute('result/' + result.verificationId); // 10/31 — 뒤로 가기로 입력 화면에 돌아간다
+      loadEvidence(result.verificationId);
+    }
     if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } finally {
     if (btn) {
@@ -1144,6 +1197,7 @@ async function verify() {
     if (panel) panel.classList.add('show');
 
     if (result && result.verificationId) {
+      setRoute('result/' + result.verificationId); // 10/31 — 뒤로 가기로 입력 화면에 돌아간다
       loadEvidence(result.verificationId);
     }
 
@@ -1283,9 +1337,21 @@ let inputFromServer = false;
    VerificationResultResponse 필드명 기준.
 ================================================== */
 
+/* 10/31 — 지금 결과 화면에 띄운 검증의 경로. '내 검증 이력 보기'가 같은 쪽 탭을 먼저 연다
+   (쿠팡 구매이력 → 쿠팡 검증 이력, 품명으로 제품 확인 → 품명 검증 이력). 서버 응답 channel(10/31~),
+   없으면(이전 서버) 이력 목록에서 누른 항목의 channel 을 쓴다 */
+var resultChannel = 'WEB';
+
+function goHistoryForResult() {
+  if (resultChannel === 'EXTENSION') goCoupangVerificationHistory();
+  else goHistory();
+}
+
 function render(d) {
 
   if (!d) return;
+
+  resultChannel = d.channel === 'EXTENSION' ? 'EXTENSION' : 'WEB';
 
   const fr = stateOf(d);
 
@@ -1465,7 +1531,9 @@ function kcCertHtml(d) {
   /* tone: '' 보통 · check 확인 필요(주황) · danger 처분(빨강) · muted 판정 보류(회색) */
   let tone = '';
   if (kc.status === 'FOUND') {
-    const facts = [kc.certNum, kc.modelName, kc.certDate ? fmtDate(kc.certDate) + ' 인증' : null]
+    /* 10/31 — 인증일은 KC 인증 DB(제품안전정보센터 인증정보 Open API certificationList)의 certDate 원문(yyyyMMdd)을
+       날짜 모양으로만 바꾼 값이다(KcLookupService — 캐시는 7일). 화면에 출처를 적는다 */
+    const facts = [kc.certNum, kc.modelName, kc.certDate ? '인증일 ' + fmtDate(kc.certDate) : null]
             .filter(Boolean).map(esc).join(' · ');
     const state = esc(kc.certState || '상태 정보 없음');
     const level = kcStateLevel(kc.certState);
@@ -1478,8 +1546,8 @@ function kcCertHtml(d) {
               '<br>신고 유효기간(어린이제품 안전확인은 신고일부터 5년)이 지난 번호입니다. ' +
               '만료 전에 출고(국내 제조)·통관(수입)을 마친 재고는 만료 뒤에도 유통·판매할 수 있어(한국제품안전관리원 안내), ' +
               '이것만으로 판매가 불법이라고 볼 수는 없습니다.' +
-              '<br>지금 파는 물량이 언제 출고·통관됐는지는 확인할 수 없습니다 — 판매자에게 통관 시점이나 지금 유효한 KC 번호를 확인해 보세요. ' +
-              '리콜 여부와는 별개이며, 안전하다는 뜻도 아닙니다.';
+              '<br>지금 파는 물량이 언제 출고·통관됐는지는 확인할 수 없습니다 — 판매자에게 출고·통관 시점이나 지금 유효한 KC 번호를 확인해 보세요. ' +
+              '리콜 여부와는 별개입니다.';
     } else if (level === 'action') {
       tone = 'danger';
       body = '⚠ 인증상태 <strong>' + state + '</strong> — ' + facts +
@@ -1501,7 +1569,7 @@ function kcCertHtml(d) {
   }
   const color = { check: 'color:#b45309;', danger: 'color:#b91c1c;', muted: 'color:#6b7280;' }[tone] || '';
   return '<br><span class="kc-cert kc-' + (tone || 'ok') + '" style="display:block;margin-top:8px;font-size:0.92em;' +
-          color + '">🔖 KC 인증 조회: ' + body + '</span>';
+          color + '">🔖 KC 인증 조회(제품안전정보센터 KC 인증 DB): ' + body + '</span>';
 }
 
 /* 9/27 — 사진으로 찾기 버튼과 결과 문구. 서버가 imageCheckAvailable 을 내려줄 때만 버튼을 보인다
@@ -1566,7 +1634,7 @@ async function checkImage(id, btn) {
     const result = r.json.data;
     renderInput(emptyInput());
     render(result);
-    showScreen('verifyScreen');
+    showScreen('verifyScreen', 'result/' + id);
     const panel = document.getElementById('resultScreen');
     if (panel) {
       panel.classList.add('show');
@@ -1734,6 +1802,12 @@ function showHistoryType(type) {
   if (tabManual) tabManual.classList.toggle('active', manual);
   if (tabCoupang) tabCoupang.classList.toggle('active', !manual);
 
+  /* 10/31 — 이력 탭도 주소 # 에 맞춘다(기록은 안 쌓고 바꿔 쓴다) */
+  const historyScreen = document.getElementById('historyScreen');
+  if (historyScreen && historyScreen.classList.contains('active')) {
+    setRoute(manual ? 'history' : 'history-coupang', true);
+  }
+
   if (manual) loadHistoryChannel('WEB', 'historyListManual');
   else loadHistoryChannel('EXTENSION', 'historyListCoupang');
 }
@@ -1826,7 +1900,7 @@ function renderHistoryList(targetId, items) {
 
     return '' +
         '<div class="history-item" onclick="openHistoryItem(' +
-        Number(v.verificationId) + ')">' +
+        Number(v.verificationId) + (v.channel === 'EXTENSION' ? ', \'EXTENSION\'' : '') + ')">' +
         '<div class="history-product">' + icon + '</div>' +
         '<div class="history-main">' +
         '<div class="history-name">' +
@@ -1847,7 +1921,8 @@ function renderHistoryList(targetId, items) {
 
 
 /* 이력 항목 클릭 → 그 건의 결과 + 근거를 결과 화면에 다시 띄운다. */
-async function openHistoryItem(id) {
+/** @param channelHint 이력 목록 항목의 channel — 서버 응답에 channel 이 없을 때(이전 서버)만 쓴다 */
+async function openHistoryItem(id, channelHint) {
 
   if (!id) return;
 
@@ -1865,11 +1940,12 @@ async function openHistoryItem(id) {
 
   renderInput(emptyInput());
   render(result);
+  if (!result.channel && channelHint === 'EXTENSION') resultChannel = 'EXTENSION';
 
   /* 결과 패널(#resultScreen)은 독립 화면이 아니라 verifyScreen 안에 박힌 .embedded-result 다.
      9/24 1차 버전은 showScreen('resultScreen') 을 불러서 verifyScreen 까지 꺼 버렸고,
      이력에서 항목을 누르면 빈 화면이 떴다. 부모 화면을 켠 뒤 패널을 연다. */
-  showScreen('verifyScreen');
+  showScreen('verifyScreen', 'result/' + id); // 10/31 — 뒤로 가기로 이력 목록에 돌아간다
 
   const panel = document.getElementById('resultScreen');
   if (panel) {
@@ -2322,7 +2398,7 @@ function updateCoupangResultCard(f) {
     }
     const first = f.suspects[0];
     if (first && first.verificationId && summary) {
-      summary.onclick = function () { openHistoryItem(first.verificationId); };
+      summary.onclick = function () { openHistoryItem(first.verificationId, 'EXTENSION'); };
       summary.style.cursor = 'pointer';
     }
     return;

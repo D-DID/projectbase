@@ -130,6 +130,7 @@ class ApiIntegrationTest {
         assertEquals("MATCH", JsonPath.read(body, "$.data.resultState"));
         assertEquals("원목 체스", JsonPath.read(body, "$.data.input.productName"));
         assertEquals(CHESS_CERT, JsonPath.read(body, "$.data.recallCertNum"));
+        assertEquals("WEB", JsonPath.read(body, "$.data.channel"));   // 10/31 — '내 검증 이력 보기' 탭 선택용
 
         Integer id = JsonPath.read(body, "$.data.verificationId");
         mvc.perform(get("/api/verifications/" + id).header("Authorization", "Bearer " + token))

@@ -59,6 +59,7 @@
 | similarityScore · recallUid · recall* | 가장 잘 맞는 공표문과 종합 점수 |
 | **input** | 저장된 입력값 `{productName, brandName, modelName, makerName, barcodeNum, certNum, thumbnailUrl, kcStatus, kcText}` — 리콜 후보가 없어도(불일치) 내려온다. 결과 화면 '내가 입력한 제품' (10/31) |
 | recallCertNum | 매칭된 공표문의 KC 인증번호(콤마 구분 목록일 수 있음). 없으면 null (10/31) |
+| channel | 검증이 들어온 경로 `WEB`(품명으로 제품 확인)·`EXTENSION`(쿠팡 구매이력). 결과 화면 '내 검증 이력 보기'가 같은 쪽 탭을 먼저 연다 (10/31) |
 
 판정 규칙(요약, 10/31 2단계): **일치** = KC 인증번호 완전일치 + 제품명 유사도 50% 이상(`matching.rule.name-match`), 또는 품번(모델명)·인증 모델명 완전일치. **의심** = KC 번호만 같고 제품명이 다름 · 품번은 같은데 KC 번호가 다름 · 제품명 90% 이상(`matching.rule.name-suspect-other-cert`)인데 KC 번호가 다름 · 종합 점수가 partial 임계값 이상. 사진 찾기(2차) 근거는 최대 **의심**. 의심이 된 이유는 `/evidence` 의 `reason` 끝에 붙는다.
 
