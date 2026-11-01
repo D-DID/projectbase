@@ -1524,9 +1524,28 @@ function kcStateLevel(state) {
   return 'action';
 }
 
+/* 기간만료·처분 설명 — 번호 하나·여러 개 화면이 같이 쓴다 */
+const KC_EXPIRED_NOTE =
+    '신고 유효기간(어린이제품 안전확인은 신고일부터 5년)이 지난 번호입니다. ' +
+    '만료 전에 출고(국내 제조)·통관(수입)을 마친 재고는 만료 뒤에도 유통·판매할 수 있어(한국제품안전관리원 안내), ' +
+    '이것만으로 판매가 불법이라고 볼 수는 없습니다.' +
+    '<br>지금 파는 물량이 언제 출고·통관됐는지는 확인할 수 없습니다 — 판매자에게 출고·통관 시점이나 지금 유효한 KC 번호를 확인해 보세요. ' +
+    '리콜 여부와는 별개입니다.';
+const KC_ACTION_NOTE =
+    '적합·기간만료가 아닌 상태입니다(인증 취소·효력상실·사용금지·개선명령 등 행정처분). ' +
+    '기간만료와는 다릅니다 — 제품안전정보센터에서 처분 내용과 대상 모델을 확인하세요. 리콜 판정과는 별개입니다.';
+const KC_TONE_COLOR = { check: 'color:#b45309;', danger: 'color:#b91c1c;', muted: 'color:#6b7280;' };
+
+function kcSpan(tone, body) {
+  return '<br><span class="kc-cert kc-' + (tone || 'ok') + '" style="display:block;margin-top:8px;font-size:0.92em;' +
+          (KC_TONE_COLOR[tone] || '') + '">🔖 KC 인증 조회(제품안전정보센터 KC 인증 DB): ' + body + '</span>';
+}
+
 function kcCertHtml(d) {
   const kc = d && d.kc;
   if (!kc || !kc.status) return '';
+  /* 10/31 — KC 칸에 번호가 여러 개(예: 리뉴얼 전·후)면 번호마다 조회한 결과를 보여 준다 */
+  if (Array.isArray(kc.others) && kc.others.length) return kcMultiHtml(kc, d);
   let body;
   /* tone: '' 보통 · check 확인 필요(주황) · danger 처분(빨강) · muted 판정 보류(회색) */
   let tone = '';
@@ -1542,17 +1561,10 @@ function kcCertHtml(d) {
          만료 전 출고·통관 재고는 만료 뒤에도 유통·판매 가능(한국제품안전관리원 FAQ, 시행규칙 제29조①).
          지금 파는 물량의 통관 시점은 공개 정보로 알 수 없다 → '불법'으로 단정하지 않고 '확인 필요'로 둔다 */
       tone = 'check';
-      body = 'ⓘ 확인 필요 · 인증상태 <strong>' + state + '</strong> — ' + facts +
-              '<br>신고 유효기간(어린이제품 안전확인은 신고일부터 5년)이 지난 번호입니다. ' +
-              '만료 전에 출고(국내 제조)·통관(수입)을 마친 재고는 만료 뒤에도 유통·판매할 수 있어(한국제품안전관리원 안내), ' +
-              '이것만으로 판매가 불법이라고 볼 수는 없습니다.' +
-              '<br>지금 파는 물량이 언제 출고·통관됐는지는 확인할 수 없습니다 — 판매자에게 출고·통관 시점이나 지금 유효한 KC 번호를 확인해 보세요. ' +
-              '리콜 여부와는 별개입니다.';
+      body = 'ⓘ 확인 필요 · 인증상태 <strong>' + state + '</strong> — ' + facts + '<br>' + KC_EXPIRED_NOTE;
     } else if (level === 'action') {
       tone = 'danger';
-      body = '⚠ 인증상태 <strong>' + state + '</strong> — ' + facts +
-              '<br>적합·기간만료가 아닌 상태입니다(인증 취소·효력상실·사용금지·개선명령 등 행정처분). ' +
-              '기간만료와는 다릅니다 — 제품안전정보센터에서 처분 내용과 대상 모델을 확인하세요. 리콜 판정과는 별개입니다.';
+      body = '⚠ 인증상태 <strong>' + state + '</strong> — ' + facts + '<br>' + KC_ACTION_NOTE;
     } else {
       body = '인증상태 ' + state + ' — ' + facts;
     }
@@ -1567,9 +1579,62 @@ function kcCertHtml(d) {
     body = '판정 보류 — KC 인증 DB를 지금 조회하지 못했습니다' + (kc.certNum ? ' (' + esc(kc.certNum) + ')' : '') +
             '. 리콜 대조는 입력한 정보로 그대로 진행했습니다.';
   }
-  const color = { check: 'color:#b45309;', danger: 'color:#b91c1c;', muted: 'color:#6b7280;' }[tone] || '';
-  return '<br><span class="kc-cert kc-' + (tone || 'ok') + '" style="display:block;margin-top:8px;font-size:0.92em;' +
-          color + '">🔖 KC 인증 조회(제품안전정보센터 KC 인증 DB): ' + body + '</span>';
+  return kcSpan(tone, body);
+}
+
+/* 10/31 — KC 칸에 번호가 여러 개일 때(실측: 빠방 밀대 "리뉴얼 전: CB063R3421-20003, 리뉴얼 후 : CB063R3421-20003r").
+   서버가 번호마다 조회한다(KcLookupService — 대표는 첫 번째로 DB 에 있는 번호, 나머지는 kc.others).
+   번호마다 상태를 한 줄씩 보이고, 받는 제품이 어느 번호인지는 모른다고 적는다. 판정에는 대표 번호만 쓴다(예전과 같음).
+   'R' 처럼 끝 영문만 다른 번호가 DB 에 없고 그 영문을 뺀 번호가 DB 에 있으면, 판매자 표기 오류일 수 있다고 알린다(단정하지 않음). */
+function kcMultiHtml(kc, d) {
+  const order = String((d && d.input && d.input.certNum) || '').toUpperCase();
+  const all = [kc].concat(kc.others).map(function (e, i) {
+    const at = order.indexOf(String(e.certNum || '').toUpperCase());
+    return { e: e, at: at < 0 ? 1000 + i : at };
+  }).sort(function (a, b) { return a.at - b.at; }).map(function (x) { return x.e; });
+  const foundNums = {};
+  all.forEach(function (e) { if (e.status === 'FOUND') foundNums[String(e.certNum).toUpperCase()] = true; });
+
+  const rank = { '': 0, muted: 0, check: 1, danger: 2 };
+  let tone = '';
+  let anyExpired = false, anyAction = false;
+  const rows = all.map(function (e) {
+    let t = '', txt;
+    const num = String(e.certNum || '');
+    if (e.status === 'FOUND') {
+      const level = kcStateLevel(e.certState);
+      const facts = [e.modelName, e.certDate ? '인증일 ' + fmtDate(e.certDate) : null]
+              .filter(Boolean).map(esc).join(' · ');
+      if (level === 'expired') { t = 'check'; anyExpired = true; txt = 'ⓘ <strong>' + esc(e.certState) + '</strong>'; }
+      else if (level === 'action') { t = 'danger'; anyAction = true; txt = '⚠ <strong>' + esc(e.certState) + '</strong>'; }
+      else txt = esc(e.certState || '상태 정보 없음');
+      if (facts) txt += ' · ' + facts;
+    } else if (e.status === 'NOT_FOUND') {
+      t = 'check';
+      txt = 'ⓘ 인증 DB에 없는 번호';
+      const base = num.replace(/(-\d{4,6})[A-Z]{1,3}$/i, '$1');
+      if (base !== num && foundNums[base.toUpperCase()]) {
+        txt += ' — 끝 영문 \'' + esc(num.slice(base.length)) + '\' 없이 적은 번호(' + esc(base) +
+                ')는 인증 DB에 있습니다. 판매자가 번호를 잘못 적었을 수 있습니다';
+      }
+    } else {
+      txt = '지금 조회하지 못함(판정 보류)';
+    }
+    if (rank[t] > rank[tone]) tone = t;
+    return '· ' + esc(num) + ' — ' + txt;
+  });
+
+  const seller = d && d.input && d.input.kcText;
+  let body = '이 상품에 KC 번호가 ' + all.length + '개 적혀 있어 번호마다 조회했습니다.';
+  if (seller) body += '<br>판매자 표기: 「' + esc(String(seller).slice(0, 200)) + '」';
+  body += '<br>' + rows.join('<br>');
+  body += '<br>받는 제품이 어느 번호의 제품인지는 알 수 없습니다 — 포장의 KC 표시와 대조하거나 판매자에게 확인하세요.';
+  if (anyExpired) body += '<br>기간만료: ' + KC_EXPIRED_NOTE;
+  if (anyAction) body += '<br>처분: ' + KC_ACTION_NOTE;
+  if (kc.status === 'FOUND') {
+    body += '<br>판정 근거의 \'인증 모델명\'에는 ' + esc(kc.certNum) + '(첫 번째로 인증 DB에 있는 번호)만 씁니다.';
+  }
+  return kcSpan(tone, body);
 }
 
 /* 9/27 — 사진으로 찾기 버튼과 결과 문구. 서버가 imageCheckAvailable 을 내려줄 때만 버튼을 보인다

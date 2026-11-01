@@ -55,7 +55,7 @@
 | imageCheck | 사진 찾기 결과 `FOUND` · `NONE` · `FAILED`(다시 누를 수 있음) |
 | missingReason | 미표기·판단 제외 사유 문구 |
 | imageProductName · imageCertNum · imageModelName | 사진 찾기로 2곳 이상 사이트에서 반복된 상품명·KC 번호·모델명 |
-| kc | KC 인증 DB 조회 결과 `{status, certNum, certState, needsAttention, certDate, productName, modelName, makerName, makerCntryName, source}` |
+| kc | KC 인증 DB 조회 결과 `{status, certNum, certState, needsAttention, certDate, productName, modelName, makerName, makerCntryName, source, others}`. KC 칸에 번호가 여러 개면(예: 리뉴얼 전·후) 번호마다(최대 3개) 조회하고, 대표(첫 번째로 DB 에 있는 번호 — 판정의 '인증 모델명'에 씀) 밖 번호는 `others: [{certNum, status, certState, needsAttention, certDate, modelName}]` (10/31) |
 | similarityScore · recallUid · recall* | 가장 잘 맞는 공표문과 종합 점수 |
 | **input** | 저장된 입력값 `{productName, brandName, modelName, makerName, barcodeNum, certNum, thumbnailUrl, kcStatus, kcText}` — 리콜 후보가 없어도(불일치) 내려온다. 결과 화면 '내가 입력한 제품' (10/31) |
 | recallCertNum | 매칭된 공표문의 KC 인증번호(콤마 구분 목록일 수 있음). 없으면 null (10/31) |

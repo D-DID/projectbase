@@ -148,6 +148,27 @@ class KcLookupServiceTest {
 
         assertEquals(KcLookup.Status.FOUND, r.status());
         assertEquals("CB067R2225-4001", r.certNum());
+        // 10/31 — DB 에 없는 번호도 결과가 남는다(화면이 번호마다 보여 준다)
+        assertEquals(1, r.others().size());
+        assertEquals("XX00000-00000", r.others().get(0).certNum());
+        assertEquals(KcLookup.Status.NOT_FOUND, r.others().get(0).status());
+    }
+
+    /** 10/31 — 빠방 밀대 "리뉴얼 전: CB063R3421-20003, 리뉴얼 후 : CB063R3421-20003r". 대표는 예전처럼 첫 번째로 DB 에 있는 번호 */
+    @Test
+    void 리뉴얼_전후_번호를_모두_조회하고_대표는_첫_번째로_DB에_있는_번호() {
+        CertListApiResponse.Item before = new CertListApiResponse.Item(1L, "CB063R3421-20003", "기간만료", "20190305",
+                "완구", "", "빠방 밀대", "-", "중국");
+        when(client.findByCertNumExact("CB063R3421-20003")).thenReturn(List.of(before));
+        when(client.findByCertNumExact("CB063R3421-20003R")).thenReturn(List.of());
+
+        KcLookup r = service.lookup("리뉴얼 전: CB063R3421-20003, 리뉴얼 후 : CB063R3421-20003r");
+
+        assertEquals("CB063R3421-20003", r.certNum());
+        assertEquals("기간만료", r.certState());
+        assertEquals(List.of(new KcLookup.Other("CB063R3421-20003R", KcLookup.Status.NOT_FOUND, null, null, null)),
+                r.others());
+        verify(client).findByCertNumExact("CB063R3421-20003R");
     }
 
     @Test
