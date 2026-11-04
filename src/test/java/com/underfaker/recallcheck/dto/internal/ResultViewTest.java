@@ -40,6 +40,26 @@ class ResultViewTest {
     }
 
     @Test
+    void 우클릭으로_읽은_KC_대상_아님_상품은_번호가_없어도_미표기가_아니다() {
+        // 11/4 실측 — 하기스 물놀이팬티: 쿠팡 KC 칸 '위생용품' → 확장이 KC 대상 아님(NONE). 우클릭이라 웹 채널
+        String raw = detail("NONE", "위생용품(KC 대상 아님)");
+        ResultView v = ResultView.of(FinalResult.NO_MATCH, VerificationChannel.WEB, raw, THUMB, null);
+        assertEquals("NO_MATCH", v.resultState());
+        assertFalse(v.imageCheckAvailable());
+        assertNull(v.missingReason());
+
+        // 구매이력(확장 채널)도 같다
+        assertEquals("NO_MATCH",
+                ResultView.of(FinalResult.NO_MATCH, VerificationChannel.EXTENSION, raw, THUMB, null).resultState());
+
+        // 우클릭이어도 KC 칸에 번호가 없다고 판단한 건(REFERENCED)은 그대로 미표기
+        String referenced = detail("REFERENCED", "상품 상세페이지 참조");
+        ResultView m = ResultView.of(FinalResult.NO_MATCH, VerificationChannel.WEB, referenced, THUMB, null);
+        assertEquals("MISSING", m.resultState());
+        assertTrue(m.imageCheckAvailable());
+    }
+
+    @Test
     void 쿠팡_KC_칸에_번호가_없으면_KC_번호_미표기() {
         String raw = detail("REFERENCED", "상품 상세페이지 참조");
         ResultView v = ResultView.of(FinalResult.NO_MATCH, VerificationChannel.EXTENSION, raw, THUMB, null);

@@ -497,7 +497,7 @@ function applyRoute() {
   try {
     if (m) {
       showScreen('verifyScreen', 'result/' + m[1]);
-      openHistoryItem(m[1]);
+      openHistoryItem(m[1], null, { fillForm: true }); // 11/4 — 우클릭 검증·새로고침: 입력값을 ① 칸에도 넣는다
     } else if (h === 'history') goHistory();
     else if (h === 'history-coupang') goCoupangVerificationHistory();
     else if (h === 'coupang') goCoupangHistory();
@@ -731,6 +731,53 @@ function setInputMode(mode) {
   if (pbox) pbox.style.display = inputMode === 'photo' ? '' : 'none';
 }
 
+/* 11/4 — 우클릭 검증(확장이 이 탭을 #result/{id} 로 연다)의 입력값을 ① 직접 입력 칸에 넣는다.
+   쇼핑몰 페이지에서 읽은 값(판매자 표기·파싱 결과)이 틀릴 수 있어, 사용자가 고친 뒤 [리콜 여부 확인하기]로 다시 확인한다.
+   값은 서버 결과의 input(ProductInputResponse — 저장된 입력)을 쓴다. 확장은 바꾸지 않는다.
+   빈 칸도 비워서 앞 상품 값이 남지 않게 한다. 넣은 칸이 하나도 없으면 false */
+const FORM_FILL_FIELDS = ['productName', 'brandName', 'modelName', 'makerName', 'barcodeNum', 'certNum', 'thumbnailUrl'];
+
+/* 11/4 — 우클릭으로 읽은 KC 칸 판단(kcStatus·kcText). 칸을 고쳐 [리콜 여부 확인하기]로 다시 확인할 때 같이 보낸다.
+   안 보내면 직접 입력으로 취급돼 'KC 대상 아님'(식품용 기구 등) 상품이 'KC 번호 미표기'+사진 찾기로 바뀌었다(11/4 실측: 사라사 스텐 식판).
+   사용자가 KC 인증번호 칸을 바꾸거나 제품명을 지우면(새 상품) 버린다. */
+let pageFillContext = null;
+
+function fillFormFromInput(input) {
+  if (!input) return false;
+  pageFillContext = (input.kcStatus || input.kcText)
+      ? { kcStatus: input.kcStatus || null, kcText: input.kcText || null, certNum: String(input.certNum || '').trim() }
+      : null;
+  setInputMode('manual');
+  let filled = 0;
+  FORM_FILL_FIELDS.forEach(function (k) {
+    const el = document.getElementById(k);
+    if (!el) return;
+    const v = input[k] == null ? '' : String(input[k]).trim();
+    el.value = v;
+    if (v) filled++;
+  });
+  const msg = document.getElementById('pageFillMsg');
+  if (msg) {
+    msg.textContent = filled
+      ? '이 검증이 읽은 값을 아래 칸에 넣었습니다. 틀린 값은 고친 뒤 [리콜 여부 확인하기]를 누르면 다시 확인합니다.'
+      : '';
+    msg.style.display = filled ? '' : 'none';
+  }
+  return filled > 0;
+}
+
+document.addEventListener('input', function (e) {
+  if (e.target && e.target.id === 'productName' && !e.target.value.trim()) {
+    pageFillContext = null;
+    hidePageFillMsg();
+  }
+});
+
+function hidePageFillMsg() {
+  const msg = document.getElementById('pageFillMsg');
+  if (msg) msg.style.display = 'none';
+}
+
 /* 11/1 — 쇼핑몰 우클릭 검증 안내. 확장 0.7.0(verify-page)이 있으면 '바로 쓸 수 있음', 없으면 설치·새로고침 안내 */
 function paintPageVerifyHint() {
   const el = document.getElementById('pageVerifyState');
@@ -841,6 +888,7 @@ async function verify() {
     show('verifyMsg', '제품명을 입력해주세요.', false);
     return;
   }
+  hidePageFillMsg(); // 11/4 — 칸의 값으로 새로 확인하므로 '읽은 값을 넣었습니다' 안내는 내린다
 
   const thumbnailUrl = val('thumbnailUrl');
   const thumbProblem = thumbnailUrlProblem(thumbnailUrl);
@@ -867,6 +915,10 @@ async function verify() {
       certNum: val('certNum'),
       thumbnailUrl: thumbnailUrl
     };
+    if (pageFillContext && (val('certNum') || '') === pageFillContext.certNum) { // val() 은 빈 칸이면 null
+      lastInput.kcStatus = pageFillContext.kcStatus;
+      lastInput.kcText = pageFillContext.kcText ? String(pageFillContext.kcText).slice(0, 255) : null;
+    }
 
     let result = null;
 
@@ -1069,6 +1121,14 @@ function render(d) {
      내 제품의 리콜 정보처럼 보였다(11/4 실측: 핑크퐁 우산 'KC 번호 미표기' 화면에 '어린이용 장신구' 프탈레이트 리콜이 표시됨).
      가장 가까운 후보는 판정 근거의 '가장 가까운 후보와의 대조 보기(참고)'에서만 보인다(10/7). 공표문 원문 링크와 같은 기준이다. */
   const R = (fr === 'MATCH' || fr === 'PARTIAL') ? d : {};
+  /* 11/4 — '의심'은 같은 제품이라고 확정한 게 아니다. 제목이 '리콜 정보'면 내 제품이 리콜된 것으로 읽혀서(팀장 지적),
+     의심일 때만 제목을 바꾼다. 일치·그 밖은 예전 제목 */
+  text('recallInfoTitle', fr === 'PARTIAL' ? '닮은 리콜 공표문 (같은 제품인지 확인 필요)' : '리콜 정보');
+  text('recallCompareTitle', fr === 'PARTIAL' ? '닮은 리콜 공표문' : '공식 리콜 정보');
+  ['recallInfoTitle', 'recallCompareTitle'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('title-partial', fr === 'PARTIAL');
+  });
 
   text('recallProduct', R.recallProductName);
   text('recallCert', R.recallCertNum);
@@ -1200,6 +1260,13 @@ function setResultState(fr, score, d) {
         '<strong>일치하는 리콜 공표문을 찾지 못했습니다.</strong><br>' +
         '현재 입력한 정보 기준으로 공식 리콜 정보와 일치하지 않습니다. ' +
         '단, 안전하다는 뜻이 아니며 리콜 대상이 아님을 의미하지도 않습니다.';
+    /* 11/4 — 확장이 판매 페이지 고시를 보고 'KC 대상 아님'(위생용품·식품 등 다른 법 소관)으로 판단한 건.
+       번호가 없어도 'KC 번호 미표기'가 아니다(서버 ResultView.kcNumberMissing) — 왜 KC 번호를 안 봤는지 적는다 */
+    if (d && d.input && d.input.kcStatus === 'NONE') {
+      /* 11/4 — 이유는 확장이 적은 근거 문구(kcText)에 있다: 다른 법 고시 · 식품용 기구 분류 · 쿠팡 분류 · 어린이제품 아님.
+         예전 문구('위생용품·식품 등 다른 법…')는 분류·상품명으로 뺀 경우(예: 케이블타이)에 맞지 않았다 */
+      notice.innerHTML += notChildBoxHtml(d.input.kcText);
+    }
 
   } else {
     notice.className = 'result-notice unknown';
@@ -1209,8 +1276,35 @@ function setResultState(fr, score, d) {
         '제품 정보를 추가한 후 다시 확인해주세요.';
   }
 
+  /* 11/4 — KC 대상 아님(NONE)인데 일치·의심이 나온 건(확장 0.7.3 부터 구매이력 스캔도 보낸다).
+     KC 번호 없이 이름 등으로만 맞춘 결과라는 걸 같이 적는다 */
+  if ((fr === 'MATCH' || fr === 'PARTIAL') && d && d.input && d.input.kcStatus === 'NONE') {
+    notice.innerHTML += notChildBoxHtml(d.input.kcText, true);
+  }
+
   notice.innerHTML += kcCertHtml(d);
   notice.innerHTML += imageCheckHtml(d);
+}
+
+/* 11/4 — 'KC 대상 아님'(NONE)을 눈에 띄게(팀장 요청: 어린이제품이 아님을 강조). 제목은 근거 문구(kcText)로 고른다 —
+   확장이 적는 근거: '어린이제품 아님(분류 … · 상품명)' · '식품용 기구 분류(…)' · '주방용품(식품용 기구) 고시(…)' ·
+   '○○ 고시(KC 대상 아님)' · '위생용품(KC 대상 아님)' · '카테고리상 KC 대상 아님(…)' */
+function notChildBoxHtml(kcText, suspect) {
+  const t = String(kcText || '');
+  let head;
+  if (/^어린이제품 아님/.test(t)) head = '어린이제품이 아닙니다';
+  else if (/식품용 기구/.test(t)) head = '식품용 기구 — 어린이제품 KC 대상이 아닙니다';
+  else if (/고시\(KC 대상 아님\)|^[^(]+\(KC 대상 아님\)/.test(t)) head = '다른 법이 관리하는 품목 — 어린이제품 KC 대상이 아닙니다';
+  else head = 'KC(어린이제품) 인증 대상이 아닙니다';
+  return '<div class="not-child-box">' +
+      '<div class="not-child-head">' + head + '</div>' +
+      (t ? '<div class="not-child-why">근거: 「' + esc(t.slice(0, 160)) + '」</div>' : '') +
+      (suspect
+          /* 11/4 — 일치·의심: KC 대상이 아니어도 리콜 공표문과 맞으면 알린다(팀장 요청). 이름만 닮았을 수 있다는 걸 같이 적는다 */
+          ? '<div class="not-child-why">KC 번호 없이 제품명 등으로만 대조한 결과입니다. 이름만 닮은 다른 제품일 수 있으니 ' +
+            '아래 공표문 원문의 모델명·사진을 내 제품과 직접 비교하세요.</div>'
+          : '<div class="not-child-why">그래서 KC 번호로는 판단하지 않고, 제품명 등으로만 리콜 공표문과 대조했습니다.</div>') +
+      '</div>';
 }
 
 /* 10/3 — KC인증 연동. 입력한 KC 인증번호로 KC 인증 DB(제품안전정보센터)를 조회한 결과.
@@ -1241,57 +1335,86 @@ const KC_EXPIRED_NOTE =
 const KC_ACTION_NOTE =
     '적합·기간만료가 아닌 상태입니다(인증 취소·효력상실·사용금지·개선명령 등 행정처분). ' +
     '기간만료와는 다릅니다 — 제품안전정보센터에서 처분 내용과 대상 모델을 확인하세요. 리콜 판정과는 별개입니다.';
-const KC_TONE_COLOR = { check: 'color:#b45309;', danger: 'color:#b91c1c;', muted: 'color:#6b7280;' };
-
-function kcSpan(tone, body) {
-  return '<br><span class="kc-cert kc-' + (tone || 'ok') + '" style="display:block;margin-top:8px;font-size:0.92em;' +
-          (KC_TONE_COLOR[tone] || '') + '">🔖 KC 인증 조회(제품안전정보센터 KC 인증 DB): ' + body + '</span>';
+/* 11/4 — KC 인증 조회를 사진 카드(imageFoundCard)와 같은 카드로 보인다. 예전에는 긴 문단 한 덩어리라 읽기 어려웠다.
+   카드: KC 인증번호(크게) · 인증상태 · 인증 품목/모델명 · 인증일 · 리콜 공표문 대조. 긴 설명(기간만료·처분)은 접어 둔다.
+   tone: '' 보통 · check 확인 필요(주황) · danger 처분(빨강) · muted 판정 보류(회색) */
+function kcRow(label, value) {
+  return '<div class="image-found-row"><span class="image-found-label">' + label + '</span>' +
+      '<span class="image-found-value">' + value + '</span></div>';
 }
+
+function kcStateText(e) {
+  const level = kcStateLevel(e.certState);
+  const state = esc(e.certState || '상태 정보 없음');
+  if (level === 'expired') return { tone: 'check', html: '<b class="kc-state-check">ⓘ ' + state + '</b> — 신고 유효기간(5년)이 지난 번호. 판매자에게 지금 유효한 KC 번호를 확인하세요' };
+  if (level === 'action') return { tone: 'danger', html: '<b class="kc-state-danger">⚠ ' + state + '</b> — 행정처분 상태. 제품안전정보센터에서 처분 내용을 확인하세요' };
+  if (level === 'valid') return { tone: '', html: '<b>' + state + '</b>' };
+  return { tone: 'muted', html: state };
+}
+
+/* 리콜 공표문 대조 — 이 KC 번호(들)와 결과에 붙은 공표문의 번호가 같은지 · 판정 단계 */
+function kcRecallLine(d, nums) {
+  const state = stateOf(d);
+  const rc = String((d && d.recallCertNum) || '').toUpperCase().split(/[\s,·/]+/).filter(Boolean);
+  const same = nums.some(function (n) { return n && rc.indexOf(String(n).toUpperCase()) >= 0; });
+  const notice = d && d.recallUid
+      ? '공표번호 ' + esc(d.recallUid) + (d.recallModelName ? ' \'' + esc(d.recallModelName) + '\'' : '')
+      : '';
+  if (same && state === 'MATCH') return '<b>일치</b> — 같은 KC 번호의 리콜 공표문(' + notice + ')과 제품명도 맞습니다.';
+  if (same) return '<b>같은 KC 번호의 리콜 공표문 있음</b> — ' + notice + '. 제품명이 달라 \'일치\'가 아니라 \'의심\'입니다(같은 번호로 여러 제품이 공표된 경우가 있음).';
+  if (state === 'MATCH') return '<b>일치</b> — 위 판정과 같습니다.';
+  if (state === 'PARTIAL') return '<b>의심</b> — KC 번호가 아니라 제품명 등이 공표문과 닮았습니다(아래 공식 리콜 정보).';
+  return '<b>같은 KC 번호의 리콜 공표문 없음</b>';
+}
+
+function kcCardWrap(tone, head, name, sub, rows, foot, details) {
+  return '<div class="image-found-card kc-card' + (tone ? ' kc-' + tone : '') + '">' +
+      '<div class="image-found-head">' + head + '</div>' +
+      (name ? '<div class="image-found-name kc-num">' + name + '</div>' : '') +
+      (sub ? '<div class="image-found-sub">' + sub + '</div>' : '') +
+      rows.join('') +
+      (foot ? '<div class="image-found-foot">' + foot + '</div>' : '') +
+      (details ? '<details class="kc-more"><summary>자세히</summary>' + details + '</details>' : '') +
+      '</div>';
+}
+
+const KC_CARD_HEAD = '🔖 KC 인증 조회 <span class="kc-src">제품안전정보센터 KC 인증 DB</span>';
+const KC_MODEL_FOOT = '인증 모델명이 리콜 공표문 모델명과 같을 때만 판정 근거로 씁니다(아래 판정 근거의 \'인증 모델명\'). 인증 여부는 리콜·안전 여부와 별개입니다.';
 
 function kcCertHtml(d) {
   const kc = d && d.kc;
   if (!kc || !kc.status) return '';
   /* 10/31 — KC 칸에 번호가 여러 개(예: 리뉴얼 전·후)면 번호마다 조회한 결과를 보여 준다 */
   if (Array.isArray(kc.others) && kc.others.length) return kcMultiHtml(kc, d);
-  let body;
-  /* tone: '' 보통 · check 확인 필요(주황) · danger 처분(빨강) · muted 판정 보류(회색) */
-  let tone = '';
+  const num = esc(kc.certNum || '');
   if (kc.status === 'FOUND') {
-    /* 10/31 — 인증일은 KC 인증 DB(제품안전정보센터 인증정보 Open API certificationList)의 certDate 원문(yyyyMMdd)을
-       날짜 모양으로만 바꾼 값이다(KcLookupService — 캐시는 7일). 화면에 출처를 적는다 */
-    const facts = [kc.certNum, kc.modelName, kc.certDate ? '인증일 ' + fmtDate(kc.certDate) : null]
-            .filter(Boolean).map(esc).join(' · ');
-    const state = esc(kc.certState || '상태 정보 없음');
+    /* 인증일은 KC 인증 DB(certificationList)의 certDate 원문(yyyyMMdd)을 날짜 모양으로만 바꾼 값(KcLookupService — 캐시 7일) */
+    const st = kcStateText(kc);
     const level = kcStateLevel(kc.certState);
-    if (level === 'expired') {
-      /* 10/31 — 근거: 어린이제품 안전 특별법 제22조 — 안전확인의 유효기간 5년(신고일부터 기산).
-         만료 전 출고·통관 재고는 만료 뒤에도 유통·판매 가능(한국제품안전관리원 FAQ, 시행규칙 제29조①).
-         지금 파는 물량의 통관 시점은 공개 정보로 알 수 없다 → '불법'으로 단정하지 않고 '확인 필요'로 둔다 */
-      tone = 'check';
-      body = 'ⓘ 확인 필요 · 인증상태 <strong>' + state + '</strong> — ' + facts + '<br>' + KC_EXPIRED_NOTE;
-    } else if (level === 'action') {
-      tone = 'danger';
-      body = '⚠ 인증상태 <strong>' + state + '</strong> — ' + facts + '<br>' + KC_ACTION_NOTE;
-    } else {
-      body = '인증상태 ' + state + ' — ' + facts;
-    }
-    body += '<br>인증 모델명이 리콜 공표문 모델명과 같을 때만 판정 근거로 씁니다(아래 판정 근거의 \'인증 모델명\').';
-    if (level === 'valid') body += '<br>인증 여부는 리콜·안전 여부와 별개입니다.';
-  } else if (kc.status === 'NOT_FOUND') {
-    tone = 'check';
-    body = 'ⓘ 확인 필요 · ' + esc(kc.certNum || '') +
-            ' — KC 인증 DB에서 이 번호를 찾지 못했습니다(신고정보 없음). 번호를 다시 확인해 주세요.';
-  } else {
-    tone = 'muted';
-    body = '판정 보류 — KC 인증 DB를 지금 조회하지 못했습니다' + (kc.certNum ? ' (' + esc(kc.certNum) + ')' : '') +
-            '. 리콜 대조는 입력한 정보로 그대로 진행했습니다.';
+    const rows = [
+      kcRow('인증상태', st.html),
+      kcRow('인증 품목·모델명', kc.modelName ? esc(kc.modelName) : '<span class="image-found-none">정보 없음</span>'),
+      kc.certDate ? kcRow('인증일', esc(fmtDate(kc.certDate))) : '',
+      kcRow('리콜 공표문 대조', kcRecallLine(d, [kc.certNum]))
+    ];
+    const details = level === 'expired' ? KC_EXPIRED_NOTE : (level === 'action' ? KC_ACTION_NOTE : '');
+    return kcCardWrap(st.tone, KC_CARD_HEAD, num, null, rows, KC_MODEL_FOOT, details);
   }
-  return kcSpan(tone, body);
+  if (kc.status === 'NOT_FOUND') {
+    return kcCardWrap('check', KC_CARD_HEAD, num, null, [
+      kcRow('인증상태', '<b class="kc-state-check">ⓘ 인증 DB에 없는 번호</b> — 신고정보가 없습니다. 판매 페이지의 번호를 다시 확인하세요'),
+      kcRow('리콜 공표문 대조', kcRecallLine(d, [kc.certNum]))
+    ], null, null);
+  }
+  return kcCardWrap('muted', KC_CARD_HEAD, num, null, [
+    kcRow('인증상태', '판정 보류 — KC 인증 DB를 지금 조회하지 못했습니다. 리콜 대조는 입력한 정보로 그대로 했습니다'),
+    kcRow('리콜 공표문 대조', kcRecallLine(d, [kc.certNum]))
+  ], null, null);
 }
 
 /* 10/31 — KC 칸에 번호가 여러 개일 때(실측: 빠방 밀대 "리뉴얼 전: CB063R3421-20003, 리뉴얼 후 : CB063R3421-20003r").
    서버가 번호마다 조회한다(KcLookupService — 대표는 첫 번째로 DB 에 있는 번호, 나머지는 kc.others).
-   번호마다 상태를 한 줄씩 보이고, 받는 제품이 어느 번호인지는 모른다고 적는다. 판정에는 대표 번호만 쓴다(예전과 같음).
+   11/4 — 카드: 번호마다 한 줄(상태 · 품목 · 인증일), 받는 제품이 어느 번호인지는 모른다고 적는다. 판정에는 대표 번호만 쓴다.
    'R' 처럼 끝 영문만 다른 번호가 DB 에 없고 그 영문을 뺀 번호가 DB 에 있으면, 판매자 표기 오류일 수 있다고 알린다(단정하지 않음). */
 function kcMultiHtml(kc, d) {
   const order = String((d && d.input && d.input.certNum) || '').toUpperCase();
@@ -1309,16 +1432,16 @@ function kcMultiHtml(kc, d) {
     let t = '', txt;
     const num = String(e.certNum || '');
     if (e.status === 'FOUND') {
+      const st = kcStateText(e);
+      t = st.tone === 'muted' ? '' : st.tone;
       const level = kcStateLevel(e.certState);
-      const facts = [e.modelName, e.certDate ? '인증일 ' + fmtDate(e.certDate) : null]
-              .filter(Boolean).map(esc).join(' · ');
-      if (level === 'expired') { t = 'check'; anyExpired = true; txt = 'ⓘ <strong>' + esc(e.certState) + '</strong>'; }
-      else if (level === 'action') { t = 'danger'; anyAction = true; txt = '⚠ <strong>' + esc(e.certState) + '</strong>'; }
-      else txt = esc(e.certState || '상태 정보 없음');
-      if (facts) txt += ' · ' + facts;
+      if (level === 'expired') anyExpired = true;
+      if (level === 'action') anyAction = true;
+      const facts = [e.modelName, e.certDate ? '인증일 ' + fmtDate(e.certDate) : null].filter(Boolean).map(esc).join(' · ');
+      txt = '<b' + (t ? ' class="kc-state-' + t + '"' : '') + '>' + esc(e.certState || '상태 정보 없음') + '</b>' + (facts ? ' · ' + facts : '');
     } else if (e.status === 'NOT_FOUND') {
       t = 'check';
-      txt = 'ⓘ 인증 DB에 없는 번호';
+      txt = '<b class="kc-state-check">ⓘ 인증 DB에 없는 번호</b>';
       const base = num.replace(/(-\d{4,6})[A-Z]{1,3}$/i, '$1');
       if (base !== num && foundNums[base.toUpperCase()]) {
         txt += ' — 끝 영문 \'' + esc(num.slice(base.length)) + '\' 없이 적은 번호(' + esc(base) +
@@ -1328,20 +1451,18 @@ function kcMultiHtml(kc, d) {
       txt = '지금 조회하지 못함(판정 보류)';
     }
     if (rank[t] > rank[tone]) tone = t;
-    return '· ' + esc(num) + ' — ' + txt;
+    return kcRow(esc(num), txt);
   });
+  rows.push(kcRow('리콜 공표문 대조', kcRecallLine(d, all.map(function (e) { return e.certNum; }))));
 
   const seller = d && d.input && d.input.kcText;
-  let body = '이 상품에 KC 번호가 ' + all.length + '개 적혀 있어 번호마다 조회했습니다.';
-  if (seller) body += '<br>판매자 표기: 「' + esc(String(seller).slice(0, 200)) + '」';
-  body += '<br>' + rows.join('<br>');
-  body += '<br>받는 제품이 어느 번호의 제품인지는 알 수 없습니다 — 포장의 KC 표시와 대조하거나 판매자에게 확인하세요.';
-  if (anyExpired) body += '<br>기간만료: ' + KC_EXPIRED_NOTE;
-  if (anyAction) body += '<br>처분: ' + KC_ACTION_NOTE;
-  if (kc.status === 'FOUND') {
-    body += '<br>판정 근거의 \'인증 모델명\'에는 ' + esc(kc.certNum) + '(첫 번째로 인증 DB에 있는 번호)만 씁니다.';
-  }
-  return kcSpan(tone, body);
+  const sub = '이 상품에 KC 번호가 ' + all.length + '개 적혀 있어 번호마다 조회했습니다' +
+      (seller ? ' — 판매자 표기 「' + esc(String(seller).slice(0, 120)) + '」' : '') + '.';
+  let foot = '받는 제품이 어느 번호의 제품인지는 알 수 없습니다 — 포장의 KC 표시와 대조하거나 판매자에게 확인하세요.';
+  if (kc.status === 'FOUND') foot += ' 판정 근거의 \'인증 모델명\'에는 ' + esc(kc.certNum) + '(첫 번째로 인증 DB에 있는 번호)만 씁니다.';
+  const details = (anyExpired ? '<b>기간만료</b> — ' + KC_EXPIRED_NOTE : '') +
+      (anyAction ? (anyExpired ? '<br>' : '') + '<b>처분</b> — ' + KC_ACTION_NOTE : '');
+  return kcCardWrap(tone, KC_CARD_HEAD, 'KC 번호 ' + all.length + '개', sub, rows, foot, details);
 }
 
 /* 9/27 — 사진으로 찾기 버튼과 결과 문구. 서버가 imageCheckAvailable 을 내려줄 때만 버튼을 보인다
@@ -1361,6 +1482,9 @@ function imageCheckHtml(d) {
   }
   /* 10/7 — 사진으로 찾은 상품명(여러 사이트에서 반복된 것)을 보여 준다. 없으면 '특정 못 함'으로 적는다.
      10/7 이전에 사진 확인한 건은 상품명이 저장돼 있지 않아 '특정 못 함'으로 보인다. */
+  if (d.imageCheck === 'FOUND' && (d.imageProductName || d.imageCertNum || d.imageModelName)) {
+    return imageFoundCard(d);
+  }
   if (d.imageCheck === 'FOUND') {
     /* 10/10 — 최종 흐름 2차: 같은 사진이 실린 서로 다른 사이트 2곳 이상에서 반복된 상품명·KC 번호·모델명 */
     const facts = [
@@ -1376,6 +1500,45 @@ function imageCheckHtml(d) {
   }
   const note = IMAGE_CHECK_NOTE[d.imageCheck];
   return note ? '<span class="image-check-note">' + note + '</span>' : '';
+}
+
+/* 11/4 — 사진으로 찾은 상품을 결과 상자 안에 카드로 크게 보인다(예전에는 한 줄 작은 글씨라 눈에 안 띄었다).
+   '이 상품으로 예상됩니다' + KC 번호 · 모델명 · 리콜 공표문 대조 결과. 서버 응답의 기존 필드만 쓴다
+   (imageProductName · imageCertNum · imageModelName · resultState). 판정은 바꾸지 않는다 —
+   사진 값은 판매자가 적은 값이 아니라서 최대 '의심'(ResultView 10/7 원칙) */
+function imageFoundCard(d) {
+  const state = d.resultState || d.finalResult;
+  const name = d.imageProductName || d.imageModelName || d.imageCertNum;
+  const row = function (label, value) {
+    return '<div class="image-found-row"><span class="image-found-label">' + label + '</span>' +
+        '<span class="image-found-value">' + value + '</span></div>';
+  };
+  const notFound = '<span class="image-found-none">같은 사진이 실린 페이지들에서도 찾지 못함</span>';
+
+  let recall;
+  let foot;
+  if (state === 'PARTIAL') {
+    recall = '<b>의심</b> — 사진으로 찾은 값이 리콜 공표문과 닮았습니다. 아래 \'공식 리콜 정보\'와 판정 근거를 확인하세요.';
+    foot = '판매자가 적은 값이 아니라서 \'일치\'가 아니라 \'의심\'까지만 판정합니다.';
+  } else if (state === 'MATCH') {
+    recall = '<b>일치</b> — 위 판정과 같습니다.';
+    foot = '';
+  } else {
+    recall = '<b>일치하는 리콜 공표문 없음</b> — 사진으로 찾은 값으로 다시 대조했지만 판정 기준에 못 미쳤습니다(점수는 아래 판정 근거).';
+    foot = state === 'MISSING'
+        ? '판매 페이지에 KC 인증번호가 없다는 점은 그대로입니다 — 판매자에게 KC 인증번호를 확인하세요.'
+        : '리콜 공표문과 맞지 않는다고 안전하다는 뜻은 아닙니다.';
+  }
+
+  return '<div class="image-found-card">' +
+      '<div class="image-found-head">📷 사진으로 찾은 상품</div>' +
+      '<div class="image-found-name">“' + esc(name) + '”</div>' +
+      '<div class="image-found-sub">이 상품으로 예상됩니다 — 같은 사진이 여러 사이트에 실려 있고, 그 사이트들에서 반복된 값입니다(판매자가 적은 값 아님).</div>' +
+      row('KC 인증번호', d.imageCertNum ? '<b>' + esc(d.imageCertNum) + '</b> — 공표문 번호와 대조함' : notFound) +
+      row('모델명', d.imageModelName ? '<b>' + esc(d.imageModelName) + '</b>' : notFound) +
+      row('리콜 공표문 대조', recall) +
+      (foot ? '<div class="image-found-foot">' + foot + '</div>' : '') +
+      '</div>';
 }
 
 /* 사진으로 찾기 — POST /api/verifications/{id}/image-check. 사용자가 누를 때만 Google Vision 을 쓴다.
@@ -1694,7 +1857,7 @@ function renderHistoryList(targetId, items) {
 
 /* 이력 항목 클릭 → 그 건의 결과 + 근거를 결과 화면에 다시 띄운다. */
 /** @param channelHint 이력 목록 항목의 channel — 서버 응답에 channel 이 없을 때(이전 서버)만 쓴다 */
-async function openHistoryItem(id, channelHint) {
+async function openHistoryItem(id, channelHint, opts) {
 
   if (!id) return;
 
@@ -1713,6 +1876,7 @@ async function openHistoryItem(id, channelHint) {
   renderInput(emptyInput());
   render(result);
   if (!result.channel && channelHint === 'EXTENSION') resultChannel = 'EXTENSION';
+  if (opts && opts.fillForm) fillFormFromInput(result.input);
 
   /* 결과 패널(#resultScreen)은 독립 화면이 아니라 verifyScreen 안에 박힌 .embedded-result 다.
      9/24 1차 버전은 showScreen('resultScreen') 을 불러서 verifyScreen 까지 꺼 버렸고,
@@ -1930,7 +2094,10 @@ function onScanStatus(s) {
         ? ' · 상세페이지 한 건당 평균 ' + (s.avgReadMs / 1000).toFixed(1) + '초' : '';
     /* 10/30 — 유아·어린이 제품만 읽는다. 건너뛴 건수를 같이 알린다(확장 0.6.1) */
     const skipped = s.skipped ? ' 유아·어린이 제품이 아닌 ' + s.skipped + '건은 건너뛰었습니다.' : '';
-    const notKc = s.notKc ? ' 상세페이지상 KC 대상이 아닌 ' + s.notKc + '건(식품·위생용품 등)은 뺐습니다.' : '';
+    /* 11/4 (확장 0.7.3) — KC 대상 아님도 보내서 제품명으로만 대조한다(notKcChecked). 0.7.2 이하는 뺀 수(notKc)를 보낸다 */
+    const notKc = s.notKcChecked
+        ? ' 상세페이지상 KC(어린이제품) 대상이 아닌 ' + s.notKcChecked + '건(식품·위생용품 등)도 제품명으로 리콜 공표문과 대조했습니다 — 일치·의심일 때만 목록에 보입니다.'
+        : (s.notKc ? ' 상세페이지상 KC 대상이 아닌 ' + s.notKc + '건(식품·위생용품 등)은 뺐습니다.' : '');
     /* 0.7.1(11/3) — '최근 N건' = 최근 주문 상품 N건(그중 유아·어린이만 읽음). 확장이 센 상품 수(counted)를 같이 보낸다 */
     const scope = (s.mode === 'recent' && typeof s.counted === 'number') ? '최근 상품 ' + s.counted + '건 중 ' : '';
     finishScanUi(s.found
@@ -2059,15 +2226,24 @@ function summarizeCoupang(items) {
   const seen = new Set();
   const unique = [];
   /* 10/30 — 유아·어린이 제품만 본다(팀장 요청). 확장이 'KC 대상 아님'(식품·위생용품·화장품 고시, 비대상 분류)으로
-     읽어 보낸 예전 기록은 이 화면 집계·목록에서 뺀다. 쿠팡 검증이력 화면에는 그대로 남는다. */
+     읽어 보낸 기록은 이 화면 집계·목록에서 뺀다. 쿠팡 검증이력 화면에는 그대로 남는다.
+     11/4 — 단, 리콜 공표문과 일치·의심이면 빼지 않는다(팀장: "아니어도 리콜 대상품이면 말을 해줘야").
+     확장 0.7.3 부터 구매이력 스캔도 KC 대상 아님을 보내 제품명으로만 대조한다. 처리 중·처리 실패도 그대로 보인다(대조가 안 끝났다).
+     같은 상품은 최신 기록 1건으로 먼저 줄이고 나서 가린다 — 예전 기록(예: 0.7.2 의 'KC 번호 미표기')이 대신 올라오지 않게 */
   const all = items || [];
-  const notKcCount = all.filter(v => v && v.kcStatus === 'NONE').length;
-  all.filter(v => !(v && v.kcStatus === 'NONE')).forEach(function (v) {
+  const hiddenKeys = new Set();
+  all.forEach(function (v) {
     const key = productKey(v);
     if (seen.has(key)) return;
     seen.add(key);
+    if (v && v.kcStatus === 'NONE' && (!v.status || v.status === STATUS_OK) &&
+        stateOf(v) !== 'MATCH' && stateOf(v) !== 'PARTIAL') {
+      hiddenKeys.add(key);
+      return;
+    }
     unique.push(v);
   });
+  const notKcCount = hiddenKeys.size;
 
   const done = unique.filter(v => !v.status || v.status === STATUS_OK);
   const rank = { MATCH: 0, PARTIAL: 1 };
@@ -2134,6 +2310,22 @@ function updateCoupangResultCard(f) {
   const pill = document.getElementById('coupangResultStatus');
   const meta = document.getElementById('coupangResultMeta');
 
+  /* 11/4 — 모두 KC 대상 아님이고 일치·의심이 없으면 목록이 비지만, 대조는 했다. '넘어온 검증이 없습니다'와 구분한다 */
+  if (f && !f.total && f.notKcHidden) {
+    text('coupangResultProduct',
+        '구매한 제품 ' + f.notKcHidden + '개는 모두 KC(어린이제품) 인증 대상이 아닌 제품입니다');
+    if (meta) {
+      meta.textContent = '판매 페이지 고시상 다른 법(식품위생법·화장품법·약사법 등)이 관리하거나 어린이제품이 아닌 제품입니다. ' +
+          '제품명 등으로 리콜 공표문과 대조했지만 일치·의심은 없었습니다. 찾지 못했다고 안전하다는 뜻은 아닙니다.';
+    }
+    if (pill) {
+      pill.style.display = '';
+      pill.className = 'status-pill status-UNKNOWN';
+      pill.textContent = 'KC 대상 0개';
+    }
+    return;
+  }
+
   if (!f || !f.total) {
     text('coupangResultProduct', '아직 쿠팡에서 넘어온 검증이 없습니다');
     /* 9/30 — 주문목록을 못 읽었을 때의 대안(직접 입력)을 같이 안내한다 */
@@ -2156,12 +2348,15 @@ function updateCoupangResultCard(f) {
   if (f.kcWarn) extra.push('KC 인증 취소·처분 또는 DB에 없는 번호 ' + f.kcWarn + '개(리콜과 별개 — 제품을 눌러 확인)');
   if (f.pending) extra.push('확인 중 ' + f.pending + '개');
   if (f.failed) extra.push('처리 실패 ' + f.failed + '개');
+  /* 11/4 — 목록에서 가린 KC 대상 아님(대조는 했고 일치·의심 없음). 구매한 제품 수에는 넣는다 */
+  if (f.notKcHidden) extra.push('KC 대상 아님 ' + f.notKcHidden + '개(제품명으로 대조 · 일치·의심 없음 — 목록에서 숨김)');
+  const checked = f.done + (f.notKcHidden || 0);
 
   if (pill) pill.style.display = '';
 
   if (f.suspects.length) {
     text('coupangResultProduct',
-        '구매한 제품 ' + f.done + '개 중 리콜 의심 제품 ' + f.suspects.length + '개를 찾았습니다');
+        '구매한 제품 ' + checked + '개 중 리콜 의심 제품 ' + f.suspects.length + '개를 찾았습니다');
     if (meta) {
       meta.textContent = ['리콜 일치 ' + f.match + '개', '의심 ' + f.partial + '개']
           .concat(extra).join(' · ') + ' — 제품을 눌러 판정 근거를 확인하세요.';
@@ -2183,7 +2378,7 @@ function updateCoupangResultCard(f) {
     if (meta) meta.textContent = extra.join(' · ');
   } else if (f.missing) {
     text('coupangResultProduct',
-            '구매한 제품 ' + f.done + '개 중 KC 번호 미표기 ' + f.missing + '개' +
+            '구매한 제품 ' + checked + '개 중 KC 번호 미표기 ' + f.missing + '개' +
             (f.missingCheckable ? ' — 사진으로 찾아보세요' : ' — KC 인증번호를 확인하지 못했습니다'));
     if (meta) {
       meta.textContent = f.missingCheckable
@@ -2200,7 +2395,7 @@ function updateCoupangResultCard(f) {
   } else if (f.kcKnown && !f.kcTarget) {
     /* 9/30 — KC 인증 대상으로 표기된 제품이 하나도 없을 때. '찾지 못함'만 보이면 고장인지 정상인지 구분이 안 된다. */
     text('coupangResultProduct',
-        '구매한 제품 ' + f.done + '개 중 KC 인증 대상으로 표기된 제품이 없습니다');
+        '구매한 제품 ' + checked + '개 중 KC 인증 대상으로 표기된 제품이 없습니다');
     if (meta) {
       meta.textContent = extra.concat([
         /* 9/30 — 근거: 제4차 어린이제품 안전관리 기본계획(2025.1, 국가기술표준원) — 어린이제품안전법은
@@ -2217,10 +2412,11 @@ function updateCoupangResultCard(f) {
     return;
   } else {
     text('coupangResultProduct',
-        '구매한 제품 ' + f.done + '개에서 리콜 의심 제품을 찾지 못했습니다');
+        '구매한 제품 ' + checked + '개에서 리콜 의심 제품을 찾지 못했습니다');
     if (meta) {
+      /* 11/4 — 대상 아님은 목록에서 가린 수(notKcHidden)까지 센다. 가리기 전에는 f.kcNone 이 늘 0 이었다 */
       const kcNote = f.kcKnown
-          ? ['KC 인증 대상 ' + f.kcTarget + '개 · 대상 아님 ' + f.kcNone + '개를 대조했습니다.']
+          ? ['KC 인증 대상 ' + f.kcTarget + '개 · 대상 아님 ' + (f.kcNone + (f.notKcHidden || 0)) + '개를 대조했습니다.']
           : [];
       meta.textContent = extra.concat(kcNote).concat([
         '찾지 못했다고 안전하다는 뜻은 아닙니다. 공표문과 상품명이 크게 다르면 찾지 못할 수 있습니다.'
