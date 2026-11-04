@@ -84,6 +84,17 @@ public class Extraction {
         this.rawText = rawText == null || rawText.isBlank() ? null : rawText;
     }
 
+    /**
+     * 11/4 — 같은 입력을 다시 확인하면서 사진 주소를 새로 넣었을 때(VerificationService#reuseVerification).
+     * 사진 주소는 '같은 입력' 비교에서 빠지므로(InputFingerprint), 기존 검증에 사진이 없으면 채워 둔다.
+     * 이미 사진이 있으면 바꾸지 않는다(사진 확인 결과와 사진이 어긋나지 않게).
+     */
+    public void fillThumbnailUrl(String url) {
+        if ((thumbnailUrl == null || thumbnailUrl.isBlank()) && url != null && !url.isBlank()) {
+            this.thumbnailUrl = url.trim();
+        }
+    }
+
     public void appendRawText(String block) {
         if (block == null || block.isBlank()) {
             return;

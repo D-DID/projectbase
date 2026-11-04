@@ -323,7 +323,7 @@ public class VerificationService {
         // KC 조회(외부 API)도 다시 하지 않는다. 그 사이 리콜 DB 가 갱신됐으면 그 검증을 다시 판정한다.
         Long sameId = self.findSameInput(userId, channel, req);
         if (sameId != null) {
-            return self.reuseVerification(sameId);
+            return self.reuseVerification(sameId, req.thumbnailUrl());
         }
         // 10/10 — 해외직구·구매대행 상품은 판단하지 않는다(팀장 결정). KC 조회도 하지 않는다.
         // 단 어린이제품은 판단한다 — 구매대행도 KC 표시가 없으면 금지(어린이제품법 제30조). excludedOverseas 참조.
@@ -518,11 +518,19 @@ public class VerificationService {
      * - 마지막 확인 뒤에 리콜 DB 가 적재·갱신됐으면(recall.synced_at) 저장된 입력으로 다시 판정한다
      *   — 구매 뒤에 새로 공표된 리콜도 다시 스캔하면 잡힌다. 사진 확인(FOUND)을 했던 건은 그 결과까지 넣어 다시 채점한다.
      * - 아니면 판정은 그대로 두고 '마지막 확인 시각'(updated_at)만 갱신한다 — 이력 목록 맨 위로 올라온다.
+     * - 11/4 — 다시 확인하면서 사진 주소를 새로 넣었으면 기존 검증에 채운다(사진이 없을 때만).
+     *   사진 주소는 '같은 입력' 비교에서 빠져서(InputFingerprint), 사진 없이 확인한 뒤 사진 주소를 넣어 다시 확인해도
+     *   예전 검증(사진 없음)을 그대로 돌려줬다 — 화면 안내('사진 주소를 넣으면 다시 확인할 수 있습니다')와 어긋나
+     *   '사진으로 찾기' 버튼이 끝내 안 열렸다(11/4 실측).
      * verifyByManualInput 이 프록시로 부른다.
      */
     @Transactional
-    public VerificationResultResponse reuseVerification(Long verificationId) {
+    public VerificationResultResponse reuseVerification(Long verificationId, String thumbnailUrl) {
         Verification verification = findOwned(verificationId);
+        Extraction primary = extractionService.primaryRow(verificationId);
+        if (primary != null) {
+            primary.fillThumbnailUrl(thumbnailUrl);
+        }
         LocalDateTime latestSync = recallRepository.findLatestSyncedAt();
         LocalDateTime checked = verification.getUpdatedAt() != null
                 ? verification.getUpdatedAt() : verification.getCreatedAt();

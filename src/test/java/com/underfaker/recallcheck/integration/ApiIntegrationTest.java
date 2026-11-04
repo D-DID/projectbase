@@ -175,6 +175,21 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void 같은_입력에_사진_주소를_더하면_사진으로_찾기_버튼이_열린다() throws Exception {
+        // 11/4 실측 — 사진 주소는 '같은 입력' 비교에서 빠져서, 사진 없이 확인한 뒤 사진 주소를 넣어 다시 확인해도
+        // 예전 검증(사진 없음)을 그대로 돌려줬다. 화면 안내('사진 주소를 넣으면 다시 확인할 수 있습니다')와 어긋났다.
+        String token = login();
+        String first = manual(token, "{\"productName\":\"유아 실리콘 턱받이\"}");
+        assertEquals("MISSING", JsonPath.read(first, "$.data.resultState"));
+        assertEquals(Boolean.FALSE, JsonPath.read(first, "$.data.imageCheckAvailable"));
+        String second = manual(token,
+                "{\"productName\":\"유아 실리콘 턱받이\",\"thumbnailUrl\":\"https://example.com/bib.jpg\"}");
+        assertEquals((Integer) JsonPath.read(first, "$.data.verificationId"),
+                (Integer) JsonPath.read(second, "$.data.verificationId"));
+        assertEquals(Boolean.TRUE, JsonPath.read(second, "$.data.imageCheckAvailable"));
+    }
+
+    @Test
     void 쿠팡_주소는_서버에서_읽지_않고_V003() throws Exception {
         String token = login();
         mvc.perform(post("/api/verifications/url").header("Authorization", "Bearer " + token)
