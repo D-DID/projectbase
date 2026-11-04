@@ -1064,22 +1064,28 @@ function render(d) {
     renderInput(lastInput);
   }
 
-  text('recallProduct', d.recallProductName);
-  text('recallCert', d.recallCertNum);
+  /* 11/4 — 일치·의심이 아니면(불일치·KC 번호 미표기 등) '공식 리콜 정보'·'리콜 정보' 칸을 비운다.
+     서버는 불일치여도 가장 가까운 후보 공표문을 내려주는데, 그걸 여기 그대로 띄우면 무관한 공표문의 결함·위해 정보가
+     내 제품의 리콜 정보처럼 보였다(11/4 실측: 핑크퐁 우산 'KC 번호 미표기' 화면에 '어린이용 장신구' 프탈레이트 리콜이 표시됨).
+     가장 가까운 후보는 판정 근거의 '가장 가까운 후보와의 대조 보기(참고)'에서만 보인다(10/7). 공표문 원문 링크와 같은 기준이다. */
+  const R = (fr === 'MATCH' || fr === 'PARTIAL') ? d : {};
+
+  text('recallProduct', R.recallProductName);
+  text('recallCert', R.recallCertNum);
   renderRecallSource(d, fr);
-  text('recallBrand', d.recallBrandName);
-  text('recallModel', d.recallModelName);
+  text('recallBrand', R.recallBrandName);
+  text('recallModel', R.recallModelName);
   /* 9/27 — maker_name 은 실데이터에서 거의 비어 있다. 백엔드 Recall.resolveMakerName() 과 같은 규칙으로
      recall_cmpny_name 을 대신 보여 준다(판정도 그 값으로 한다). */
-  text('recallMaker', d.makerName || d.recallCmpnyName);  /* 구 recallBarcode 자리 */
+  text('recallMaker', R.makerName || R.recallCmpnyName);  /* 구 recallBarcode 자리 */
 
-  text('recallType', d.recallTypeName);      /* 구 d.recallType */
-  text('recallMethod', d.recallMeans);       /* 구 d.recallMethod */
-  text('recallBusiness', d.recallCmpnyName); /* 구 d.recallBusiness */
-  text('recallDate', fmtDate(d.publishDate));/* 구 d.recallDate, yyyyMMdd */
-  text('recallDefect', d.harmDscr);          /* 구 d.recallDefect */
-  text('recallRisk', d.accidentCaseDscr);    /* 구 d.recallRisk */
-  text('recallAction', d.publishActionDscr); /* 신규 — 소비자 행동요령 */
+  text('recallType', R.recallTypeName);      /* 구 d.recallType */
+  text('recallMethod', R.recallMeans);       /* 구 d.recallMethod */
+  text('recallBusiness', R.recallCmpnyName); /* 구 d.recallBusiness */
+  text('recallDate', fmtDate(R.publishDate));/* 구 d.recallDate, yyyyMMdd */
+  text('recallDefect', R.harmDscr);          /* 구 d.recallDefect */
+  text('recallRisk', R.accidentCaseDscr);    /* 구 d.recallRisk */
+  text('recallAction', R.publishActionDscr); /* 신규 — 소비자 행동요령 */
 }
 
 function text(id, v) {
