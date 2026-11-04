@@ -3,6 +3,7 @@ package com.underfaker.recallcheck.service;
 import com.underfaker.recallcheck.client.GoogleVisionClient;
 import com.underfaker.recallcheck.common.ChildProductSignal;
 import com.underfaker.recallcheck.common.KcCertNumbers;
+import com.underfaker.recallcheck.common.ProductPageParser;
 import com.underfaker.recallcheck.common.OverseasListing;
 import com.underfaker.recallcheck.common.PageResponse;
 import com.underfaker.recallcheck.dto.internal.ExtractedProduct;
@@ -16,6 +17,7 @@ import com.underfaker.recallcheck.dto.internal.MatchOutcome;
 import com.underfaker.recallcheck.dto.internal.ResultView;
 import com.underfaker.recallcheck.dto.internal.UrlExtraction;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
+import com.underfaker.recallcheck.dto.request.PageVerifyRequest;
 import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
 import com.underfaker.recallcheck.dto.response.KcCertResponse;
 import com.underfaker.recallcheck.dto.response.MatchEvidenceResponse;
@@ -126,20 +128,89 @@ public class VerificationService {
         return UrlPreviewResponse.of(url, readUrlOrThrow(url));
     }
 
+    /**
+     * 11/1 — 쇼핑몰 상세페이지 우클릭 검증(확장 0.7.0). 확장이 보낸 페이지 내용으로 URL 검증과 같은 흐름(KC 조회 → 대조 → 판정)을 탄다.
+     * 서버는 페이지를 받으러 가지 않는다(PageVerifyRequest 주석). 검증은 input_type=URL, channel=WEB(품명 검증 이력)으로 남는다.
+     *
+     * 값 고르기: 확장이 직접 읽은 값(fields — 쿠팡 고시·공표문)을 먼저, 빈 칸은 HTML 에서 뽑은 값(ProductPageParser)으로 채운다.
+     * 둘 다 비면 V004(직접 입력 안내).
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public VerificationResultResponse verifyByPage(PageVerifyRequest request) {
+        requireUserId();
+        String url = request.url().trim();
+        ProductPageParser.Parsed parsed = ProductPageParser.parse(request.html(), url);
+        ManualInputRequest merged = mergePage(request.fields(), parsed);
+        if (isBlankInput(merged)) {
+            throw new BusinessException(ErrorCode.EXTRACTION_EMPTY,
+                    "이 페이지에서 제품명·모델명·KC 인증번호를 찾지 못했습니다. 상품 상세페이지에서 다시 누르거나 "
+                            + "UnderFaker 웹의 ① 직접 입력을 쓰세요.");
+        }
+        log.info("[PageVerify] {} — 확장 값 {} · 제품명:{} KC:{}", hostOf(url), request.fields() != null,
+                merged.productName() != null, merged.certNum());
+        ManualInputRequest req = withAllCertNumbers(merged);
+        KcLookup kc = excludedOverseas(req) != null ? null : kcLookupService.lookup(req.certNum());
+        return self.verifyUrlWithKc(url, req, kc);
+    }
+
+    /** 확장이 읽은 값(f)을 먼저, 빈 칸은 HTML 에서 뽑은 값(p)으로 */
+    static ManualInputRequest mergePage(ManualInputRequest f, ProductPageParser.Parsed p) {
+        ManualInputRequest a = f == null
+                ? new ManualInputRequest(null, null, null, null, null, null, null, null, null) : f;
+        ProductPageParser.Parsed b = p == null ? ProductPageParser.Parsed.EMPTY : p;
+        boolean useExtensionKc = hasText(a.kcStatus()) || hasText(a.kcText()) || hasText(a.certNum());
+        return new ManualInputRequest(
+                firstText(a.productName(), b.productName()),
+                firstText(a.brandName(), b.brandName()),
+                firstText(a.modelName(), b.modelName()),
+                firstText(a.makerName(), b.makerName()),
+                firstText(a.barcodeNum(), b.barcodeNum()),
+                firstText(a.certNum(), b.certNum()),
+                firstText(a.thumbnailUrl(), b.thumbnailUrl()),
+                useExtensionKc ? trimToNull(a.kcStatus()) : b.kcStatus(),
+                useExtensionKc ? trimToNull(a.kcText()) : b.kcText());
+    }
+
+    static boolean isBlankInput(ManualInputRequest r) {
+        return !hasText(r.productName()) && !hasText(r.brandName()) && !hasText(r.modelName())
+                && !hasText(r.makerName()) && !hasText(r.barcodeNum()) && !hasText(r.certNum());
+    }
+
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
+    }
+
+    private static String trimToNull(String s) {
+        return hasText(s) ? s.trim() : null;
+    }
+
+    private static String firstText(String a, String b) {
+        return hasText(a) ? a.trim() : trimToNull(b);
+    }
+
+    private static String hostOf(String url) {
+        try {
+            String h = java.net.URI.create(url).getHost();
+            return h == null ? "-" : h;
+        } catch (RuntimeException e) {
+            return "-";
+        }
+    }
+
     private UrlExtraction readUrlOrThrow(String url) {
         UrlExtraction ex = webTextExtractor.read(url);
         return switch (ex.status()) {
             case OK -> ex;
             case BLOCKED_SITE -> throw new BusinessException(ErrorCode.PAGE_FETCH_FAILED,
                     "이 쇼핑몰(" + ex.site() + ")은 서버 접속을 막아 서버에서 읽을 수 없습니다. "
-                            + "쿠팡 상품은 크롬 확장으로 불러오세요(② 쿠팡 URL 붙여넣기 · ③ 영역 드래그).");
+                            + "그 상세페이지에서 마우스 오른쪽 버튼 → 'UnderFaker로 리콜 검증'을 쓰세요(크롬 확장 0.7.0).");
             case NOT_ALLOWED -> throw new BusinessException(ErrorCode.INVALID_INPUT,
                     "열 수 없는 주소입니다(내부망 주소이거나 주소 형식이 잘못됐습니다).");
             case FETCH_FAILED -> throw new BusinessException(ErrorCode.PAGE_FETCH_FAILED,
                     "상품 페이지를 불러오지 못했습니다(쇼핑몰 차단·시간 초과·HTML 아님). "
-                            + "③ 영역 드래그나 ① 직접 입력을 쓰세요.");
+                            + "상세페이지에서 우클릭 'UnderFaker로 리콜 검증'이나 ① 직접 입력을 쓰세요.");
             case EMPTY -> throw new BusinessException(ErrorCode.EXTRACTION_EMPTY,
-                    "페이지는 열었지만 제품명·모델명·KC 인증번호를 찾지 못했습니다. ③ 영역 드래그나 ① 직접 입력을 쓰세요.");
+                    "페이지는 열었지만 제품명·모델명·KC 인증번호를 찾지 못했습니다. ① 직접 입력을 쓰세요.");
         };
     }
 

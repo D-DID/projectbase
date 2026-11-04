@@ -233,6 +233,59 @@ class ApiIntegrationTest {
         assertEquals(logs, apiSyncLogRepository.count());
     }
 
+    /** 11/1 — 쇼핑몰 상세페이지 우클릭 검증(확장 0.7.0). 확장이 보낸 HTML 에서 서버가 값을 뽑아 판정한다(페이지를 받으러 가지 않는다) */
+    @Test
+    void 우클릭_검증_HTML에서_제품명과_KC를_읽어_판정한다() throws Exception {
+        String token = login();
+        String html = "<html><head><script type=\"application/ld+json\">"
+                + "{\"@type\":\"Product\",\"name\":\"원목 체스 세트\"}</script></head><body>"
+                + "<table><tr><th>KC 인증정보</th><td>" + CHESS_CERT + "</td></tr></table></body></html>";
+        String json = "{\"url\":\"https://shop.example.com/goods/1\",\"html\":" + quote(html) + "}";
+        String body = mvc.perform(post("/api/verifications/page").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andReturn().getResponse().getContentAsString();
+        assertEquals("MATCH", JsonPath.read(body, "$.data.resultState"));
+        assertEquals("원목 체스 세트", JsonPath.read(body, "$.data.input.productName"));
+        assertEquals(CHESS_CERT, JsonPath.read(body, "$.data.input.certNum"));
+        assertEquals("WEB", JsonPath.read(body, "$.data.channel"));   // 품명 검증 이력에 남는다
+    }
+
+    /** 11/1 — 확장이 직접 읽은 값(쿠팡 고시·공표문)이 있으면 그 값을 먼저 쓴다. HTML 없이도 된다 */
+    @Test
+    void 우클릭_검증_확장이_읽은_값을_먼저_쓴다() throws Exception {
+        String token = login();
+        String json = "{\"url\":\"https://www.coupang.com/vp/products/1\",\"fields\":{\"productName\":\"원목 체스\","
+                + "\"certNum\":\"" + CHESS_CERT + "\",\"kcStatus\":\"DISCLOSED\",\"kcText\":\"" + CHESS_CERT + "\"}}";
+        String body = mvc.perform(post("/api/verifications/page").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertEquals("MATCH", JsonPath.read(body, "$.data.resultState"));
+        assertEquals("원목 체스", JsonPath.read(body, "$.data.input.productName"));
+    }
+
+    /** 11/1 — 읽을 값이 하나도 없으면 V004(직접 입력 안내). 주소가 http(s) 가 아니면 C001 */
+    @Test
+    void 우클릭_검증_값이_없으면_V004_주소가_틀리면_C001() throws Exception {
+        String token = login();
+        mvc.perform(post("/api/verifications/page").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"url\":\"https://shop.example.com/x\",\"html\":\"<html><body>안녕</body></html>\"}"))
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("V004"));
+        mvc.perform(post("/api/verifications/page").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"url\":\"chrome://settings\",\"html\":\"<html></html>\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("C001"));
+    }
+
+    private static String quote(String s) {
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
     /** 10/31 — 화면 주소(/swagger-ui.html)도 로그인 없이 열린다(→ /swagger-ui/index.html 로 넘어간다) */
     @Test
     void Swagger_화면이_로그인_없이_열린다() throws Exception {

@@ -21,7 +21,9 @@ class DecisionResolverTest {
     private final DecisionResolver resolver = new DecisionResolver(new MatchingProperties());
 
     private static FieldComparison row(String field, double score) {
-        return new FieldComparison(field, "입력", "공표문", score, 0.2);
+        // 11/3 — 품번 일치는 판매자 값이 품번꼴일 때만 인정하므로 모델명 행은 실제 품번 모양으로 둔다
+        String input = field.equals("modelName") ? "VDECX01" : "입력";
+        return new FieldComparison(field, input, "공표문", score, 0.2);
     }
 
     @Test
@@ -47,6 +49,15 @@ class DecisionResolverTest {
         assertEquals(Decision.MATCH, resolver.resolve(0.6, MatchProfile.IDENTIFIED,
                 List.of(row("modelName", 1.0), row("productName", 0.1))));
         assertNull(resolver.note(List.of(row("modelName", 1.0), row("productName", 0.1))));
+    }
+
+    @Test
+    void 일반명_모델명은_완전히_같아도_품번_일치가_아니다() {
+        // 11/3 라벨링셋 35번 — 고시 모델명 "우산" = 2015 우양산 공표문 모델명 "우산" → 수정 전 '일치'(종합 17%)
+        List<FieldComparison> rows = List.of(new FieldComparison("modelName", "우산", "우산", 1.0, 0.05),
+                row("productName", 0.07));
+        assertEquals(Decision.NO_MATCH, resolver.resolve(0.17, MatchProfile.UNIDENTIFIED, rows));
+        assertEquals(Decision.PARTIAL, resolver.resolve(0.6, MatchProfile.UNIDENTIFIED, rows), "점수가 높으면 의심까지는 갈 수 있다");
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.underfaker.recallcheck.controller;
 import com.underfaker.recallcheck.common.ApiResponse;
 import com.underfaker.recallcheck.common.PageResponse;
 import com.underfaker.recallcheck.dto.request.ManualInputRequest;
+import com.underfaker.recallcheck.dto.request.PageVerifyRequest;
 import com.underfaker.recallcheck.dto.request.UrlVerifyRequest;
 import com.underfaker.recallcheck.dto.response.MatchEvidenceResponse;
 import com.underfaker.recallcheck.dto.response.UrlPreviewResponse;
@@ -36,6 +37,16 @@ public class VerificationController {
     @PostMapping("/url")
     public ApiResponse<VerificationResultResponse> verifyByUrl(@Valid @RequestBody UrlVerifyRequest request) {
         return ApiResponse.success(verificationService.verifyByUrl(request));
+    }
+
+    /**
+     * 11/1 — 쇼핑몰 상세페이지 우클릭 검증(크롬 확장 0.7.0 'UnderFaker로 리콜 검증').
+     * 확장이 그 페이지의 HTML(또는 직접 읽은 값)을 보내면 서버가 값을 뽑아 판정한다. 서버는 페이지를 받으러 가지 않는다.
+     * 식별 정보를 못 찾으면 V004.
+     */
+    @PostMapping("/page")
+    public ApiResponse<VerificationResultResponse> verifyByPage(@Valid @RequestBody PageVerifyRequest request) {
+        return ApiResponse.success(verificationService.verifyByPage(request));
     }
 
     /** 10/31 — URL 미리 읽기. 검증을 저장하지 않고 뽑은 값만 돌려준다(웹 ② 방식이 칸 채우기에 씀). 실패 규칙은 /url 과 같다 */

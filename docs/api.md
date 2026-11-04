@@ -21,15 +21,16 @@
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/manual` | 품명으로 제품 확인(웹 ①②③ 입력 방식 공통). 본문 `ManualInputRequest` |
+| POST | `/manual` | 품명으로 제품 확인(웹 ① 직접 입력). 본문 `ManualInputRequest` |
 | POST | `/manual/batch` | 크롬 확장이 쿠팡 구매이력을 묶어 보낼 때. 본문 `ManualInputRequest[]` |
 | GET | `/{verificationId}` | 검증 결과 다시 보기 |
 | POST | `/{verificationId}/image-check` | 2차 '사진으로 찾기'(Google Vision). 1차로 판단할 수 없을 때만 버튼이 열린다 |
 | POST | `/image` | **사진 업로드 검증(FR-004, 10/31)** — multipart `file` 한 장(JPG·PNG·GIF·WEBP, 8MB 이하). OCR 없이 Vision 웹 검색으로 같은 사진이 실린 문서에서 반복된 상품명·KC 번호·모델명을 찾아 대조. 최대 '의심', 못 찾으면 '확인불가'. Vision 키가 없으면 V006 |
 | GET | `/{verificationId}/evidence` | 판정 근거표(항목별 입력값·공표문값·점수·가중치) |
 | GET | `/me?page=0&size=20&channel=WEB\|EXTENSION` | 내 검증 이력 — **마지막으로 확인한 순서**(10/31, `checkedAt`) |
-| POST | `/url` | **URL 검증(FR-003·005, 10/31)** — 본문 `{url}`. 서버가 상품 페이지를 받아 JSON-LD·메타 태그·상품정보 고시 표에서 제품명·모델명·제조사·바코드·KC 인증번호·사진을 뽑고 판정. 쿠팡(서버 접속 차단)은 V003 — 웹은 쿠팡 주소를 크롬 확장으로 읽는다. 내부망 주소는 C001, 식별 정보를 못 찾으면 V004 |
-| POST | `/url/preview` | URL 미리 읽기(10/31) — `/url` 과 같은 추출만 하고 검증은 저장하지 않는다. 응답 `{url, site, productName, brandName, modelName, makerName, barcodeNum, certNum, thumbnailUrl, kcStatus, kcText}`. 웹 ② 방식이 칸 채우기에 쓴다 |
+| POST | `/url` | **URL 검증(FR-003·005, 10/31)** — 11/1 부터 웹 화면은 쓰지 않는다(우클릭 `/page` 로 바뀜, API 는 남김). 본문 `{url}`. 서버가 상품 페이지를 받아 JSON-LD·메타 태그·상품정보 고시 표에서 제품명·모델명·제조사·바코드·KC 인증번호·사진을 뽑고 판정. 쿠팡(서버 접속 차단)은 V003 — 웹은 쿠팡 주소를 크롬 확장으로 읽는다. 내부망 주소는 C001, 식별 정보를 못 찾으면 V004 |
+| POST | `/url/preview` | URL 미리 읽기(10/31) — `/url` 과 같은 추출만 하고 검증은 저장하지 않는다. 응답 `{url, site, productName, brandName, modelName, makerName, barcodeNum, certNum, thumbnailUrl, kcStatus, kcText}`. 11/1 부터 웹 화면은 쓰지 않는다(API 는 남김) |
+| POST | `/page` | **우클릭 검증(11/1, 확장 0.7.0)** — 본문 `{url, html?, fields?}`. 쇼핑몰 상세페이지·리콜 공표문에서 우클릭 'UnderFaker로 리콜 검증'을 누르면 확장이 그 탭의 주소·HTML(150만 자까지)과, 읽을 수 있으면 칸 값(`fields` = `ManualInputRequest` — 쿠팡은 상세페이지 고시 표, 공표문은 공표문 규칙)을 보낸다. 서버는 `fields` 를 먼저 쓰고 빈 칸만 HTML(JSON-LD·메타 태그·고시 표)에서 채워 판정. **서버가 페이지를 다시 받지 않는다**(쿠팡처럼 서버 접속을 막는 쇼핑몰도 된다). 기록은 `input_type=URL`, `channel=WEB`. 주소가 http(s) 가 아니면 C001, 식별 정보를 못 찾으면 V004(확장은 화면 글로 한 번 더 보낸다) |
 
 ### ManualInputRequest (전부 선택 입력)
 
@@ -42,7 +43,7 @@
 | barcodeNum | 64 | 바코드 |
 | certNum | 64 | KC 인증번호. 설명이 섞여도 번호만 뽑아 쓴다(10/30) |
 | thumbnailUrl | 500 | 상품 사진 주소(http/https). 2차 사진 찾기용 |
-| kcStatus | 20 | 확장·URL 읽기가 판단한 KC 칸 상태: `DISCLOSED`(번호 있음) · `REFERENCED`(참조·번호 없음) · `NONE`(KC 대상 아님) · `UNREADABLE` |
+| kcStatus | 20 | 확장이 판단한 KC 칸 상태: `DISCLOSED`(번호 있음) · `REFERENCED`(참조·번호 없음) · `NONE`(KC 대상 아님) · `UNREADABLE` |
 | kcText | 255 | KC 칸 원문. 번호가 여러 개면 서버가 전부 뽑아 조회·대조한다 |
 
 ### VerificationResultResponse 주요 필드

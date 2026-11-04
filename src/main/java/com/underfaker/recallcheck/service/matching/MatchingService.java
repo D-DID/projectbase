@@ -93,6 +93,10 @@ public class MatchingService {
      */
     static final int MIN_USEFUL_MODEL_PIECE = 4;
 
+    /** 11/3 — 품번이 든 모델명 칸에서 이 길이(정규화) 미만의 조각은 완전히 같을 때만 제 점수 (isShortSidePiece 주석) */
+    static final int SHORT_NAME_PIECE = 6;
+    static final double SHORT_NAME_PIECE_MAX_SCORE = 0.50;
+
     /** 1차 채점 결과를 들고 다니는 내부 묶음. 2차에서 일부만 교체하려고 둔다. */
     private record Scored(Recall recall, MatchProfile profile,
                           List<FieldComparison> comparisons,
@@ -604,11 +608,15 @@ public class MatchingService {
         //     의심은 114쌍 → 40쌍으로 줄었다. 모델명 칸이 "욕실화" 처럼 짧은 경우(10019660)만 품목명 칸이 답이라
         //     그때는 남긴다.
         List<String> officials = new ArrayList<>(fieldNormalizer.splitList(officialModelName));
+        // 11/3 — "1개", "혼합색상" 처럼 옵션만 적힌 조각은 상품명 후보가 아니다(ListingTextCleaner.isOptionOnly 주석).
+        officials.removeIf(ListingTextCleaner::isOptionOnly);
         if (officialProductName != null && !officials.contains(officialProductName)
                 && officials.stream().map(fieldNormalizer::normalize)
                         .noneMatch(o -> o != null && o.length() >= MIN_USEFUL_MODEL_PIECE)) {
             officials.add(officialProductName);
         }
+
+        boolean fieldHasCode = MatchProfile.hasModelCode(officialModelName);
 
         for (String inputCandidate : inputCandidates) {
             String normalizedInput = fieldNormalizer.normalize(inputCandidate);
@@ -621,6 +629,9 @@ public class MatchingService {
                     continue;
                 }
                 double score = similarityCalculator.similarity(normalizedInput, normalizedOfficial);
+                if (fieldHasCode && isShortSidePiece(normalizedInput, official, normalizedOfficial)) {
+                    score = Math.min(score, SHORT_NAME_PIECE_MAX_SCORE);
+                }
                 if (score > best) {
                     best = score;
                     bestInput = inputCandidate;
@@ -633,6 +644,33 @@ public class MatchingService {
         }
         out.add(new FieldComparison("productName", bestInput, bestOfficial, best,
                 similarityCalculator.weightOf("productName", profile)));
+    }
+
+    /**
+     * 11/3 — 품번이 든 모델명 칸에서, 품번 옆에 붙은 짧은 조각(품목 이름·색상)은 완전히 같을 때만 제 점수를 준다.
+     *
+     * 라벨링셋 130건(쿠팡 정상 판매글) 재검증에서 다른 근거 없이 상품명 한 줄만으로 의심이 나온 건(서버 검증 1151):
+     *   "바이시유 … 아동운동화 …" ↔ 10022340 모델명 칸 "FK253CD01X001 / 아동운동화" 의 조각 "아동운동화" 61%
+     * 정규화 4~5자 조각이 긴 상품명 안에 들어 있으면 포함 점수(0.55 + 0.40×길이비)가 0.55 를 넘어서 의심 임계
+     * (0.55·0.60)에 닿는다. 품번이 함께 적힌 칸에서는 품번이 제품을 가리키고, 옆 조각은 대개 품목 이름이나 색상이다.
+     * 공표문 4,142건(11/3 서버 DB)에서 이런 조각은 19개였다 — 품목 이름(아동운동화·6칸서랍장·4칸서랍장),
+     * 색상(WHITE·GREEN·DGRAY·BORDO·NOCHE), 품번을 나눈 토막(PSTS·PSIS·LEDD·679모자·630양말·탠1943),
+     * 제품 이름(샌디화이트·Eagle·DART). 제품 이름 3개는 이 규칙으로 상품명 한 줄만으로는 의심이 안 되지만,
+     * 같은 칸의 품번이나 브랜드·제조사가 함께 맞으면 그대로 잡힌다.
+     *
+     * 규칙: (모델명 칸에 품번꼴 조각이 있을 때) 공표문 쪽 조각이 정규화 {@value #SHORT_NAME_PIECE}자 미만이고
+     * 품번꼴이 아니면, 두 값이 완전히 같을 때(1.0)를 빼고 점수를 {@value #SHORT_NAME_PIECE_MAX_SCORE} 로 묶는다.
+     * 0.50 은 두 프로파일의 의심 임계(0.55·0.60)보다 낮아서 이 행 하나로는 의심이 안 되고, 제조사·브랜드가
+     * 함께 맞으면 의심까지 간다. 0 으로 지우지 않는 이유는 근거표에 "어느 조각이 걸렸는지"를 남기기 위해서다.
+     *
+     * 품번 없는 칸 전체가 짧은 이름인 경우("(제품명) 허니 슬라임", "목욕놀이")는 묶지 않는다. 그 칸이 공표문이
+     * 주는 유일한 제품명이고, "허니슬라임"(실제 리콜 제품명, EdgeCaseScenariosTest E07)과 "목욕놀이"(품목 이름)를
+     * 글자 수로는 가를 수 없다. 묶으면 E07 같은 진짜 리콜 판매글을 놓친다.
+     */
+    private static boolean isShortSidePiece(String normalizedInput, String rawOfficial, String normalizedOfficial) {
+        return !normalizedInput.equals(normalizedOfficial)
+                && normalizedOfficial.length() < SHORT_NAME_PIECE
+                && !MatchProfile.looksLikeModelCode(rawOfficial);
     }
 
     /**

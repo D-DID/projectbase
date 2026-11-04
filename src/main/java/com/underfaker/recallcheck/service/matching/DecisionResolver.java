@@ -1,5 +1,7 @@
 package com.underfaker.recallcheck.service.matching;
 
+import com.underfaker.recallcheck.common.ListingTextCleaner;
+import com.underfaker.recallcheck.common.TextNormalizer;
 import com.underfaker.recallcheck.config.MatchingProperties;
 import com.underfaker.recallcheck.dto.internal.FieldComparison;
 import com.underfaker.recallcheck.entity.enums.Decision;
@@ -44,10 +46,13 @@ public class DecisionResolver {
      * ── 10/31 팀장 결정: 2단계 판정 (KC 인증번호 + 제품명) ──
      *   일치 = KC 인증번호(또는 인증 DB 모델명 = 공표문 모델명) 완전일치 <b>그리고</b> 제품명 유사도 rule.nameMatch(50%) 이상
      *        · 판매자가 적은 품번(모델명) 완전일치 — 품번은 그 자체가 제품 단위 식별자라 이름을 따로 요구하지 않는다
+     *          (11/3 — 판매자 값이 품번꼴(MatchProfile.hasModelCode)일 때만. "우산" 같은 일반명 모델명은 품번이 아니다)
      *          (인증 모델명은 판매자 품번이 아니라 KC 번호로 인증 DB 를 찾아 나온 값이라 KC 번호와 같은 급으로 본다)
      *   의심 = KC 인증번호는 같은데 제품명이 50% 미만이거나 비어 있음
      *        · 품번은 같은데 KC 인증번호가 다름
      *        · 제품명이 거의 같은데(rule.nameSuspectOtherCert, 90% 이상) KC 인증번호가 다름 — 인증 갱신·판매자 오기 가능
+     *        · 판매자 모델명이 품번이 아닌 제품 이름(정규화 6자 이상)인데 공표문 모델명과 통째로 같음(11/3 2차).
+     *          이 값은 제품명 100%로도 쳐서, KC 번호까지 같으면 위 규칙대로 일치다
      *        · 그 밖에 종합 점수가 partial 임계값 이상(예전과 같음)
      *   불일치 = 그 외
      *
@@ -75,6 +80,9 @@ public class DecisionResolver {
         if (e.certDiffers() && e.nameScore() >= rule.getNameSuspectOtherCert()) {
             return Decision.PARTIAL;
         }
+        if (e.modelNameAsName()) {
+            return Decision.PARTIAL;
+        }
         return score >= properties.thresholdFor(profile).getPartial() ? Decision.PARTIAL : Decision.NO_MATCH;
     }
 
@@ -97,6 +105,9 @@ public class DecisionResolver {
             return String.format("제품명은 거의 같지만(%.0f%%) KC 인증번호가 다름 — 인증 갱신·판매자 오기일 수 있어 의심",
                     e.nameScore() * 100);
         }
+        if (!e.exactCert() && e.modelNameAsName()) {
+            return "판매자 모델명이 공표문 모델명과 같지만 품번이 아닌 제품 이름이라 확정하지 않음 — 원문에서 제품을 확인하세요";
+        }
         return null;
     }
 
@@ -111,18 +122,22 @@ public class DecisionResolver {
 
     /**
      * 판정에 쓰는 요약(사진 찾기 값·가중치 0 행은 뺀다).
-     * @param exactModel  판매자 품번(모델명) 완전일치
+     * @param exactModel  판매자 품번(모델명) 완전일치 — 판매자 값이 품번꼴일 때만(11/3)
      * @param exactCert   KC 인증번호 완전일치 또는 인증 DB 모델명 = 공표문 모델명
      * @param nameScore   제품명 유사도(여러 행이면 최댓값). 제품명 비교가 없으면 -1
      * @param certDiffers KC 인증번호를 비교했는데 다르다
+     * @param modelNameAsName 판매자 모델명이 품번꼴이 아닌 제품 이름인데 공표문 모델명(조각)과 통째로 같다(11/3 2차).
+     *                        이때 nameScore 도 1.0 으로 올린다
      */
-    record Evidence(boolean exactModel, boolean exactCert, double nameScore, boolean certDiffers) {
+    record Evidence(boolean exactModel, boolean exactCert, double nameScore, boolean certDiffers,
+                    boolean modelNameAsName) {
 
         static Evidence of(List<FieldComparison> comparisons) {
             boolean model = false;
             boolean cert = false;
             double name = -1;
             boolean certDiffers = false;
+            boolean modelAsName = false;
             if (comparisons != null) {
                 for (FieldComparison c : comparisons) {
                     // 10/10 — 사진 찾기(2차)로 얻은 값(imageLabel·imageCertNum·imageModelName)은 확정 근거가 아니다.
@@ -131,7 +146,24 @@ public class DecisionResolver {
                     }
                     boolean exact = c.score() >= EXACT;
                     switch (c.field()) {
-                        case "modelName" -> model |= exact;
+                        // 11/3 — 판매자 모델명이 품번꼴일 때만 품번 일치로 본다(라벨링셋 50건 실측 35번).
+                        // 고시 '품명 및 모델명'에 "우산" 처럼 일반명만 적힌 판매글이, 모델명 칸이 똑같이 "우산"인
+                        // 2015년 다른 회사 우양산 공표문과 '일치'(종합 17%)로 나왔다. 일반명은 식별자가 아니다.
+                        // 기준은 프로파일·식별자 비교와 같은 MatchProfile.hasModelCode()(한글 없음·숫자 있음·20자 이하).
+                        case "modelName" -> {
+                            boolean code = MatchProfile.hasModelCode(c.inputValue());
+                            model |= exact && code;
+                            // 11/3 2차 — 품번꼴이 아닌 모델명이 통째로 같으면 '제품명 100%'와 같이 본다(라벨링셋 130건 65번).
+                            // 고시 모델명 "레이니 아동우비" = 공표문 10016200(㈜오픈한, 2021) 모델명 "레이니 아동우비"인데,
+                            // 위 규칙으로 품번 일치에서 빠지자 모델명 가중치(0.05)만 남아 종합 40% '불일치'가 됐다.
+                            // 판매글 제목은 "오즈키즈 아동용 레이니 우비"라 제목 대조(33%)로는 못 잡는다.
+                            // 10/31 정책(식별자 없이 이름만 같으면 의심)대로 의심까지, KC 번호도 같으면 일치(2단계 규칙).
+                            // "우산"처럼 짧은 일반명은 넣지 않는다 — 정규화 6자 이상만(MatchingService.SHORT_NAME_PIECE).
+                            if (exact && !code && longEnoughName(c.inputValue())) {
+                                modelAsName = true;
+                                name = Math.max(name, 1.0);
+                            }
+                        }
                         // 인증 모델명 = KC 번호로 인증 DB 에서 찾은 모델명. 번호에서 나온 값이라 KC 번호와 같이 다룬다
                         case "certModelName" -> cert |= exact;
                         case "certNum" -> {
@@ -144,7 +176,15 @@ public class DecisionResolver {
                 }
             }
             // 인증번호가 여러 개면 하나라도 같으면 같은 것으로 본다(다른 번호 행은 무시)
-            return new Evidence(model, cert, name, certDiffers && !cert);
+            return new Evidence(model, cert, name, certDiffers && !cert, modelAsName);
+        }
+
+        private static boolean longEnoughName(String raw) {
+            if (ListingTextCleaner.isOptionOnly(raw)) {
+                return false;
+            }
+            String normalized = TextNormalizer.normalize(raw);
+            return normalized != null && normalized.length() >= MatchingService.SHORT_NAME_PIECE;
         }
     }
 
