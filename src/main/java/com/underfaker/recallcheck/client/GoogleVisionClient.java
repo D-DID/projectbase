@@ -366,7 +366,7 @@ public class GoogleVisionClient {
      * http(s) 이고, 호스트가 루프백·사설·링크로컬·와일드카드·멀티캐스트 주소로 풀리지 않을 때만 true.
      * 리다이렉트 뒤의 주소와 DNS 재바인딩까지는 막지 않는다 — 시연 범위의 최소 방어선이다.
      */
-    static boolean isPublicHttpUrl(URI uri) {
+    public static boolean isPublicHttpUrl(URI uri) {  // 10/31 public — URL 검증(WebTextExtractor)도 쓴다
         String scheme = uri.getScheme();
         if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
             return false;

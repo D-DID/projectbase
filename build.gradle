@@ -40,8 +40,15 @@ dependencies {
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6' // API 정의
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6' // 구현체
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6' // JSON 파싱/생성을 위한 Jackson 바인딩
-    // 웹페이지 텍스트 파싱 (FR-005) — WebTextExtractor 구현 시 주석 해제
+    // 웹페이지 텍스트 파싱 (FR-005) — 10/31 JDK 만으로 구현(ProductPageParser). jsoup 은 쓰지 않는다
     // implementation 'org.jsoup:jsoup:1.18.1'
+
+    // 10/31 — API 문서(Swagger UI): http://localhost:8080/swagger-ui.html · JSON: /v3/api-docs
+    // springdoc 3.1.x 가 Spring Boot 4.1 대응(3.1.0 릴리스 노트 'Upgrade Spring Boot to version 4.1.0')
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+
+    // 10/31 — 통합 테스트(ApiIntegrationTest)용 메모리 DB. 실제 서버는 MySQL 그대로
+    testRuntimeOnly 'com.h2database:h2'
 }
 
 tasks.named('test') {

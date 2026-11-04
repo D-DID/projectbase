@@ -173,6 +173,106 @@ public final class ExtractionNotes {
         return field(rawText, SCOPE_BEGIN, SCOPE_END, "signal:");
     }
 
+    // ------------------------------------------------------------------ 10/31 판정 근거 스냅샷
+
+    public static final String EVIDENCE_BEGIN = "[evidence]";
+    public static final String EVIDENCE_END = "[/evidence]";
+
+    /** 판정 때 대표 후보의 항목별 대조표. recallUid 가 지금 대표 후보와 같을 때만 쓴다 */
+    public record EvidenceSnapshot(Long recallUid, java.util.List<FieldComparison> rows) {
+    }
+
+    /**
+     * 10/31 — 판정 근거(FR-014) 항목별 대조표를 판정 당시 값으로 남긴다.
+     * 노션 9/17 '2단계 이월: 항목별 행 저장(match_result_field 테이블)'을 새 테이블 없이 처리한다
+     * (ddl-auto=validate — 테이블을 늘리면 schema.sql 을 다시 안 돌린 팀원 서버가 뜨지 않는다).
+     * 예전에는 조회할 때마다 다시 계산해서, 매칭 규칙을 바꾸면 과거 검증의 근거도 새 규칙으로 보였다.
+     * <pre>
+     * [evidence]
+     * recall: 10022636
+     * row: certNum	CB067R2225-4001	CB067R2225-4001	1.0	0.25
+     * [/evidence]
+     * </pre>
+     * 값의 탭·줄바꿈은 공백으로 바꾼다. 행은 최대 30개.
+     */
+    public static String evidenceBlock(Long recallUid, java.util.List<FieldComparison> rows) {
+        if (recallUid == null || rows == null || rows.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(EVIDENCE_BEGIN).append('\n')
+                .append("recall: ").append(recallUid).append('\n');
+        int n = 0;
+        for (FieldComparison c : rows) {
+            if (c == null || n++ >= 30) {
+                break;
+            }
+            sb.append("row: ").append(cell(c.field())).append('\t').append(cell(c.inputValue())).append('\t')
+                    .append(cell(c.officialValue())).append('\t').append(c.score()).append('\t')
+                    .append(c.weight()).append('\n');
+        }
+        return sb.append(EVIDENCE_END).toString();
+    }
+
+    /** 마지막 [evidence] 블록. 없거나 깨졌으면 null */
+    public static EvidenceSnapshot evidence(String rawText) {
+        if (rawText == null) {
+            return null;
+        }
+        int b = rawText.lastIndexOf(EVIDENCE_BEGIN);
+        if (b < 0) {
+            return null;
+        }
+        int e = rawText.indexOf(EVIDENCE_END, b);
+        String body = rawText.substring(b + EVIDENCE_BEGIN.length(), e < 0 ? rawText.length() : e);
+        Long recallUid = null;
+        java.util.List<FieldComparison> rows = new java.util.ArrayList<>();
+        try {
+            for (String line : body.split("\\R")) {
+                if (line.startsWith("recall:")) {
+                    recallUid = Long.valueOf(line.substring(7).trim());
+                } else if (line.startsWith("row: ")) {
+                    String[] f = line.substring(5).split("\t", -1);
+                    if (f.length != 5) {
+                        return null;
+                    }
+                    rows.add(new FieldComparison(f[0], emptyToNull(f[1]), emptyToNull(f[2]),
+                            Double.parseDouble(f[3]), Double.parseDouble(f[4])));
+                }
+            }
+        } catch (RuntimeException ex) {
+            return null;
+        }
+        return recallUid == null || rows.isEmpty() ? null : new EvidenceSnapshot(recallUid, rows);
+    }
+
+    /** raw_text 에서 begin~end 블록을 모두 지운다(새 스냅샷으로 바꿀 때) */
+    public static String withoutBlocks(String rawText, String begin, String end) {
+        if (rawText == null) {
+            return null;
+        }
+        String s = rawText;
+        int b;
+        while ((b = s.indexOf(begin)) >= 0) {
+            int e = s.indexOf(end, b);
+            int cut = e < 0 ? s.length() : e + end.length();
+            s = (s.substring(0, b) + s.substring(cut)).replaceAll("\n{3,}", "\n\n");
+        }
+        s = s.strip();
+        return s.isEmpty() ? null : s;
+    }
+
+    private static String cell(String v) {
+        if (v == null) {
+            return "";
+        }
+        String t = v.replaceAll("[\\t\\r\\n]+", " ").trim();
+        return t.length() > 300 ? t.substring(0, 300) : t;
+    }
+
+    private static String emptyToNull(String s) {
+        return s == null || s.isEmpty() ? null : s;
+    }
+
     /** 블록 안에서 "key: 값" 줄의 값을 꺼낸다. 블록이 여러 개면 마지막 블록을 쓴다(최신). */
     private static String field(String rawText, String begin, String end, String key) {
         if (rawText == null) {

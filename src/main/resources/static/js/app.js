@@ -176,11 +176,11 @@ document.addEventListener('DOMContentLoaded', function () {
   paintHeader();
   bindEnterKeys();
   bindCategoryChips();
-  showScreen('verifyScreen');
+  applyRoute(); // 10/31 — 주소 # 의 화면(없으면 품명 확인). 새로고침해도 같은 화면
   if (token) announceTokenToExtension();
   else if (!DEMO_MODE) announceLogoutToExtension();
-  /* 10/12 — 이 화면이 없을 때 쇼핑몰에서 가져온 값(확장 0.6.0)이 있으면 받는다 */
-  pullPendingCaptures();
+  paintPageVerifyHint();
+  maybeShowGuideOnce();
 });
 
 
@@ -210,10 +210,10 @@ function extensionVersion() {
   return v && v.trim() ? v.trim() : null;
 }
 
-/* 10/12 — 확장 0.5.0 부터 <html data-underfaker-features="scan,url-read"> 를 붙인다.
-   scan     = 쿠팡 구매이력 '최근 N건 읽기'·'구매일자 읽기' 버튼
-   url-read = 품명 확인 '쿠팡 URL 붙여넣기' 자동 기입
-   capture  = 품명 확인 '쇼핑몰 화면에서 드래그'(0.6.0 — 우클릭 메뉴로 영역의 글·사진 가져오기) */
+/* 10/12 — 확장 0.5.0 부터 <html data-underfaker-features="scan,…"> 를 붙인다.
+   scan        = 쿠팡 구매이력 '최근 N건 읽기'·'구매일자 읽기' 버튼
+   verify-page = 쇼핑몰 상세페이지 우클릭 'UnderFaker로 리콜 검증'(0.7.0, 11/1)
+   (url-read·capture 는 0.5.0~0.6.2 의 URL 붙여넣기·영역 드래그 — 11/1 화면에서 뺐다) */
 function extensionSupports(feature) {
   const f = document.documentElement.getAttribute('data-underfaker-features') || '';
   return f.split(',').map(function (x) { return x.trim(); }).indexOf(feature) >= 0;
@@ -465,7 +465,64 @@ function handleUnauthorized() {
    SCREEN
 ================================================== */
 
-function showScreen(id) {
+/* 10/31 — 브라우저 뒤로 가기.
+   한 페이지 안에서 화면만 바꾸는 구조(SPA)라, 예전에는 뒤로 가기를 누르면 앞 화면이 아니라 localhost:8080 을 떠났다.
+   화면을 바꿀 때마다 주소 # 에 남기고(history.pushState), 뒤로·앞으로 가기(popstate)에서 그 화면을 다시 연다.
+     #verify  #history  #history-coupang  #coupang  #procedure  #login  #result/{검증 id}
+   새로고침해도 같은 화면이 열린다(#result 는 로그인돼 있어야 결과를 다시 불러온다). */
+const SCREEN_ROUTE = {
+  verifyScreen: 'verify', historyScreen: 'history', coupangScreen: 'coupang',
+  procedureScreen: 'procedure', loginScreen: 'login'
+};
+let routing = false; // 뒤로·앞으로 가기로 화면을 여는 중 — 기록을 새로 쌓지 않고 바꿔 쓴다
+let lastRouteHash = null; // 마지막으로 연 화면의 # — popstate·hashchange 가 같이 와도 한 번만 연다
+
+function setRoute(route, replace) {
+  if (!route) return;
+  const hash = '#' + route;
+  if (location.hash === hash) return;
+  try {
+    if (replace || routing) history.replaceState({ route: route }, '', hash);
+    else history.pushState({ route: route }, '', hash);
+    lastRouteHash = hash;
+  } catch (e) { /* file:// 등 — 기록 없이 화면만 바꾼다 */ }
+}
+
+/* 주소 # 에 맞는 화면을 연다(처음 열 때·뒤로·앞으로 가기) */
+function applyRoute() {
+  const h = (location.hash || '').replace(/^#\/?/, '');
+  const m = h.match(/^result\/(\d+)$/);
+  lastRouteHash = location.hash;
+  routing = true;
+  try {
+    if (m) {
+      showScreen('verifyScreen', 'result/' + m[1]);
+      openHistoryItem(m[1]);
+    } else if (h === 'history') goHistory();
+    else if (h === 'history-coupang') goCoupangVerificationHistory();
+    else if (h === 'coupang') goCoupangHistory();
+    else if (h === 'procedure') goProcedure();
+    else if (h === 'login' && !token) showScreen('loginScreen');
+    else showScreen('verifyScreen');
+  } finally {
+    routing = false;
+  }
+}
+
+/* 뒤로·앞으로 가기(popstate)와 주소 # 만 바뀐 경우(hashchange) — 11/1 확장 우클릭 검증이 이 탭을 #result/{id} 로 바꾼다.
+   둘이 같이 오면 한 번만 연다 */
+function applyRouteIfChanged() {
+  if (location.hash !== lastRouteHash) applyRoute();
+}
+window.addEventListener('popstate', applyRouteIfChanged);
+window.addEventListener('hashchange', applyRouteIfChanged);
+
+/**
+ * @param id    화면 id(.screen)
+ * @param route 주소 # 에 남길 값. 없으면 화면 기본값(SCREEN_ROUTE)
+ * @param opts  { replace: true } — 기록을 쌓지 않고 지금 칸을 바꾼다(로그인 직후 등)
+ */
+function showScreen(id, route, opts) {
 
   document.querySelectorAll('.screen')
       .forEach(el => el.classList.remove('active'));
@@ -499,6 +556,8 @@ function showScreen(id) {
   } else {
     stopCoupangPolling();
   }
+
+  setRoute(route || SCREEN_ROUTE[id] || 'verify', opts && opts.replace);
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -557,7 +616,7 @@ function openCoupang() {
 }
 
 function goCoupangVerificationHistory() {
-  showScreen('historyScreen');
+  showScreen('historyScreen', 'history-coupang');
   if (!token) return;
   showHistoryType('coupang');
 }
@@ -600,7 +659,7 @@ async function login() {
     paintHeader();
     show('authMsg', '더미 로그인되었습니다.', true);
 
-    setTimeout(function () { showScreen('verifyScreen'); }, 150);
+    setTimeout(function () { showScreen('verifyScreen', null, { replace: true }); }, 150);
     return;
   }
 
@@ -624,7 +683,7 @@ async function login() {
     paintHeader();
     show('authMsg', '로그인되었습니다.', true);
 
-    setTimeout(function () { showScreen('verifyScreen'); }, 300);
+    setTimeout(function () { showScreen('verifyScreen', null, { replace: true }); }, 300); // 뒤로 가기로 로그인 화면에 안 돌아가게
 
   } else {
     show('authMsg',
@@ -655,279 +714,111 @@ function logout() {
 
 
 /* ==================================================
-   10/12 — 품명으로 제품 확인: ① 직접 입력 / ② 쿠팡 URL 붙여넣기 (멘토링 피드백)
-   ② 는 확장(0.5.0)이 그 상품 상세페이지를 보이지 않는 탭으로 읽어 값을 돌려준다(서버에서 쿠팡을 열면 403).
-   채운 값은 그대로 고칠 수 있고, '리콜 여부 확인하기'는 두 방식 모두 같은 버튼이다.
+   품명으로 제품 확인 — 11/1 강사 피드백으로 입력 방식을 둘로 줄였다: ① 직접 입력 · ② 제품 사진 올리기.
+   10/12~10/31 의 'URL 붙여넣기'와 '쇼핑몰 화면에서 드래그'는 지웠다. 쇼핑몰 상세페이지에서는
+   우클릭 'UnderFaker로 리콜 검증'(확장 0.7.0)이 그 페이지를 그대로 읽어 검증하고, 이 화면을 #result/{id} 로 연다.
 ================================================== */
 
 var inputMode = 'manual';
-var urlReadExtras = null;   // { kcStatus, kcText } — 마지막으로 URL 에서 읽은 KC 칸
-var urlReadPending = null;  // { requestId, timer }
-
-const URL_READ_ERROR_TEXT = {
-  NOT_COUPANG_PRODUCT: '쿠팡 상품 페이지 주소만 읽을 수 있습니다. (예: https://www.coupang.com/vp/products/…)',
-  TIMEOUT: '상품 페이지가 제때 열리지 않았습니다. 잠시 후 다시 눌러 주세요.',
-  UNREADABLE: '상품 페이지를 읽지 못했습니다(쿠팡 차단·구조 변경 가능). 직접 입력으로 넣어 주세요.',
-  CONTEXT_LOST: '확장 프로그램이 새로고침돼 연결이 끊겼습니다. 이 페이지를 새로고침(F5)해 주세요.',
-  NO_EXTENSION: '확장 프로그램(0.5.0 이상)이 있어야 URL 로 불러올 수 있습니다. 설치가 어려우면 ① 직접 입력을 쓰세요.',
-  BUSY: '확장 프로그램이 쿠팡 구매이력을 읽는 중이라 지금은 불러올 수 없습니다. 끝난 뒤 다시 눌러 주세요.',
-  SLOW: '응답이 너무 늦습니다. 잠시 후 다시 누르거나 ① 직접 입력을 쓰세요.'
-};
-
-/* URL 로 채우는 칸 — 새로 불러올 때 앞 상품 값이 남지 않게 먼저 비운다 */
-const URL_FILL_FIELDS = ['productName', 'modelName', 'makerName', 'certNum', 'thumbnailUrl'];
 
 function setInputMode(mode) {
-  const prev = inputMode;
-  inputMode = (mode === 'url' || mode === 'capture') ? mode : 'manual';
+  inputMode = mode === 'photo' ? 'photo' : 'manual';
   const manualBtn = document.getElementById('modeManualBtn');
-  const urlBtn = document.getElementById('modeUrlBtn');
-  const captureBtn = document.getElementById('modeCaptureBtn');
   if (manualBtn) manualBtn.classList.toggle('active', inputMode === 'manual');
-  if (urlBtn) urlBtn.classList.toggle('active', inputMode === 'url');
-  if (captureBtn) captureBtn.classList.toggle('active', inputMode === 'capture');
-  const box = document.getElementById('urlReadBox');
-  if (box) box.style.display = inputMode === 'url' ? '' : 'none';
-  const cbox = document.getElementById('captureBox');
-  if (cbox) cbox.style.display = inputMode === 'capture' ? '' : 'none';
-  /* 다른 방식으로 바꾸면 그 방식에서 따로 들고 있던 KC 칸 원문은 버린다(칸에 채운 값은 그대로 둔다) */
-  if (prev !== inputMode) {
-    if (prev === 'url') urlReadExtras = null;
-    if (prev === 'capture') resetCaptureState();
-  }
-  if (inputMode === 'capture') {
-    paintCaptureIntro();
-    return;
-  }
-  if (inputMode === 'manual') {
-    urlReadExtras = null;
-    setUrlReadMsg('', 'idle');
-  } else if (!extensionSupports('url-read')) {
-    setUrlReadMsg(URL_READ_ERROR_TEXT.NO_EXTENSION, 'err');
-  } else {
-    setUrlReadMsg('쿠팡 상품 페이지 주소를 붙여 넣고 [불러오기]를 누르세요. 확장 프로그램이 상품명·모델명·제조사·KC 인증번호·사진 주소를 채웁니다.', 'idle');
-  }
+  const photoBtn = document.getElementById('modePhotoBtn');
+  if (photoBtn) photoBtn.classList.toggle('active', inputMode === 'photo');
+  const pbox = document.getElementById('photoBox');
+  if (pbox) pbox.style.display = inputMode === 'photo' ? '' : 'none';
 }
 
-function setUrlReadMsg(message, kind) {
-  const el = document.getElementById('urlReadMsg');
+/* 11/1 — 쇼핑몰 우클릭 검증 안내. 확장 0.7.0(verify-page)이 있으면 '바로 쓸 수 있음', 없으면 설치·새로고침 안내 */
+function paintPageVerifyHint() {
+  const el = document.getElementById('pageVerifyState');
   if (!el) return;
-  el.textContent = message || '';
-  el.className = 'url-read-msg ' + (kind || 'idle');
+  const ver = document.documentElement.getAttribute('data-underfaker-extension');
+  if (extensionSupports('verify-page')) {
+    el.textContent = '확장 프로그램 연결됨' + (ver ? ' (v' + ver + ')' : '') + ' — 쇼핑몰에서 바로 쓸 수 있습니다.';
+    el.className = 'page-verify-state ok';
+  } else if (ver) {
+    el.textContent = '확장 프로그램 v' + ver + ' — 0.7.0 이상이 필요합니다. chrome://extensions 에서 새 버전으로 ⟳ 한 뒤 이 페이지를 새로고침하세요.';
+    el.className = 'page-verify-state err';
+  } else {
+    el.textContent = '확장 프로그램이 없습니다. SETUP 안내대로 설치한 뒤 이 페이지를 새로고침하세요.';
+    el.className = 'page-verify-state err';
+  }
 }
 
-function readProductUrl() {
-  const url = val('productUrl');
-  if (!url) {
-    setUrlReadMsg('쿠팡 상품 페이지 주소를 붙여 넣어 주세요.', 'err');
+/* 10/31 — 제품 사진 올리기(FR-004, 11/1 부터 ②). multipart 라 call()(JSON) 대신 fetch 를 직접 쓴다 */
+async function verifyByPhoto() {
+  const input = document.getElementById('photoFile');
+  const file = input && input.files && input.files[0];
+  const msg = function (m, kind) {
+    const el = document.getElementById('photoMsg');
+    if (!el) return;
+    el.textContent = m;
+    el.className = 'url-read-msg ' + (kind || 'idle');
+  };
+  if (!file) {
+    msg('사진 파일을 골라 주세요.', 'err');
     return;
   }
-  if (!/^https?:\/\/([a-z0-9-]+\.)*coupang\.com\//i.test(url)) {
-    setUrlReadMsg(URL_READ_ERROR_TEXT.NOT_COUPANG_PRODUCT, 'err');
+  if (file.size > 8 * 1024 * 1024) {
+    msg('사진이 너무 큽니다. 8MB 이하로 올려 주세요.', 'err');
     return;
   }
-  if (!extensionSupports('url-read')) {
-    setUrlReadMsg(URL_READ_ERROR_TEXT.NO_EXTENSION, 'err');
+  if (DEMO_MODE) {
+    msg('더미 모드에서는 사진 판독을 하지 않습니다.', 'err');
     return;
   }
-  if (urlReadPending) return;
-  /* 앞에서 불러온 상품의 KC 칸이 이번 상품 확인 요청에 실리지 않게 지운다 */
-  urlReadExtras = null;
-  const requestId = 'u' + Date.now();
-  const btn = document.getElementById('urlReadBtn');
+  const btn = document.getElementById('photoVerifyBtn');
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '불러오는 중…';
+    btn.textContent = '사진 확인 중…';
   }
-  setUrlReadMsg('상품 페이지를 읽는 중입니다(보이지 않는 탭에서 5~20초)…', 'busy');
-  urlReadPending = {
-    requestId: requestId,
-    timer: setTimeout(function () { finishUrlRead({ requestId: requestId, ok: false, error: 'SLOW' }); }, 45000)
-  };
-  window.dispatchEvent(new CustomEvent('underfaker-url-read', { detail: JSON.stringify({ requestId: requestId, url: url }) }));
-}
-
-function finishUrlRead(res) {
-  if (!urlReadPending || !res || res.requestId !== urlReadPending.requestId) return;
-  clearTimeout(urlReadPending.timer);
-  urlReadPending = null;
-  const btn = document.getElementById('urlReadBtn');
-  if (btn) {
-    btn.disabled = false;
-    btn.textContent = '불러오기';
-  }
-  if (!res.ok || !res.info) {
-    setUrlReadMsg(URL_READ_ERROR_TEXT[res.error] || ('불러오지 못했습니다 (' + res.error + ').'), 'err');
-    return;
-  }
-  const info = res.info;
-  const filled = [];
-  URL_FILL_FIELDS.forEach(function (id) {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  function put(id, value, label) {
-    const el = document.getElementById(id);
-    if (!el || !value) return;
-    el.value = value;
-    filled.push(label);
-  }
-  put('productName', info.title, '제품명');
-  put('modelName', info.modelName, '모델명');
-  put('makerName', info.makerName, '제조사');
-  put('certNum', info.certNum, 'KC 인증번호');
-  if (info.image && !thumbnailUrlProblem(info.image)) put('thumbnailUrl', info.image, '사진 주소');
-  urlReadExtras = { kcStatus: info.kcStatus || null, kcText: info.kcText || null };
-
-  const kcNote = info.certNum ? ''
-      : (info.kcStatus === 'NONE' ? ' KC 칸이 없거나 KC 대상이 아니라고 표기된 상품입니다.'
-          : ' KC 인증정보 칸에 번호가 없습니다' + (info.kcText ? '("' + info.kcText + '")' : '') + '.');
-  setUrlReadMsg((filled.length ? '채운 칸: ' + filled.join('·') + '.' : '채울 값을 찾지 못했습니다.') + kcNote +
-      ' 값을 확인·수정한 뒤 [리콜 여부 확인하기]를 누르세요.', filled.length ? 'ok' : 'err');
-}
-
-window.addEventListener('underfaker-url-result', function (e) {
-  let res = null;
-  try { res = typeof e.detail === 'string' ? JSON.parse(e.detail) : null; } catch (err) { res = null; }
-  finishUrlRead(res);
-});
-
-
-/* ==================================================
-   10/12 — ③ 쇼핑몰 화면에서 드래그 (확장 0.6.0)
-   쇼핑몰 상품 페이지에서 우클릭 → UnderFaker → 영역 드래그. 확장이 그 안의 글(또는 사진 주소)을 읽고
-   칸(제품명·모델명·제조사·KC 인증번호)을 나눠 이 화면에 보낸다(underfaker-capture).
-   같은 상품 페이지에서 여러 번 가져오면(상품명 → 정보 표 → 사진) 찾은 칸만 덮어 쓴다.
-   다른 상품 페이지에서 가져오면 앞 상품 값이 남지 않게 먼저 비운다.
-   이 화면이 닫혀 있을 때 가져온 값은 확장이 맡아 뒀다가, 화면이 뜰 때 넘겨준다(underfaker-capture-pull).
-================================================== */
-
-var captureExtras = null;   // { kcStatus, kcText } — 가져온 KC 칸 원문(서버가 번호를 다시 뽑는다)
-var captureSourceKey = null; // 마지막으로 가져온 상품 페이지(주소에서 # 뒤를 뺀 것)
-var captureSeen = {};        // 이미 넣은 가져오기 id — 같은 값이 두 번 와도 한 번만
-
-const CAPTURE_FIELD_LABEL = { productName: '제품명', modelName: '모델명', makerName: '제조사', certNum: 'KC 인증번호' };
-
-function setCaptureMsg(message, kind) {
-  const el = document.getElementById('captureMsg');
-  if (!el) return;
-  el.textContent = message || '';
-  el.className = 'url-read-msg ' + (kind || 'idle');
-}
-
-/* ③ 에서 다른 방식으로 바꿀 때 — KC 칸 원문만 버린다. 마지막 상품 페이지는 기억해서,
-   나중에 다른 상품을 가져오면 그때 앞 상품 값을 비운다 */
-function resetCaptureState() {
-  captureExtras = null;
-}
-
-function paintCaptureIntro() {
-  if (!extensionSupports('capture')) {
-    setCaptureMsg('확장 프로그램 0.6.0 이상이 있어야 쇼핑몰 화면에서 가져올 수 있습니다. ' +
-        'chrome://extensions 에서 새 버전 폴더를 다시 불러온 뒤 이 페이지를 새로고침하세요.', 'err');
-    return;
-  }
-  if (!captureSourceKey) {
-    setCaptureMsg('아직 가져온 값이 없습니다. 위 순서대로 쇼핑몰 화면에서 가져오면 아래 칸이 자동으로 채워집니다.', 'idle');
-  }
-  pullPendingCaptures();
-}
-
-function pullPendingCaptures() {
+  msg('사진을 올리고 같은 사진이 실린 웹 문서를 찾는 중입니다(10~30초)…', 'busy');
   try {
-    window.dispatchEvent(new CustomEvent('underfaker-capture-pull'));
-  } catch (e) { /* noop */ }
-}
-
-function captureKey(url) {
-  return typeof url === 'string' ? url.split('#')[0] : '';
-}
-
-function flashFilled(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.classList.add('just-filled');
-  setTimeout(function () { el.classList.remove('just-filled'); }, 2500);
-}
-
-/** @returns {boolean} 받아서 칸에 넣었는가 */
-function onCapture(c) {
-  if (!c || typeof c !== 'object' || (c.kind !== 'text' && c.kind !== 'image')) return false;
-  if (c.id) {
-    if (captureSeen[c.id]) return true;
-    captureSeen[c.id] = true;
-  }
-  showScreen('verifyScreen');
-  if (inputMode !== 'capture') setInputMode('capture');
-
-  const key = captureKey(c.pageUrl);
-  if (key && captureSourceKey && key !== captureSourceKey) {
-    /* 다른 상품 페이지 — 앞 상품 값이 섞이지 않게 비운다 */
-    URL_FILL_FIELDS.forEach(function (id) {
-      const el = document.getElementById(id);
-      if (el) el.value = '';
-    });
-    captureExtras = null;
-  }
-  if (key) captureSourceKey = key;
-
-  const filled = [];
-  function put(id, value, label) {
-    const el = document.getElementById(id);
-    if (!el || !value) return;
-    el.value = String(value).slice(0, 255);
-    filled.push(label);
-    flashFilled(id);
-  }
-
-  if (c.kind === 'image') {
-    const problem = thumbnailUrlProblem(c.imageUrl);
-    if (problem) {
-      setCaptureMsg('사진을 넣지 못했습니다. ' + problem, 'err');
-      return true;
+    const form = new FormData();
+    form.append('file', file);
+    const h = {};
+    if (token && token !== DEMO_TOKEN) h['Authorization'] = 'Bearer ' + token;
+    let res = null;
+    let json = null;
+    try {
+      res = await fetch(API + '/api/verifications/image', { method: 'POST', headers: h, body: form });
+      try { json = await res.json(); } catch (e) { json = null; }
+    } catch (e) {
+      msg('서버에 연결하지 못했습니다.', 'err');
+      return;
     }
-    const el = document.getElementById('thumbnailUrl');
-    if (el) {
-      el.value = c.imageUrl;
-      flashFilled('thumbnailUrl');
+    if (res.status === 401) {
+      handleUnauthorized();
+      return;
     }
-    filled.push('사진 주소');
-  } else {
-    const f = c.fields || {};
-    Object.keys(CAPTURE_FIELD_LABEL).forEach(function (k) {
-      put(k, f[k], CAPTURE_FIELD_LABEL[k]);
-    });
-    if (f.kcText || f.certNum) {
-      captureExtras = { kcStatus: f.kcStatus || null, kcText: f.kcText || null };
+    if (!json || !json.success || !json.data) {
+      msg((json && json.message) || ('사진으로 확인하지 못했습니다 (오류 ' + res.status + ').'), 'err');
+      return;
     }
-    const pre = document.getElementById('capturePreview');
-    if (pre) pre.textContent = c.text || '';
-    const src = document.getElementById('captureSource');
-    if (src) src.textContent = '가져온 페이지: ' + (c.pageTitle || '') + (c.pageUrl ? ' (' + c.pageUrl + ')' : '');
-    const box = document.getElementById('capturePreviewBox');
-    if (box) box.style.display = '';
+    const result = json.data;
+    msg(result.imageProductName
+        ? '같은 사진이 실린 여러 사이트에서 "' + result.imageProductName + '"(으)로 찾았습니다. 아래 결과를 확인하세요.'
+        : '같은 사진이 실린 웹 문서에서 반복된 상품명·KC 번호를 찾지 못했습니다. 아래 결과를 확인하세요.', 'ok');
+    lastInput = emptyInput();
+    renderInput(lastInput);
+    render(result);
+    const panel = document.getElementById('resultScreen');
+    if (panel) panel.classList.add('show');
+    if (result.verificationId) {
+      setRoute('result/' + result.verificationId); // 10/31 — 뒤로 가기로 입력 화면에 돌아간다
+      loadEvidence(result.verificationId);
+    }
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '사진으로 확인하기';
+    }
   }
-
-  const missing = [];
-  if (!val('productName')) missing.push('제품명');
-  if (!val('certNum')) missing.push('KC 인증번호');
-  if (!val('thumbnailUrl')) missing.push('사진');
-  let msg = filled.length
-      ? '채운 칸: ' + filled.join('·') + '.'
-      : '가져온 글에서 제품명·모델명·제조사·KC 칸을 찾지 못했습니다. 아래 \'가져온 글 보기\'에서 복사해 넣어 주세요.';
-  if (missing.length) msg += ' 아직 빈 칸: ' + missing.join('·') + ' — 같은 메뉴로 더 가져오거나 직접 입력하세요.';
-  else msg += ' 값을 확인·수정한 뒤 [리콜 여부 확인하기]를 누르세요.';
-  setCaptureMsg(msg, filled.length ? 'ok' : 'err');
-  return true;
 }
-
-window.addEventListener('underfaker-capture', function (e) {
-  let c = null;
-  try { c = typeof e.detail === 'string' ? JSON.parse(e.detail) : null; } catch (err) { c = null; }
-  /* 받았다고 확장에 알린다 — 안 받으면 확장이 맡아 두고 새로고침을 안내한다 */
-  if (onCapture(c)) e.preventDefault();
-});
-
 
 /* ==================================================
    VERIFY
@@ -976,13 +867,6 @@ async function verify() {
       certNum: val('certNum'),
       thumbnailUrl: thumbnailUrl
     };
-    /* 10/12 — 쿠팡 URL 로 불러왔거나 쇼핑몰 화면에서 가져왔으면 KC 칸 원문도 같이 보낸다. KC 번호가 여러 개면 서버가 원문에서 모두 뽑아
-       조회·대조한다(KcCertNumbers.joinAll). 직접 입력 모드로 바꾸면 비운다. */
-    const extras = inputMode === 'url' ? urlReadExtras : (inputMode === 'capture' ? captureExtras : null);
-    if (extras) {
-      lastInput.kcStatus = extras.kcStatus || null;
-      lastInput.kcText = extras.kcText || null;
-    }
 
     let result = null;
 
@@ -1014,6 +898,7 @@ async function verify() {
     if (panel) panel.classList.add('show');
 
     if (result && result.verificationId) {
+      setRoute('result/' + result.verificationId); // 10/31 — 뒤로 가기로 입력 화면에 돌아간다
       loadEvidence(result.verificationId);
     }
 
@@ -1047,7 +932,7 @@ const LABEL = {
 };
 
 const SUBLABEL = {
-  MATCH: '리콜 대상 제품과 일치합니다 (인증번호·모델명 등 100% 일치).',
+  MATCH: '리콜 대상 제품과 일치합니다 (KC 인증번호·모델명이 완전히 같음).',
   PARTIAL: '리콜 제품과 닮았습니다. 확인이 필요합니다.',
   MISSING: 'KC 인증번호가 없어 KC 번호로 판단하지 못했습니다.',
   NO_MATCH: '일치하는 리콜 공표문을 찾지 못했습니다. 안전하다는 뜻은 아닙니다.',
@@ -1094,6 +979,38 @@ const STATUS_LABEL = {
 };
 
 
+/* 10/31 — 제품안전정보센터 리콜 공표문 원문 주소. recallUid 는 공공데이터 API 의 recallUid 그대로라
+   게시판 상세 주소에 같은 번호를 넣으면 그 공표문이 열린다(검색엔진에 색인된 상세 주소 형식 — 10/31 확인). */
+const SAFETYKOREA_RECALL_URL = 'https://www.safetykorea.kr/recall/ajax/recallBoard?recallUid=';
+
+function recallSourceUrl(recallUid) {
+  const n = Number(recallUid);
+  return Number.isFinite(n) && n > 0 ? SAFETYKOREA_RECALL_URL + encodeURIComponent(String(Math.trunc(n))) : null;
+}
+
+/* 일치·의심일 때만 원문 링크를 보인다. 불일치·확인불가는 대조한 공표문이 없거나 '가장 가까운 후보'일 뿐이라 숨긴다 */
+function renderRecallSource(d, state) {
+  const box = document.getElementById('recallSourceBox');
+  const link = document.getElementById('recallSourceLink');
+  if (!box || !link) return;
+  const url = (state === 'MATCH' || state === 'PARTIAL') ? recallSourceUrl(d && d.recallUid) : null;
+  if (!url) {
+    box.style.display = 'none';
+    link.removeAttribute('href');
+    return;
+  }
+  link.href = url;
+  link.textContent = '제품안전정보센터 리콜 공표문 원문 보기 (공표번호 ' + d.recallUid + ') ↗';
+  const note = document.getElementById('recallSourceNote');
+  if (note) {
+    note.textContent = state === 'MATCH'
+        ? '판정은 대조 결과입니다. 공표문 원문의 제품명·모델명·인증번호·사진을 직접 확인하세요.'
+        : '의심 단계입니다. 공표문 원문의 모델명·인증번호·사진을 내 제품과 직접 비교해 확인하세요.';
+  }
+  box.style.display = '';
+}
+
+
 /* ==================================================
    RENDER — 입력 쪽
 ================================================== */
@@ -1121,9 +1038,21 @@ let inputFromServer = false;
    VerificationResultResponse 필드명 기준.
 ================================================== */
 
+/* 10/31 — 지금 결과 화면에 띄운 검증의 경로. '내 검증 이력 보기'가 같은 쪽 탭을 먼저 연다
+   (쿠팡 구매이력 → 쿠팡 검증 이력, 품명으로 제품 확인 → 품명 검증 이력). 서버 응답 channel(10/31~),
+   없으면(이전 서버) 이력 목록에서 누른 항목의 channel 을 쓴다 */
+var resultChannel = 'WEB';
+
+function goHistoryForResult() {
+  if (resultChannel === 'EXTENSION') goCoupangVerificationHistory();
+  else goHistory();
+}
+
 function render(d) {
 
   if (!d) return;
+
+  resultChannel = d.channel === 'EXTENSION' ? 'EXTENSION' : 'WEB';
 
   const fr = stateOf(d);
 
@@ -1137,6 +1066,7 @@ function render(d) {
 
   text('recallProduct', d.recallProductName);
   text('recallCert', d.recallCertNum);
+  renderRecallSource(d, fr);
   text('recallBrand', d.recallBrandName);
   text('recallModel', d.recallModelName);
   /* 9/27 — maker_name 은 실데이터에서 거의 비어 있다. 백엔드 Recall.resolveMakerName() 과 같은 규칙으로
@@ -1220,15 +1150,17 @@ function setResultState(fr, score, d) {
   if (fr === 'MATCH') {
     notice.className = 'result-notice match';
     notice.innerHTML =
-        '<strong>⚠ 리콜 대상 제품입니다.</strong><br>' +
-        '제품 사용을 중지하고 아래 <strong>소비자 행동요령</strong>을 확인하세요.';
+        '<strong>⚠ 리콜 공표문과 일치합니다.</strong><br>' +
+        'KC 인증번호(또는 품번)와 제품명이 공표문과 맞습니다. 제품 사용을 중지하고 아래 <strong>소비자 행동요령</strong>과 ' +
+        '<strong>공표문 원문</strong>을 확인하세요.';
 
   } else if (fr === 'PARTIAL') {
     notice.className = 'result-notice partial';
     notice.innerHTML =
         '<strong>🔎 리콜 의심 제품입니다.</strong><br>' +
-        '제품명이나 브랜드가 리콜 공표문과 닮았지만 인증번호·모델명으로 100% 확인되지는 않았습니다. ' +
-        '아래 판정 근거의 항목별 유사도를 확인하세요.';
+        '제품명이나 KC 인증번호·품번 중 일부만 리콜 공표문과 맞아 같은 제품이라고 확정하지 않았습니다 ' +
+        '(예: 번호는 같은데 제품명이 다름 — 같은 번호로 여러 제품이 공표된 경우가 있음). ' +
+        '아래 <strong>공표문 원문</strong>의 모델명·인증번호·사진을 내 제품과 직접 비교하세요.';
 
   } else if (fr === 'MISSING') {
     notice.className = 'result-notice missing';
@@ -1278,33 +1210,132 @@ function setResultState(fr, score, d) {
 /* 10/3 — KC인증 연동. 입력한 KC 인증번호로 KC 인증 DB(제품안전정보센터)를 조회한 결과.
    리콜 판정(일치/의심/불일치)과는 별개 정보다 — 인증이 '적합'이어도 안전하다는 뜻이 아니다(9/30 원칙).
    서버 VerificationResultResponse.kc (KcCertResponse). 인증번호를 안 넣었으면 null 이라 아무것도 안 그린다. */
+/* 10/31 — KC 인증상태 원문을 단계로 나눈다(리콜 판정과 별개).
+   기간만료와 취소·효력상실은 다른 일이라 같은 경고로 묶지 않는다(팀 검토 10/31).
+     valid   '적합'
+     expired '기간만료' — 신고 유효기간(안전확인 5년)이 지난 것. 만료 전에 출고·통관한 재고는 계속 팔 수 있다
+             (한국제품안전관리원 KC인증 불편신고 FAQ — 「어린이제품 안전 특별법」 시행규칙 제29조①)
+     action  그 밖의 상태 — 안전인증취소·효력상실·사용금지 N개월·개선명령 등 행정처분
+     unknown 상태 값이 비어 있음 */
+function kcStateLevel(state) {
+  const s = String(state || '').trim();
+  if (!s) return 'unknown';
+  if (s === '적합') return 'valid';
+  if (/기간\s*만료/.test(s)) return 'expired';
+  return 'action';
+}
+
+/* 기간만료·처분 설명 — 번호 하나·여러 개 화면이 같이 쓴다 */
+const KC_EXPIRED_NOTE =
+    '신고 유효기간(어린이제품 안전확인은 신고일부터 5년)이 지난 번호입니다. ' +
+    '만료 전에 출고(국내 제조)·통관(수입)을 마친 재고는 만료 뒤에도 유통·판매할 수 있어(한국제품안전관리원 안내), ' +
+    '이것만으로 판매가 불법이라고 볼 수는 없습니다.' +
+    '<br>지금 파는 물량이 언제 출고·통관됐는지는 확인할 수 없습니다 — 판매자에게 출고·통관 시점이나 지금 유효한 KC 번호를 확인해 보세요. ' +
+    '리콜 여부와는 별개입니다.';
+const KC_ACTION_NOTE =
+    '적합·기간만료가 아닌 상태입니다(인증 취소·효력상실·사용금지·개선명령 등 행정처분). ' +
+    '기간만료와는 다릅니다 — 제품안전정보센터에서 처분 내용과 대상 모델을 확인하세요. 리콜 판정과는 별개입니다.';
+const KC_TONE_COLOR = { check: 'color:#b45309;', danger: 'color:#b91c1c;', muted: 'color:#6b7280;' };
+
+function kcSpan(tone, body) {
+  return '<br><span class="kc-cert kc-' + (tone || 'ok') + '" style="display:block;margin-top:8px;font-size:0.92em;' +
+          (KC_TONE_COLOR[tone] || '') + '">🔖 KC 인증 조회(제품안전정보센터 KC 인증 DB): ' + body + '</span>';
+}
+
 function kcCertHtml(d) {
   const kc = d && d.kc;
   if (!kc || !kc.status) return '';
+  /* 10/31 — KC 칸에 번호가 여러 개(예: 리뉴얼 전·후)면 번호마다 조회한 결과를 보여 준다 */
+  if (Array.isArray(kc.others) && kc.others.length) return kcMultiHtml(kc, d);
   let body;
-  let warn = false;
+  /* tone: '' 보통 · check 확인 필요(주황) · danger 처분(빨강) · muted 판정 보류(회색) */
+  let tone = '';
   if (kc.status === 'FOUND') {
-    const facts = [kc.certNum, kc.modelName, kc.certDate ? fmtDate(kc.certDate) + ' 인증' : null]
+    /* 10/31 — 인증일은 KC 인증 DB(제품안전정보센터 인증정보 Open API certificationList)의 certDate 원문(yyyyMMdd)을
+       날짜 모양으로만 바꾼 값이다(KcLookupService — 캐시는 7일). 화면에 출처를 적는다 */
+    const facts = [kc.certNum, kc.modelName, kc.certDate ? '인증일 ' + fmtDate(kc.certDate) : null]
             .filter(Boolean).map(esc).join(' · ');
     const state = esc(kc.certState || '상태 정보 없음');
-    warn = !!kc.needsAttention;
-    body = (warn ? '⚠ 인증상태 <strong>' + state + '</strong>' : '인증상태 ' + state) + ' — ' + facts;
-    if (/기간만료/.test(kc.certState || '')) {
-      /* 10/31 — 근거: 어린이제품 안전 특별법 제22조⑤ "안전확인의 유효기간은 5년으로 하되, 안전확인의 신고가 수리된 날부터 기산" */
-      body += '<br>인증 유효기간이 지난 번호입니다(어린이제품 안전확인은 신고 수리일부터 5년). ' +
-              '리콜 여부와는 별개입니다 — 판매자에게 지금 유효한 KC 인증번호를 확인해 보세요.';
+    const level = kcStateLevel(kc.certState);
+    if (level === 'expired') {
+      /* 10/31 — 근거: 어린이제품 안전 특별법 제22조 — 안전확인의 유효기간 5년(신고일부터 기산).
+         만료 전 출고·통관 재고는 만료 뒤에도 유통·판매 가능(한국제품안전관리원 FAQ, 시행규칙 제29조①).
+         지금 파는 물량의 통관 시점은 공개 정보로 알 수 없다 → '불법'으로 단정하지 않고 '확인 필요'로 둔다 */
+      tone = 'check';
+      body = 'ⓘ 확인 필요 · 인증상태 <strong>' + state + '</strong> — ' + facts + '<br>' + KC_EXPIRED_NOTE;
+    } else if (level === 'action') {
+      tone = 'danger';
+      body = '⚠ 인증상태 <strong>' + state + '</strong> — ' + facts + '<br>' + KC_ACTION_NOTE;
+    } else {
+      body = '인증상태 ' + state + ' — ' + facts;
     }
     body += '<br>인증 모델명이 리콜 공표문 모델명과 같을 때만 판정 근거로 씁니다(아래 판정 근거의 \'인증 모델명\').';
-    if (!warn) body += '<br>인증 여부는 리콜·안전 여부와 별개입니다.';
+    if (level === 'valid') body += '<br>인증 여부는 리콜·안전 여부와 별개입니다.';
   } else if (kc.status === 'NOT_FOUND') {
-    warn = true;
-    body = esc(kc.certNum || '') + ' — KC 인증 DB에서 이 번호를 찾지 못했습니다. 번호를 다시 확인해 주세요.';
+    tone = 'check';
+    body = 'ⓘ 확인 필요 · ' + esc(kc.certNum || '') +
+            ' — KC 인증 DB에서 이 번호를 찾지 못했습니다(신고정보 없음). 번호를 다시 확인해 주세요.';
   } else {
-    body = 'KC 인증 DB를 지금 조회하지 못했습니다' + (kc.certNum ? ' (' + esc(kc.certNum) + ')' : '') +
+    tone = 'muted';
+    body = '판정 보류 — KC 인증 DB를 지금 조회하지 못했습니다' + (kc.certNum ? ' (' + esc(kc.certNum) + ')' : '') +
             '. 리콜 대조는 입력한 정보로 그대로 진행했습니다.';
   }
-  return '<br><span class="kc-cert" style="display:block;margin-top:8px;font-size:0.92em;' +
-          (warn ? 'color:#b45309;' : '') + '">🔖 KC 인증 조회: ' + body + '</span>';
+  return kcSpan(tone, body);
+}
+
+/* 10/31 — KC 칸에 번호가 여러 개일 때(실측: 빠방 밀대 "리뉴얼 전: CB063R3421-20003, 리뉴얼 후 : CB063R3421-20003r").
+   서버가 번호마다 조회한다(KcLookupService — 대표는 첫 번째로 DB 에 있는 번호, 나머지는 kc.others).
+   번호마다 상태를 한 줄씩 보이고, 받는 제품이 어느 번호인지는 모른다고 적는다. 판정에는 대표 번호만 쓴다(예전과 같음).
+   'R' 처럼 끝 영문만 다른 번호가 DB 에 없고 그 영문을 뺀 번호가 DB 에 있으면, 판매자 표기 오류일 수 있다고 알린다(단정하지 않음). */
+function kcMultiHtml(kc, d) {
+  const order = String((d && d.input && d.input.certNum) || '').toUpperCase();
+  const all = [kc].concat(kc.others).map(function (e, i) {
+    const at = order.indexOf(String(e.certNum || '').toUpperCase());
+    return { e: e, at: at < 0 ? 1000 + i : at };
+  }).sort(function (a, b) { return a.at - b.at; }).map(function (x) { return x.e; });
+  const foundNums = {};
+  all.forEach(function (e) { if (e.status === 'FOUND') foundNums[String(e.certNum).toUpperCase()] = true; });
+
+  const rank = { '': 0, muted: 0, check: 1, danger: 2 };
+  let tone = '';
+  let anyExpired = false, anyAction = false;
+  const rows = all.map(function (e) {
+    let t = '', txt;
+    const num = String(e.certNum || '');
+    if (e.status === 'FOUND') {
+      const level = kcStateLevel(e.certState);
+      const facts = [e.modelName, e.certDate ? '인증일 ' + fmtDate(e.certDate) : null]
+              .filter(Boolean).map(esc).join(' · ');
+      if (level === 'expired') { t = 'check'; anyExpired = true; txt = 'ⓘ <strong>' + esc(e.certState) + '</strong>'; }
+      else if (level === 'action') { t = 'danger'; anyAction = true; txt = '⚠ <strong>' + esc(e.certState) + '</strong>'; }
+      else txt = esc(e.certState || '상태 정보 없음');
+      if (facts) txt += ' · ' + facts;
+    } else if (e.status === 'NOT_FOUND') {
+      t = 'check';
+      txt = 'ⓘ 인증 DB에 없는 번호';
+      const base = num.replace(/(-\d{4,6})[A-Z]{1,3}$/i, '$1');
+      if (base !== num && foundNums[base.toUpperCase()]) {
+        txt += ' — 끝 영문 \'' + esc(num.slice(base.length)) + '\' 없이 적은 번호(' + esc(base) +
+                ')는 인증 DB에 있습니다. 판매자가 번호를 잘못 적었을 수 있습니다';
+      }
+    } else {
+      txt = '지금 조회하지 못함(판정 보류)';
+    }
+    if (rank[t] > rank[tone]) tone = t;
+    return '· ' + esc(num) + ' — ' + txt;
+  });
+
+  const seller = d && d.input && d.input.kcText;
+  let body = '이 상품에 KC 번호가 ' + all.length + '개 적혀 있어 번호마다 조회했습니다.';
+  if (seller) body += '<br>판매자 표기: 「' + esc(String(seller).slice(0, 200)) + '」';
+  body += '<br>' + rows.join('<br>');
+  body += '<br>받는 제품이 어느 번호의 제품인지는 알 수 없습니다 — 포장의 KC 표시와 대조하거나 판매자에게 확인하세요.';
+  if (anyExpired) body += '<br>기간만료: ' + KC_EXPIRED_NOTE;
+  if (anyAction) body += '<br>처분: ' + KC_ACTION_NOTE;
+  if (kc.status === 'FOUND') {
+    body += '<br>판정 근거의 \'인증 모델명\'에는 ' + esc(kc.certNum) + '(첫 번째로 인증 DB에 있는 번호)만 씁니다.';
+  }
+  return kcSpan(tone, body);
 }
 
 /* 9/27 — 사진으로 찾기 버튼과 결과 문구. 서버가 imageCheckAvailable 을 내려줄 때만 버튼을 보인다
@@ -1369,7 +1400,7 @@ async function checkImage(id, btn) {
     const result = r.json.data;
     renderInput(emptyInput());
     render(result);
-    showScreen('verifyScreen');
+    showScreen('verifyScreen', 'result/' + id);
     const panel = document.getElementById('resultScreen');
     if (panel) {
       panel.classList.add('show');
@@ -1476,7 +1507,9 @@ function renderComparisons(comparisons, decision) {
   const table =
           '<table class="evidence-table">' +
           '<thead><tr>' +
-          '<th>항목</th><th>내 입력값</th><th>공표문 값</th><th>유사도</th>' +
+          /* 10/31 — 머리글이 칸과 어긋나 있었다(첫 칸이 항목+입력값인데 '항목'·'내 입력값' 두 칸으로 적혀 공표문 값 위에 '내 입력값'이 보였음).
+             노션 완료 기준: 항목별 입력값·공표문값·텍스트 유사도·이미지 유사도 4열 */
+          '<th>항목 · 내 입력값</th><th>공표문 값</th><th>텍스트 유사도</th><th>이미지 유사도</th>' +
           '</tr></thead>' +
           '<tbody>' + rows + '</tbody></table>';
 
@@ -1534,6 +1567,12 @@ function showHistoryType(type) {
 
   if (tabManual) tabManual.classList.toggle('active', manual);
   if (tabCoupang) tabCoupang.classList.toggle('active', !manual);
+
+  /* 10/31 — 이력 탭도 주소 # 에 맞춘다(기록은 안 쌓고 바꿔 쓴다) */
+  const historyScreen = document.getElementById('historyScreen');
+  if (historyScreen && historyScreen.classList.contains('active')) {
+    setRoute(manual ? 'history' : 'history-coupang', true);
+  }
 
   if (manual) loadHistoryChannel('WEB', 'historyListManual');
   else loadHistoryChannel('EXTENSION', 'historyListCoupang');
@@ -1613,7 +1652,7 @@ function renderHistoryList(targetId, items) {
     const icon = v.channel === 'EXTENSION' ? '🛒' : '🧸';
 
     const sub = [
-      fmtDateTime(v.createdAt),
+      fmtDateTime(v.checkedAt || v.createdAt), /* 10/31 — 마지막으로 확인한 시각(같은 입력 재확인 시 갱신) */
       v.makerName || '',
       kcHint(v),
       kcDbHint(v)
@@ -1627,7 +1666,7 @@ function renderHistoryList(targetId, items) {
 
     return '' +
         '<div class="history-item" onclick="openHistoryItem(' +
-        Number(v.verificationId) + ')">' +
+        Number(v.verificationId) + (v.channel === 'EXTENSION' ? ', \'EXTENSION\'' : '') + ')">' +
         '<div class="history-product">' + icon + '</div>' +
         '<div class="history-main">' +
         '<div class="history-name">' +
@@ -1648,7 +1687,8 @@ function renderHistoryList(targetId, items) {
 
 
 /* 이력 항목 클릭 → 그 건의 결과 + 근거를 결과 화면에 다시 띄운다. */
-async function openHistoryItem(id) {
+/** @param channelHint 이력 목록 항목의 channel — 서버 응답에 channel 이 없을 때(이전 서버)만 쓴다 */
+async function openHistoryItem(id, channelHint) {
 
   if (!id) return;
 
@@ -1666,11 +1706,12 @@ async function openHistoryItem(id) {
 
   renderInput(emptyInput());
   render(result);
+  if (!result.channel && channelHint === 'EXTENSION') resultChannel = 'EXTENSION';
 
   /* 결과 패널(#resultScreen)은 독립 화면이 아니라 verifyScreen 안에 박힌 .embedded-result 다.
      9/24 1차 버전은 showScreen('resultScreen') 을 불러서 verifyScreen 까지 꺼 버렸고,
      이력에서 항목을 누르면 빈 화면이 떴다. 부모 화면을 켠 뒤 패널을 연다. */
-  showScreen('verifyScreen');
+  showScreen('verifyScreen', 'result/' + id); // 10/31 — 뒤로 가기로 이력 목록에 돌아간다
 
   const panel = document.getElementById('resultScreen');
   if (panel) {
@@ -1731,7 +1772,7 @@ function refreshCoupang() {
 
 /* ==================================================
    10/12 — 쿠팡 구매이력 읽기 버튼 (멘토링 피드백: 다 읽어서 오래 걸린다)
-   a. 최근 N건(10/30) 읽기   b. 구매일자(하루) 읽기
+   a. 최근 N건 읽기(11/3 — 최근 주문 상품 N건 중 유아·어린이 제품만)   b. 구매일자(하루) 읽기
    이 화면 → (window 이벤트) → 확장 auth-bridge → background 가 쿠팡 주문목록을 보이지 않는 탭으로 열어
    고른 주문만 상세페이지를 읽고 서버로 보낸다. 진행 상황은 underfaker-scan-status 이벤트로 돌아온다.
    이벤트 내용은 JSON 문자열로 주고받는다(확장 쪽 세계와 객체를 바로 나누지 못한다).
@@ -1884,10 +1925,12 @@ function onScanStatus(s) {
     /* 10/30 — 유아·어린이 제품만 읽는다. 건너뛴 건수를 같이 알린다(확장 0.6.1) */
     const skipped = s.skipped ? ' 유아·어린이 제품이 아닌 ' + s.skipped + '건은 건너뛰었습니다.' : '';
     const notKc = s.notKc ? ' 상세페이지상 KC 대상이 아닌 ' + s.notKc + '건(식품·위생용품 등)은 뺐습니다.' : '';
+    /* 0.7.1(11/3) — '최근 N건' = 최근 주문 상품 N건(그중 유아·어린이만 읽음). 확장이 센 상품 수(counted)를 같이 보낸다 */
+    const scope = (s.mode === 'recent' && typeof s.counted === 'number') ? '최근 상품 ' + s.counted + '건 중 ' : '';
     finishScanUi(s.found
-        ? label + ' — 유아·어린이 제품 ' + s.found + '건을 읽어 ' + (s.sent || 0) + '건 확인했습니다' +
+        ? label + ' — ' + scope + '유아·어린이 제품 ' + s.found + '건을 읽어 ' + (s.sent || 0) + '건 확인했습니다' +
           (secs !== null ? ' (' + secs + '초' + avg + ')' : '') + '.' + skipped + notKc
-        : label + ' — 읽을 유아·어린이 제품 주문이 없습니다' + (s.mode === 'date' ? ' (그날 주문이 없거나 주문목록 앞쪽 ' + (s.pagesRead || 0) + '쪽 안에 없음)' : '') + '.' + skipped,
+        : label + ' — ' + (scope ? scope + '유아·어린이 제품이 없습니다' : '읽을 유아·어린이 제품 주문이 없습니다') + (s.mode === 'date' ? ' (그날 주문이 없거나 주문목록 앞쪽 ' + (s.pagesRead || 0) + '쪽 안에 없음)' : '') + '.' + skipped,
         s.found ? 'ok' : 'idle');
     loadCoupangRecent();
   } else if (s.phase === 'error') {
@@ -2037,9 +2080,9 @@ function summarizeCoupang(items) {
   const kcTarget = kcKnown.filter(v => KC_TARGET[v.kcStatus]).length;
   const kcNone = kcKnown.filter(v => v.kcStatus === 'NONE').length;
   /* 10/31 — KC 인증 DB 조회 상태. 리콜 판정과 별개라 '리콜 의심'에는 넣지 않고 요약 문구에만 따로 센다 */
-  const kcExpired = done.filter(v => v.kcLookup === 'FOUND' && /기간만료/.test(v.kcCertState || '')).length;
+  const kcExpired = done.filter(v => v.kcLookup === 'FOUND' && kcStateLevel(v.kcCertState) === 'expired').length;
   const kcWarn = done.filter(v => v.kcLookup === 'NOT_FOUND' ||
-      (v.kcLookup === 'FOUND' && v.kcCertState && v.kcCertState !== '적합' && !/기간만료/.test(v.kcCertState))).length;
+      (v.kcLookup === 'FOUND' && kcStateLevel(v.kcCertState) === 'action')).length;
 
   return {
     unique: unique,
@@ -2103,8 +2146,8 @@ function updateCoupangResultCard(f) {
             (f.missingCheckable ? ' (사진으로 찾기 가능 ' + f.missingCheckable + '개)' : ''));
   }
   if (f.excluded) extra.push('(어린이제품이 아닌) 해외직구·구매대행 판단 제외 ' + f.excluded + '개');
-  if (f.kcExpired) extra.push('KC 인증 기간만료 ' + f.kcExpired + '개(리콜과 별개 — 제품을 눌러 확인)');
-  if (f.kcWarn) extra.push('KC 인증 상태 주의 ' + f.kcWarn + '개(인증취소·DB에 없는 번호 등)');
+  if (f.kcExpired) extra.push('KC 신고 기간만료 ' + f.kcExpired + '개(확인 필요 — 만료 전 통관 재고는 판매 가능, 리콜과 별개)');
+  if (f.kcWarn) extra.push('KC 인증 취소·처분 또는 DB에 없는 번호 ' + f.kcWarn + '개(리콜과 별개 — 제품을 눌러 확인)');
   if (f.pending) extra.push('확인 중 ' + f.pending + '개');
   if (f.failed) extra.push('처리 실패 ' + f.failed + '개');
 
@@ -2123,7 +2166,7 @@ function updateCoupangResultCard(f) {
     }
     const first = f.suspects[0];
     if (first && first.verificationId && summary) {
-      summary.onclick = function () { openHistoryItem(first.verificationId); };
+      summary.onclick = function () { openHistoryItem(first.verificationId, 'EXTENSION'); };
       summary.style.cursor = 'pointer';
     }
     return;
@@ -2288,4 +2331,134 @@ function esc(s) {
       "'": '&#39;'
     }[c];
   });
+}
+
+
+/* ==================================================
+   11/1 — 사용 방법 팝업(강사 피드백: 사용설명서처럼 그림으로 사용 방법을 보여 준다).
+   그림은 /img/guide/*.png — 웹 화면은 실제 화면 캡처, 쇼핑몰 우클릭 화면은 예시(실제 캡처로 바꿀 자리).
+   처음 연 사람에게 한 번 자동으로 띄운다(이 브라우저에 본 기록이 없을 때). 위쪽 '사용 방법'으로 언제든 다시 연다.
+================================================== */
+
+const GUIDE = [
+  {
+    key: 'start', tab: '처음 설정',
+    steps: [
+      { title: '1. 로그인하고 확장 프로그램 연결 확인', img: 'img/guide/start-1.png',
+        text: 'UnderFaker 웹(localhost:8080)에 로그인합니다. 크롬 확장 프로그램을 설치했으면 \'쿠팡 구매이력 제품 확인\' 화면에 ' +
+              '<b>✓ 확장 프로그램 연결됨</b>이 보입니다. 확장을 새로 고쳤으면 chrome://extensions 에서 ⟳ 한 뒤 이 화면을 새로고침(F5)하세요.' }
+    ]
+  },
+  {
+    key: 'page', tab: '쇼핑몰에서 바로 확인',
+    steps: [
+      { title: '1. 상품 상세페이지에서 마우스 오른쪽 버튼 → UnderFaker로 리콜 검증', img: 'img/guide/page-1.png',
+        text: '쿠팡·다른 쇼핑몰의 상품 상세페이지, 또는 제품안전정보센터 리콜 공표문 화면에서 빈 곳을 오른쪽 버튼으로 누르고 ' +
+              '<b>UnderFaker로 리콜 검증</b>을 고릅니다. 쿠팡은 주문목록이 아니라 상품 하나가 크게 보이는 상세페이지에서 눌러야 합니다.' },
+      { title: '2. 결과가 UnderFaker 화면에 바로 뜹니다', img: 'img/guide/page-2.png',
+        text: '확장 프로그램이 그 페이지의 상품명·모델명·제조사·KC 인증번호를 읽어 리콜 공표문과 대조하고, UnderFaker 탭으로 넘어가 결과를 보여 줍니다. ' +
+              '읽을 값이 없으면 쇼핑몰 화면 아래에 안내가 뜹니다 — 그때는 \'① 직접 입력\'을 쓰세요.' }
+    ]
+  },
+  {
+    key: 'manual', tab: '직접 입력',
+    steps: [
+      { title: '1. 아는 값만 넣고 [리콜 여부 확인하기]', img: 'img/guide/manual-1.png',
+        text: '제품명은 꼭 넣고, 포장·상품정보에 있는 <b>KC 인증번호</b>·모델명·제조사를 아는 만큼 넣습니다. ' +
+              'KC 번호와 제품명이 함께 맞아야 \'일치\'로 확정하고, 하나만 맞으면 \'의심\'으로 보여 줍니다.' }
+    ]
+  },
+  {
+    key: 'photo', tab: '사진 올리기',
+    steps: [
+      { title: '1. 제품 사진 한 장으로 찾기', img: 'img/guide/photo-1.png',
+        text: '\'② 제품 사진 올리기\'에서 사진을 고르고 [사진으로 확인하기]를 누릅니다. 같은 사진이 실린 여러 웹 문서에서 반복된 상품명·KC 번호를 찾아 대조합니다. ' +
+              '사진 속 글자를 읽는 것은 아니어서 결과는 최대 \'의심\'입니다.' }
+    ]
+  },
+  {
+    key: 'coupang', tab: '쿠팡 구매이력',
+    steps: [
+      { title: '1. 산 제품을 한 번에 확인', img: 'img/guide/coupang-1.png',
+        text: '\'쿠팡 구매이력 제품 확인\'에서 <b>최근 10·30건</b> 또는 <b>구매일자</b>를 골라 읽기 버튼을 누릅니다. ' +
+              '확장 프로그램이 주문목록에서 유아·어린이 제품만 골라 상세페이지의 KC 인증정보를 읽고 대조합니다(식품·생활용품은 건너뜀).' }
+    ]
+  },
+  {
+    key: 'result', tab: '결과 읽는 법',
+    steps: [
+      { title: '1. 일치 · 의심 · KC 번호 미표기 · 불일치', img: 'img/guide/result-1.png',
+        text: '<b>일치</b>: KC 번호(또는 품번)와 제품명이 공표문과 같습니다. <b>의심</b>: 한쪽만 같습니다 — 아래 \'공표문 원문 보기\'로 직접 확인하세요. ' +
+              '<b>불일치</b>는 공표문과 맞지 않는다는 뜻이지 안전하다는 뜻이 아닙니다. KC 인증 상태(기간만료·처분)는 리콜 판정과 따로 보여 줍니다.' }
+    ]
+  }
+];
+
+var guideSection = 0;
+var guideStep = 0;
+const GUIDE_SEEN_KEY = 'uf_guide_seen';
+
+function openGuide(key) {
+  const i = GUIDE.findIndex(function (g) { return g.key === key; });
+  guideSection = i >= 0 ? i : 0;
+  guideStep = 0;
+  paintGuide();
+  const el = document.getElementById('guideOverlay');
+  if (el) el.classList.add('show');
+}
+
+function closeGuide() {
+  const el = document.getElementById('guideOverlay');
+  if (el) el.classList.remove('show');
+  try { localStorage.setItem(GUIDE_SEEN_KEY, '1'); } catch (e) { /* noop */ }
+}
+
+function guideMove(delta) {
+  const steps = GUIDE[guideSection].steps;
+  let s = guideStep + delta;
+  let sec = guideSection;
+  if (s >= steps.length) { sec = Math.min(GUIDE.length - 1, sec + 1); s = sec === guideSection ? steps.length - 1 : 0; }
+  if (s < 0) { sec = Math.max(0, sec - 1); s = sec === guideSection ? 0 : GUIDE[sec].steps.length - 1; }
+  guideSection = sec;
+  guideStep = s;
+  paintGuide();
+}
+
+function paintGuide() {
+  const sec = GUIDE[guideSection];
+  const step = sec.steps[guideStep];
+  const tabs = document.getElementById('guideTabs');
+  if (tabs) {
+    tabs.innerHTML = GUIDE.map(function (g, i) {
+      return '<button type="button" role="tab" class="guide-tab' + (i === guideSection ? ' active' : '') +
+          '" onclick="openGuide(\'' + g.key + '\')">' + esc(g.tab) + '</button>';
+    }).join('');
+  }
+  text('guideStepTitle', step.title);
+  const img = document.getElementById('guideImg');
+  if (img) { img.src = step.img; img.alt = step.title; }
+  const t = document.getElementById('guideText');
+  if (t) t.innerHTML = step.text;   // 고정 문구(사용자 입력 아님)
+  const total = GUIDE.reduce(function (n, g) { return n + g.steps.length; }, 0);
+  const before = GUIDE.slice(0, guideSection).reduce(function (n, g) { return n + g.steps.length; }, 0);
+  text('guideDots', (before + guideStep + 1) + ' / ' + total);
+  const prev = document.getElementById('guidePrev');
+  const next = document.getElementById('guideNext');
+  if (prev) prev.disabled = guideSection === 0 && guideStep === 0;
+  if (next) next.disabled = guideSection === GUIDE.length - 1 && guideStep === sec.steps.length - 1;
+}
+
+document.addEventListener('keydown', function (e) {
+  const el = document.getElementById('guideOverlay');
+  if (!el || !el.classList.contains('show')) return;
+  if (e.key === 'Escape') closeGuide();
+  else if (e.key === 'ArrowRight') guideMove(1);
+  else if (e.key === 'ArrowLeft') guideMove(-1);
+});
+
+/* 처음 온 사람에게 한 번 — 결과 주소(#result)로 바로 들어온 경우(우클릭 검증)는 띄우지 않는다 */
+function maybeShowGuideOnce() {
+  let seen = false;
+  try { seen = localStorage.getItem(GUIDE_SEEN_KEY) === '1'; } catch (e) { seen = true; }
+  if (!seen && !/^#result\//.test(location.hash || '')) openGuide('page');
 }

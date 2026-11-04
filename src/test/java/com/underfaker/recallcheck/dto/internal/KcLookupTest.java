@@ -125,4 +125,21 @@ class KcLookupTest {
         assertEquals(255, back.modelName().length());
         assertTrue(back.modelName().startsWith("모델 두줄"));
     }
+
+    /** 10/31 — 번호가 여러 개면 대표 밖 번호의 결과도 블록에 남고 그대로 돌아온다(빠방 밀대 "리뉴얼 전·후" 실측) */
+    @Test
+    void 대표_밖_번호의_조회_결과도_블록에_남는다() {
+        KcLookup before = new KcLookup(KcLookup.Status.FOUND, "CB063R3421-20003", "기간만료", "20190305",
+                "완구", null, "빠방 밀대", "-", "중국", "API");
+        KcLookup kc = before.withOthers(java.util.List.of(
+                new KcLookup.Other("CB063R3421-20003R", KcLookup.Status.NOT_FOUND, null, null, null),
+                new KcLookup.Other("CB063R423-5001", KcLookup.Status.FOUND, "적합", "20240101", "모델|A")));
+        KcLookup back = KcLookup.fromRawText(kc.toBlock());
+        assertEquals(2, back.others().size());
+        assertEquals(new KcLookup.Other("CB063R3421-20003R", KcLookup.Status.NOT_FOUND, null, null, null), back.others().get(0));
+        assertEquals("모델/A", back.others().get(1).modelName());   // 칸 구분자 '|' 는 값에서 뺀다
+        assertEquals("CB063R3421-20003", back.certNum());
+        // 번호 하나(10/31 이전 블록)는 빈 목록
+        assertTrue(KcLookup.fromRawText(PINK_FOOT.toBlock()).others().isEmpty());
+    }
 }

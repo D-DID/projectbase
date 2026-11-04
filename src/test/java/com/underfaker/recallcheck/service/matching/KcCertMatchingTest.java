@@ -62,7 +62,9 @@ class KcCertMatchingTest {
         Decision before = decide(seller, recall);
         Decision after = decide(PINK_FOOT_CERT.applyTo(seller), recall);
 
-        assertNotEquals(Decision.MATCH, before);   // 원문 그대로는 인증번호·모델명 확정 근거가 없다
+        // 10/30 — 번호가 하나여도 원문에서 뽑아 대조하도록 고쳐서(MatchingService.addCertNumComparison),
+        // KC 인증 DB 조회가 실패해도(키 없음·NOT_FOUND) 원문만으로 일치가 난다. 조회 뒤에도 그대로 일치.
+        assertEquals(Decision.MATCH, before);
         assertEquals(Decision.MATCH, after);
     }
 
@@ -170,20 +172,26 @@ class KcCertMatchingTest {
     }
 
     @Test
-    void 실조회_품번_모델명은_괄호_공백이_달라도_일치() {
+    void 실조회_품번_모델명은_괄호_공백이_달라도_같은_모델로_본다() {
         // 10/3 실조회: 인증 DB "OSC-930S)" / 리콜 "OSC-930S", 인증 DB "COUGAR SL500" / 리콜 "COUGARSL500"
-        ExtractedProduct seller = new ExtractedProduct(null, null, null, null, null, "A043H002-7002", null, null, 1.0);
+        // 10/31 2단계 판정 — 인증 모델명은 KC 번호로 찾은 값이라 KC 번호와 같은 급이다. 제품명도 맞아야 일치,
+        // 판매자가 번호만 적고 제품명이 없으면 의심(원문 링크로 확인).
         KcLookup osc = new KcLookup(KcLookup.Status.FOUND, "A043H002-7002", "적합", "20070809", null, null,
                 "OSC-930S)", "-", null, "API");
         Recall recall = Recall.builder().recallUid(8L).recallProductName("전기용품").recallModelName("OSC-930S")
                 .certNum("-").publishDate("20200101").build();
-        assertEquals(Decision.MATCH, decide(osc.applyTo(seller), recall));
+        ExtractedProduct noName = new ExtractedProduct(null, null, null, null, null, "A043H002-7002", null, null, 1.0);
+        assertEquals(Decision.PARTIAL, decide(osc.applyTo(noName), recall));
+        ExtractedProduct named = new ExtractedProduct("OSC-930S 전기 온수매트", null, null, null, null, "A043H002-7002",
+                null, null, 1.0);
+        assertEquals(Decision.MATCH, decide(osc.applyTo(named), recall));
 
         KcLookup cougar = new KcLookup(KcLookup.Status.FOUND, "YU10147-14002A", "반납", "20141020", null, null,
                 "COUGAR SL500", "-", null, "API");
         Recall cougarRecall = Recall.builder().recallUid(9L).recallProductName("생활용품").recallModelName("COUGARSL500")
                 .certNum("-").publishDate("20200101").build();
-        ExtractedProduct seller2 = new ExtractedProduct(null, null, null, null, null, "YU10147-14002A", null, null, 1.0);
+        ExtractedProduct seller2 = new ExtractedProduct("쿠거 COUGAR SL500", null, null, null, null, "YU10147-14002A",
+                null, null, 1.0);
         assertEquals(Decision.MATCH, decide(cougar.applyTo(seller2), cougarRecall));
     }
 

@@ -63,17 +63,23 @@ public class KcLookupService {
         if (numbers.isEmpty()) {
             return null;
         }
-        KcLookup first = null;
+        // 10/31 — 번호마다 조회한다(최대 3개, 캐시 7일). 대표는 예전과 같이 첫 번째로 인증 DB 에 있는 번호(없으면 첫 번호).
+        // 나머지는 others 로 화면에 보여 준다 — "리뉴얼 전·후" 처럼 번호가 둘이면 둘 다 상태가 보여야 한다(KcLookup 주석).
+        List<KcLookup> results = new ArrayList<>();
         for (String number : numbers) {
-            KcLookup result = lookupOne(number, false);
-            if (result.isFound()) {
-                return result;
-            }
-            if (first == null) {
-                first = result;
+            results.add(lookupOne(number, false));
+        }
+        KcLookup primary = results.stream().filter(KcLookup::isFound).findFirst().orElse(results.get(0));
+        if (results.size() == 1) {
+            return primary;
+        }
+        List<KcLookup.Other> others = new ArrayList<>();
+        for (KcLookup r : results) {
+            if (r != primary) {
+                others.add(KcLookup.Other.of(r));
             }
         }
-        return first;
+        return primary.withOthers(others);
     }
 
     /**

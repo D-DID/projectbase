@@ -65,6 +65,8 @@ public class SecurityConfig {
                                 "/css/**", "/js/**", "/img/**", "/assets/**").permitAll()
                         // FR-001 회원가입, FR-002 로그인
                         .requestMatchers("/api/auth/**").permitAll()
+                        // 10/31 — API 문서(springdoc). 문서만 공개되고 API 호출은 아래 규칙 그대로 토큰이 필요하다
+                        .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         // 공개 리콜 조회 — 로그인 없이도 확인할 수 있어야 한다
                         .requestMatchers(HttpMethod.GET, "/api/recalls/**").permitAll()
                         // 관리자 전용 (FR-016, FR-017)

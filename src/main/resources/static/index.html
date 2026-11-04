@@ -1080,6 +1080,26 @@
     }
 
 
+    /* 10/31 — 리콜 공표문 원문 링크 */
+    .recall-source {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border: 1px solid #f0c36d;
+      border-radius: 10px;
+      background: #fffaf0;
+    }
+    .recall-source a {
+      font-weight: 700;
+      color: #b45309;
+      text-decoration: underline;
+      word-break: break-all;
+    }
+    .recall-source-note {
+      margin: 6px 0 0;
+      font-size: 0.88em;
+      color: #6b7280;
+    }
+
     .compare-row:last-child {
       border-bottom: 0;
     }
@@ -2001,55 +2021,128 @@
     .url-read-msg.err { color: #b42318; }
     .url-read-msg.idle { color: #667085; }
 
-    .capture-box {
-      margin-bottom: 16px;
+    /* 11/1 — 쇼핑몰 우클릭 검증 안내(확장 0.7.0) */
+    .page-verify-box {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
       padding: 12px 14px;
       border-radius: 11px;
-      background: #f8fafc;
-      border: 1px solid #e4e7ec;
-    }
-
-    .capture-steps {
-      margin: 0;
-      padding-left: 20px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
       font-size: 0.92em;
-      line-height: 1.7;
-      color: #344054;
+      line-height: 1.6;
+      color: #1e3a8a;
     }
 
-    .capture-preview {
-      margin-top: 8px;
-      font-size: 0.9em;
+    .page-verify-text { flex: 1; min-width: 0; }
+
+    .page-verify-state { display: block; margin-top: 4px; font-size: 0.92em; }
+    .page-verify-state.ok { color: #15803d; }
+    .page-verify-state.err { color: #b42318; }
+
+    @media (max-width: 640px) {
+      .page-verify-box { flex-direction: column; align-items: stretch; }
     }
 
-    .capture-preview summary {
-      cursor: pointer;
-      color: #1565c0;
+    /* 11/1 — 사용 방법 팝업(강사 피드백: 사용설명서처럼 그림으로) */
+    .guide-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(15, 23, 42, .55);
     }
 
-    .capture-source {
-      margin: 6px 0 4px;
-      color: #667085;
-      word-break: break-all;
-    }
+    .guide-overlay.show { display: flex; }
 
-    .capture-preview pre {
-      margin: 0;
-      max-height: 180px;
+    .guide-dialog {
+      width: min(860px, 100%);
+      max-height: calc(100vh - 32px);
       overflow: auto;
-      padding: 8px 10px;
-      border-radius: 8px;
       background: #fff;
-      border: 1px solid #e4e7ec;
-      white-space: pre-wrap;
-      word-break: break-all;
-      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .3);
+      padding: 20px 22px 18px;
     }
 
-    .product-grid input.just-filled {
-      border-color: #16a34a;
-      box-shadow: 0 0 0 3px rgba(22, 163, 74, .15);
+    .guide-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
     }
+
+    .guide-head h2 { margin: 0; font-size: 1.15em; }
+
+    .guide-close {
+      border: 0;
+      background: #f1f5f9;
+      border-radius: 999px;
+      width: 34px;
+      height: 34px;
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    .guide-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .guide-tab {
+      border: 1px solid #d0d5dd;
+      background: #fff;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.88em;
+      cursor: pointer;
+    }
+
+    .guide-tab.active { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+
+    .guide-step-title { margin: 4px 0 8px; font-weight: 700; color: #101828; }
+
+    .guide-img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 10px;
+      border: 1px solid #e4e7ec;
+      background: #f8fafc;
+    }
+
+    .guide-text { margin: 10px 0 0; font-size: 0.93em; line-height: 1.65; color: #344054; }
+
+    .guide-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .guide-dots { color: #667085; font-size: 0.88em; }
+
+    .guide-nav button {
+      border: 1px solid #d0d5dd;
+      background: #fff;
+      border-radius: 10px;
+      padding: 8px 14px;
+      cursor: pointer;
+    }
+
+    .guide-nav button:disabled { opacity: .4; cursor: default; }
+
+    .nav-guide { margin-left: auto; }
 
     .coupang-result-card {
       display: none;
@@ -2505,6 +2598,17 @@
 
       </button>
 
+
+      <!-- 11/1 — 강사 피드백: 사용설명서처럼 그림으로 사용 방법을 보여 준다 -->
+      <button
+              class="nav-item nav-guide"
+              id="navGuide"
+              onclick="openGuide()">
+
+        사용 방법
+
+      </button>
+
     </div>
 
   </nav>
@@ -2692,40 +2796,32 @@
         </div>
 
 
-        <!-- 10/12 — 멘토링 피드백: ① 직접 입력 / ② 쿠팡 URL 붙여넣기(확장이 상세페이지를 읽어 칸을 채움) -->
+        <!-- 11/1 — 강사 피드백: 입력 방식이 넷(직접 입력·URL·영역 드래그·사진)이라 많다 → 웹은 둘만 둔다.
+             쇼핑몰 상세페이지는 우클릭 'UnderFaker로 리콜 검증'(확장 0.7.0)이 페이지를 그대로 읽어 검증하고 결과를 이 화면에 띄운다 -->
+        <div class="page-verify-box">
+          <div class="page-verify-text">
+            <b>쇼핑몰 상품 상세페이지에서 바로 확인</b> — 마우스 오른쪽 버튼 → <b>UnderFaker로 리콜 검증</b>.
+            그 페이지를 그대로 읽어 리콜 공표문과 대조하고 결과를 이 화면에 띄웁니다(쿠팡·다른 쇼핑몰·제품안전정보센터 공표문).
+            <span class="page-verify-state" id="pageVerifyState"></span>
+          </div>
+          <button type="button" class="mini-btn" onclick="openGuide('page')">사용 방법 보기</button>
+        </div>
+
         <div class="input-mode" role="tablist" aria-label="입력 방식">
           <button type="button" class="input-mode-btn active" id="modeManualBtn" role="tab"
                   onclick="setInputMode('manual')">① 직접 입력</button>
-          <button type="button" class="input-mode-btn" id="modeUrlBtn" role="tab"
-                  onclick="setInputMode('url')">② 쿠팡 URL 붙여넣기</button>
-          <button type="button" class="input-mode-btn" id="modeCaptureBtn" role="tab"
-                  onclick="setInputMode('capture')">③ 쇼핑몰 화면에서 드래그</button>
+          <button type="button" class="input-mode-btn" id="modePhotoBtn" role="tab"
+                  onclick="setInputMode('photo')">② 제품 사진 올리기</button>
         </div>
 
-        <!-- 10/12 — 확장 0.6.0: 쇼핑몰 상품 페이지에서 우클릭 → 영역 드래그로 글·사진을 가져와 아래 칸을 채운다 -->
-        <div class="capture-box" id="captureBox" style="display:none">
-          <ol class="capture-steps">
-            <li>쇼핑몰 상품 페이지에서 <b>마우스 오른쪽 버튼 → UnderFaker — 품명 확인에 넣기</b></li>
-            <li><b>상품정보 영역 드래그</b> → 상품명이나 상품정보 표(품명 및 모델명·제조자·KC 인증정보)를 사각형으로 감싸기</li>
-            <li><b>상품 사진 영역 드래그</b> → 대표 사진을 감싸기 (사진 위에서 우클릭 → '이 사진을 썸네일로 넣기'도 됩니다)</li>
-            <li>이 화면으로 돌아와 채워진 값을 확인·수정한 뒤 <b>[리콜 여부 확인하기]</b></li>
-          </ol>
-          <p class="url-read-msg idle" id="captureMsg"></p>
-          <details class="capture-preview" id="capturePreviewBox" style="display:none">
-            <summary>가져온 글 보기</summary>
-            <p class="capture-source" id="captureSource"></p>
-            <pre id="capturePreview"></pre>
-          </details>
-        </div>
-
-        <div class="url-read-box" id="urlReadBox" style="display:none">
-          <label for="productUrl">쿠팡 상품 페이지 주소</label>
+        <!-- 10/31 — FR-004 사진 업로드 검증: 제품 사진 한 장으로 같은 사진이 실린 웹 문서를 찾아 대조(OCR 없음, 최대 '의심') -->
+        <div class="url-read-box" id="photoBox" style="display:none">
+          <label for="photoFile">제품 사진 (JPG·PNG·GIF·WEBP, 8MB 이하)</label>
           <div class="url-read-row">
-            <input id="productUrl" type="url" inputmode="url" autocomplete="off"
-                   placeholder="https://www.coupang.com/vp/products/…">
-            <button type="button" class="mini-btn" id="urlReadBtn" onclick="readProductUrl()">불러오기</button>
+            <input id="photoFile" type="file" accept="image/jpeg,image/png,image/gif,image/webp">
+            <button type="button" class="mini-btn" id="photoVerifyBtn" onclick="verifyByPhoto()">사진으로 확인하기</button>
           </div>
-          <p class="url-read-msg idle" id="urlReadMsg"></p>
+          <p class="url-read-msg idle" id="photoMsg">사진 속 글자는 읽지 않습니다. 같은 사진이 실린 웹 문서에서 여러 사이트에 반복된 상품명·KC 번호·모델명으로 리콜 공표문과 대조합니다. 판매자가 적은 값이 아니라 결과는 최대 '의심'입니다. (Google Vision 사용 — 월 사용 상한 있음)</p>
         </div>
 
 
@@ -3410,6 +3506,14 @@
 
               </div>
 
+              <!-- 10/31 — 일치·의심 결과에서 제품안전정보센터 리콜 공표문 원문을 사용자가 직접 확인하게 링크를 둔다 -->
+              <div class="recall-source" id="recallSourceBox" style="display:none">
+                <a id="recallSourceLink" href="#" target="_blank" rel="noopener noreferrer">
+                  제품안전정보센터 리콜 공표문 원문 보기 ↗
+                </a>
+                <p class="recall-source-note" id="recallSourceNote"></p>
+              </div>
+
             </div>
 
           </div>
@@ -3466,7 +3570,7 @@
 
           <button
                   class="primary-btn"
-                  onclick="goHistory()">
+                  onclick="goHistoryForResult()">
 
             내 검증 이력 보기 →
 
@@ -3609,7 +3713,7 @@
           </h2>
 
           <p>
-            읽을 범위를 고르세요 — <strong>최근 10건·30건</strong> 또는 <strong>구매일자 하루</strong>. 유아·어린이 제품만 읽고 식품·생활용품은 건너뜁니다.<br>
+            읽을 범위를 고르세요 — <strong>최근 주문 상품 10건·30건</strong> 또는 <strong>구매일자 하루</strong>. 그 안에서 유아·어린이 제품만 읽고 식품·생활용품은 건너뜁니다.<br>
             UnderFaker 확장 프로그램이 고른 주문의 상품 이름·사진·KC 인증정보를 읽어 리콜 공표문과 대조합니다.
           </p>
 
@@ -3962,6 +4066,26 @@
 
 
   </main>
+
+  <!-- 11/1 — 사용 방법 팝업(강사 피드백: 사용설명서처럼 그림으로). 내용은 app.js GUIDE -->
+  <div class="guide-overlay" id="guideOverlay" role="dialog" aria-modal="true" aria-labelledby="guideTitle"
+       onclick="if (event.target === this) closeGuide()">
+    <div class="guide-dialog">
+      <div class="guide-head">
+        <h2 id="guideTitle">UnderFaker 사용 방법</h2>
+        <button type="button" class="guide-close" onclick="closeGuide()" aria-label="닫기">×</button>
+      </div>
+      <div class="guide-tabs" id="guideTabs" role="tablist"></div>
+      <p class="guide-step-title" id="guideStepTitle"></p>
+      <img class="guide-img" id="guideImg" alt="">
+      <p class="guide-text" id="guideText"></p>
+      <div class="guide-nav">
+        <button type="button" id="guidePrev" onclick="guideMove(-1)">← 이전</button>
+        <span class="guide-dots" id="guideDots"></span>
+        <button type="button" id="guideNext" onclick="guideMove(1)">다음 →</button>
+      </div>
+    </div>
+  </div>
 
 </div>
 

@@ -10,6 +10,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
@@ -75,6 +76,16 @@ public class GlobalExceptionHandler {
         log.warn("[없는 경로] {} {}", request.getMethod(), request.getRequestURI());
         return ResponseEntity.status(code.getStatus())
                 .body(ApiResponse.error(code.getCode(), code.getMessage()));
+    }
+
+    /** 10/31 — 사진 업로드가 spring.servlet.multipart.max-file-size 를 넘었을 때(기본 1MB, .example 은 10MB) */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUploadSize(MaxUploadSizeExceededException e,
+                                                              HttpServletRequest request) {
+        log.warn("[업로드 크기 초과] {} {} -> {}", request.getMethod(), request.getRequestURI(), e.getMessage());
+        ErrorCode code = ErrorCode.UNSUPPORTED_IMAGE;
+        return ResponseEntity.status(code.getStatus())
+                .body(ApiResponse.error(code.getCode(), "사진이 너무 큽니다. 8MB 이하로 올려 주세요."));
     }
 
     @ExceptionHandler(Exception.class)

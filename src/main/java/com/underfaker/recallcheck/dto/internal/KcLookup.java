@@ -32,8 +32,15 @@ import java.util.Set;
  * makerName: -
  * makerCntryName: 중국
  * source: API
+ * other: CB063R3421-20003R | NOT_FOUND | | |
  * [/kc-lookup]
  * </pre>
+ *
+ * <h3>번호가 여러 개일 때(10/31)</h3>
+ * 판매자가 KC 칸에 번호를 여럿 적는다 — 실측(빠방 밀대): "리뉴얼 전: CB063R3421-20003, 리뉴얼 후 : CB063R3421-20003r".
+ * 예전에는 첫 번째로 인증 DB 에 있는 번호 하나만 조회해 보여 줘서, 리뉴얼 후 번호가 DB 에 없는지·상태가 무엇인지 안 보였다.
+ * 이제 번호마다(최대 3개) 조회하고, 대표(판정에 쓰는 것 — 예전과 같이 첫 번째로 DB 에 있는 번호) 밖의 결과를
+ * others 에 남긴다. 판정은 바뀌지 않는다(인증 모델명 근거는 대표 번호만 쓴다). 화면이 번호마다 상태를 보여 준다.
  *
  * Spring 의존 없음 — 단위 테스트용.
  *
@@ -49,8 +56,39 @@ public record KcLookup(
         String modelName,
         String makerName,
         String makerCntryName,
-        String source
+        String source,
+        /* 10/31 — 대표 밖 번호의 조회 결과(입력 순서). 번호가 하나면 빈 목록 */
+        List<Other> others
 ) {
+
+    /** 대표 밖 번호 하나의 조회 결과 — 화면 표시용(판정에 안 쓴다) */
+    public record Other(String certNum, Status status, String certState, String certDate, String modelName) {
+
+        public static Other of(KcLookup k) {
+            return new Other(k.certNum(), k.status(), k.certState(), k.certDate(), k.modelName());
+        }
+
+        public boolean isFound() {
+            return status == Status.FOUND;
+        }
+    }
+
+    public KcLookup {
+        others = others == null ? List.of() : List.copyOf(others);
+    }
+
+    /** 10/31 이전 형태(번호 하나) — others 없음 */
+    public KcLookup(Status status, String certNum, String certState, String certDate, String productName,
+                    String brandName, String modelName, String makerName, String makerCntryName, String source) {
+        this(status, certNum, certState, certDate, productName, brandName, modelName, makerName,
+                makerCntryName, source, List.of());
+    }
+
+    /** 대표 밖 번호의 결과를 붙인 사본 */
+    public KcLookup withOthers(List<Other> more) {
+        return new KcLookup(status, certNum, certState, certDate, productName, brandName, modelName,
+                makerName, makerCntryName, source, more);
+    }
 
     public enum Status {
         /** 인증 DB 에 그 번호가 있다 */
@@ -146,6 +184,11 @@ public record KcLookup(
         line(sb, "makerName", makerName);
         line(sb, "makerCntryName", makerCntryName);
         line(sb, "source", source);
+        for (Other o : others) {
+            line(sb, "other", String.join(" | ", cell(o.certNum()),
+                    o.status() == null ? "" : o.status().name(), cell(o.certState()), cell(o.certDate()),
+                    cell(o.modelName())));
+        }
         return sb.append(END).toString();
     }
 
@@ -164,6 +207,7 @@ public record KcLookup(
         Status status = null;
         String certNum = null, certState = null, certDate = null, productName = null, brandName = null;
         String modelName = null, makerName = null, makerCntryName = null, source = null;
+        List<Other> others = new java.util.ArrayList<>();
         for (String raw : body.split("\\R")) {
             int colon = raw.indexOf(':');
             if (colon < 0) {
@@ -185,6 +229,12 @@ public record KcLookup(
                 case "makerName" -> makerName = v;
                 case "makerCntryName" -> makerCntryName = v;
                 case "source" -> source = v;
+                case "other" -> {
+                    Other o = parseOther(v);
+                    if (o != null) {
+                        others.add(o);
+                    }
+                }
                 default -> { }
             }
         }
@@ -192,7 +242,31 @@ public record KcLookup(
             return null;
         }
         return new KcLookup(status, certNum, certState, certDate, productName, brandName,
-                modelName, makerName, makerCntryName, source);
+                modelName, makerName, makerCntryName, source, others);
+    }
+
+    /** "번호 | 상태 | 인증상태 | 인증일 | 모델명" — 번호·상태가 없으면 null */
+    private static Other parseOther(String v) {
+        String[] f = v.split("\\|", -1);
+        if (f.length < 2) {
+            return null;
+        }
+        String num = blankToNull(f[0]);
+        Status st = parseStatus(f[1]);
+        if (num == null || st == null) {
+            return null;
+        }
+        return new Other(num, st, f.length > 2 ? blankToNull(f[2]) : null,
+                f.length > 3 ? blankToNull(f[3]) : null, f.length > 4 ? blankToNull(f[4]) : null);
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    /** 칸 구분자 '|' 를 값에서 뺀다 */
+    private static String cell(String s) {
+        return s == null ? "" : s.replace('|', '/').trim();
     }
 
     /** raw_text 에 블록이 있으면 판정 때와 같게 적용한다(판정근거 재계산용). 없으면 그대로. */

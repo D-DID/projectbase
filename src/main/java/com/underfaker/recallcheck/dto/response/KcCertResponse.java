@@ -2,6 +2,8 @@ package com.underfaker.recallcheck.dto.response;
 
 import com.underfaker.recallcheck.dto.internal.KcLookup;
 
+import java.util.List;
+
 /**
  * 10/3 추가 — 검증 결과에 싣는 KC 인증 DB 조회 결과(KC인증 연동).
  *
@@ -15,6 +17,7 @@ import com.underfaker.recallcheck.dto.internal.KcLookup;
  * @param certDate        인증일 yyyyMMdd
  * @param modelName       인증받은 모델명
  * @param makerName       제조사("-" 그대로 올 수 있음)
+ * @param others          10/31 — KC 칸에 번호가 여러 개일 때 대표 밖 번호의 조회 결과(입력 순서). 하나면 빈 목록
  */
 public record KcCertResponse(
         String status,
@@ -26,8 +29,14 @@ public record KcCertResponse(
         String modelName,
         String makerName,
         String makerCntryName,
-        String source
+        String source,
+        List<Other> others
 ) {
+
+    /** 대표 밖 번호 하나 — status: FOUND / NOT_FOUND / UNAVAILABLE */
+    public record Other(String certNum, String status, String certState, boolean needsAttention,
+                        String certDate, String modelName) {
+    }
 
     public static KcCertResponse of(KcLookup kc) {
         if (kc == null) {
@@ -36,6 +45,11 @@ public record KcCertResponse(
         return new KcCertResponse(
                 kc.status() == null ? null : kc.status().name(),
                 kc.certNum(), kc.certState(), kc.stateNeedsAttention(), kc.certDate(),
-                kc.productName(), kc.modelName(), kc.makerName(), kc.makerCntryName(), kc.source());
+                kc.productName(), kc.modelName(), kc.makerName(), kc.makerCntryName(), kc.source(),
+                kc.others().stream().map(o -> new Other(o.certNum(),
+                        o.status() == null ? null : o.status().name(), o.certState(),
+                        o.isFound() && o.certState() != null && !o.certState().isBlank()
+                                && !KcLookup.STATE_OK.equals(o.certState().trim()),
+                        o.certDate(), o.modelName())).toList());
     }
 }

@@ -136,7 +136,7 @@ public class RecallSyncService {
     /**
      * FR-016 기간 적재 — from 부터 to 까지 하루씩 훑는다.
      *
-     * @param adminId        실행한 관리자 (api_sync_log.admin_id)
+     * @param adminId        실행한 관리자 (api_sync_log.admin_id). null 이면 이력 행을 남기지 않는다(자동 갱신, 10/31)
      * @param from           시작 공표일 yyyyMMdd
      * @param to             종료 공표일 yyyyMMdd (포함)
      * @param withImages     상세 API 로 사진까지 채울지. 전건 적재는 false 를 권한다.
@@ -195,7 +195,11 @@ public class RecallSyncService {
         }
 
         syncLog.finish(shortCode(failedDates.isEmpty() ? "2000" : "2000-P"), saved);
-        apiSyncLogRepository.save(syncLog);
+        // 10/31 — 자동 갱신(RecallAutoSyncScheduler)은 관리자 계정이 없으면 adminId=null 로 부른다.
+        // api_sync_log.admin_id 가 NOT NULL·FK 라 그때는 이력 행을 남기지 않는다(적재는 그대로 한다).
+        if (adminId != null) {
+            apiSyncLogRepository.save(syncLog);
+        }
 
         log.info("[RecallSync] 기간 적재 완료 {}~{} — {}일 훑음, 공표 있던 날 {}일, 조회 {}건, 적재 {}건, 실패 {}건",
                 from, to, daysScanned, daysWithData, fetched, saved, failed);
