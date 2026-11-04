@@ -22,7 +22,7 @@
 | `src/main/resources/static` | 웹 화면(`index.html`, `js/app.js`) — 품명으로 제품 확인(① 직접 입력 ② 제품 사진 올리기 — 11/1 강사 피드백으로 넷→둘) · 쿠팡 구매이력 · 이력 · 위쪽 '사용 방법' 그림 팝업(7장) |
 | `db/` | 리콜 덤프(4,092건)·적재 스크립트·Postman 컬렉션 |
 | `docs/` | `api.md`(API 명세 — Swagger UI 는 서버 실행 후 `/swagger-ui.html`) · `edge-cases.md`(통합테스트 엣지케이스 20개) |
-| 크롬 확장 | 별도 폴더(`underfaker-extension`, 0.7.0) — 쿠팡 주문목록 읽기(유아·어린이 제품만), 상세페이지 KC 칸 읽기, **쇼핑몰 상세페이지·리콜 공표문에서 우클릭 → 'UnderFaker로 리콜 검증'** 한 번으로 그 페이지를 읽어 검증(`POST /api/verifications/page`) |
+| 크롬 확장 | 별도 폴더(`underfaker-extension`, 0.7.2) — 쿠팡 주문목록 읽기(유아·어린이 제품만), 상세페이지 KC 칸 읽기, **쇼핑몰 상세페이지·리콜 공표문에서 우클릭 → 'UnderFaker로 리콜 검증'** 한 번으로 그 페이지를 읽어 검증(`POST /api/verifications/page`) |
 
 ## 실행
 
