@@ -1007,6 +1007,64 @@
       opacity: .85;
     }
 
+    /* 11/4 — 사진으로 찾은 상품 카드(app.js imageFoundCard). 결과 상자 안에서 크게 */
+    .image-found-card {
+      margin-top: 12px;
+      padding: 14px 16px;
+      background: #fff;
+      border: 1px solid #bdb4fe;
+      border-radius: 12px;
+      color: #1f2937;
+      font-weight: 400;
+    }
+    .image-found-head { font-size: 12px; font-weight: 700; color: #5925dc; }
+    .image-found-name { margin-top: 4px; font-size: 17px; font-weight: 800; color: #3e1c96; word-break: keep-all; }
+    .image-found-sub { margin-top: 4px; font-size: 12px; color: #667085; }
+    .image-found-row {
+      display: flex;
+      gap: 12px;
+      padding: 7px 0;
+      border-top: 1px solid #f2f4f7;
+      font-size: 13px;
+    }
+    .image-found-row:first-of-type { margin-top: 8px; }
+    .image-found-label { flex: 0 0 104px; color: #667085; }
+    .image-found-value { flex: 1; min-width: 0; }
+    .image-found-none { color: #98a2b3; }
+    .image-found-foot { margin-top: 8px; font-size: 12px; color: #5925dc; }
+    /* 11/4 — KC 인증 조회 카드(app.js kcCertHtml). 사진 카드와 같은 틀, 상태에 따라 테두리 색 */
+    .kc-card { border-color: #d0d5dd; }
+    .kc-card .image-found-head { color: #344054; }
+    .kc-card .image-found-label { flex-basis: 140px; }
+    .kc-card .image-found-name { color: #101828; letter-spacing: .2px; }
+    .kc-card .image-found-foot { color: #667085; }
+    .kc-card.kc-check { border-color: #f5c26b; }
+    .kc-card.kc-danger { border-color: #f04438; }
+    .kc-card.kc-muted { border-color: #e4e7ec; }
+    .kc-src { font-weight: 400; color: #98a2b3; margin-left: 4px; }
+    .kc-state-check { color: #b45309; }
+    .kc-state-danger { color: #b91c1c; }
+    .kc-more { margin-top: 6px; font-size: 12px; color: #667085; }
+    .kc-more summary { cursor: pointer; color: #475467; }
+    /* 11/4 — 'KC 대상 아님' 상자(app.js notChildBoxHtml). 어린이제품이 아님을 크게 */
+    .not-child-box {
+      margin-top: 12px;
+      padding: 12px 14px;
+      background: #fff;
+      border: 1px solid #98a2b3;
+      border-radius: 12px;
+      color: #344054;
+      font-weight: 400;
+    }
+    .not-child-head { font-size: 16px; font-weight: 800; color: #101828; }
+    .not-child-why { margin-top: 4px; font-size: 12px; color: #667085; }
+    /* 11/4 — '의심'일 때 '닮은 리콜 공표문' 제목은 주황(의심 색) */
+    .title-partial { color: #c2410c !important; }
+    @media (max-width: 520px) {
+      .image-found-row { flex-direction: column; gap: 2px; }
+      .image-found-label { flex: none; }
+    }
+
 
     .result-notice.unknown {
       background: #f1f5f9;
@@ -2814,6 +2872,9 @@
                   onclick="setInputMode('photo')">② 제품 사진 올리기</button>
         </div>
 
+        <!-- 11/4 — 우클릭 검증 결과(#result/{id})로 열리면 그 검증이 읽은 값을 아래 ① 직접 입력 칸에 넣고 안내한다(app.js fillFormFromInput) -->
+        <p class="url-read-msg ok" id="pageFillMsg" role="status" style="display:none"></p>
+
         <!-- 10/31 — FR-004 사진 업로드 검증: 제품 사진 한 장으로 같은 사진이 실린 웹 문서를 찾아 대조(OCR 없음, 최대 '의심') -->
         <div class="url-read-box" id="photoBox" style="display:none">
           <label for="photoFile">제품 사진 (JPG·PNG·GIF·WEBP, 8MB 이하)</label>
@@ -3267,7 +3328,7 @@
 
               <div class="compare-box">
 
-                <h3>
+                <h3 id="recallCompareTitle">
                   공식 리콜 정보
                 </h3>
 
@@ -3371,7 +3432,8 @@
 
             <div class="card-title">
 
-              <h2>
+              <!-- 11/4 — '의심'이면 app.js 가 '닮은 리콜 공표문 (같은 제품인지 확인 필요)'로 바꾼다 -->
+              <h2 id="recallInfoTitle">
                 리콜 정보
               </h2>
 

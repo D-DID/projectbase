@@ -125,7 +125,10 @@ public record ResultView(String resultState, String imageCheck, boolean imageChe
     static boolean kcNumberMissing(VerificationChannel channel, String rawText, String certNum) {
         boolean numbered = !KcCertNumbers.extract(certNum).isEmpty();
         if (channel == VerificationChannel.WEB) {
-            return !numbered;
+            // 11/4 — 우클릭 검증도 웹 채널로 저장된다. 확장이 판매 페이지 고시를 보고 'KC 대상 아님'(위생용품·식품 등
+            // 다른 법 고시)으로 판단했으면 번호가 없어도 '미표기'가 아니다 — 사진 찾기도 열지 않는다.
+            // 직접 입력은 KC 칸 상태가 없어서(null) 예전과 같다.
+            return !numbered && ExtractionNotes.kcStatus(rawText) != ExtractionNotes.KcStatus.NONE;
         }
         return ExtractionNotes.infoMissing(rawText) && !numbered;
     }
