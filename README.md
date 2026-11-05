@@ -1,3 +1,6 @@
+# NOTION Project Dashboard https://fuchsia-school-5a5.notion.site/UnderFaker-3d9b59c9d93480a4a435ee58c1391a05
+
+
 # UnderFaker — 구매한 유아·어린이 제품 리콜 확인
 
 쿠팡 구매이력(크롬 확장)이나 직접 입력한 제품 정보를 국가기술표준원 리콜 공표문 4,092건(2012-03 ~ 2026-09)과 대조해
