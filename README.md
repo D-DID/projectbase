@@ -1,60 +1,45 @@
-# NOTION Project Dashboard
- https://fuchsia-school-5a5.notion.site/UnderFaker-3d9b59c9d93480a4a435ee58c1391a05
+# UnderFaker
 
+**구매한 유아·어린이 제품의 리콜 여부를 확인하는 서비스**
 
-# UnderFaker — 구매한 유아·어린이 제품 리콜 확인
+[프로젝트 상세 문서 (Notion)](https://fuchsia-school-5a5.notion.site/UnderFaker-3d9b59c9d93480a4a435ee58c1391a05)
 
-쿠팡 구매이력(크롬 확장)이나 직접 입력한 제품 정보를 국가기술표준원 리콜 공표문 4,092건(2012-03 ~ 2026-09)과 대조해
-**일치 · 의심 · KC 번호 미표기 · 불일치 · 판단 제외** 중 하나로 보여 준다. 판정은 단정하지 않고 근거표를 같이 보여 준다.
+쿠팡 구매이력 또는 직접 입력한 제품 정보를 국가기술표준원의 리콜 공표문과 대조하여 제품의 리콜 관련 정보를 확인합니다.
 
-## 판단 흐름 (10/10 최종)
+## 주요 기능
 
-1. **범위** — 국내에서 파는 공산품·어린이제품(KC 인증 필수). (어린이제품이 아닌) 해외직구·구매대행은 판단 제외.
-   어린이제품은 구매대행도 KC 표시가 없으면 금지라(어린이제품 안전 특별법 제30조) 판단한다.
-2. **1차 — KC 인증번호 + 제품명** 으로 리콜 공표문 대조(10/31 2단계 판정).
-   - **일치** = KC 인증번호 완전일치 + 제품명 유사도 50% 이상, 또는 품번(모델명)·인증 모델명 완전일치
-   - **의심** = KC 번호만 같고 제품명이 다름 · 품번은 같은데 KC 번호가 다름 · 제품명이 거의 같은데(90%+) KC 번호가 다름 · 종합 점수 60%(유아·잡화 55%) 이상
-   - 일치·의심이면 결과 화면에 **제품안전정보센터 공표문 원문 링크**가 나온다 — 사용자가 직접 확인
-3. **2차 — 사진으로 찾기**(사용자가 누를 때만). KC 번호를 못 얻었거나 KC 인증 DB 에 없는 번호면 버튼이 열린다.
-   Google Vision 이 같은 사진이 실린 웹 문서를 찾고, 2곳 이상 사이트에서 반복된 KC 번호·제품명·모델명으로 다시 대조. 결과는 최대 '의심'.
+- 제품명, KC 인증번호, 모델명 기반 리콜 검증
+- Chrome Extension을 통한 쿠팡 구매이력 수집 및 검증
+- Google Vision 기반 제품 사진 검색
+- 쇼핑몰 상세페이지 및 리콜 공표문 우클릭 검증
+- 검증 결과 및 근거 이력 관리
 
-## 구성
+## 기술 스택
 
-| 폴더 | 내용 |
+| 구분 | 기술 |
 |---|---|
-| `src/main/java/com/underfaker/recallcheck` | Spring Boot 4 서버 — controller · service(extraction / matching / sync / kc) · repository(JPA, 테이블 8개) |
-| `src/main/resources/static` | 웹 화면(`index.html`, `js/app.js`) — 품명으로 제품 확인(① 직접 입력 ② 제품 사진 올리기 — 11/1 강사 피드백으로 넷→둘) · 쿠팡 구매이력 · 이력 · 위쪽 '사용 방법' 그림 팝업(7장) |
-| `db/` | 리콜 덤프(4,092건)·적재 스크립트·Postman 컬렉션 |
-| `docs/` | `api.md`(API 명세 — Swagger UI 는 서버 실행 후 `/swagger-ui.html`) · `edge-cases.md`(통합테스트 엣지케이스 20개) |
-| 크롬 확장 | 별도 폴더(`underfaker-extension`, 0.7.3) — 쿠팡 주문목록 읽기(유아·어린이 제품만), 상세페이지 KC 칸 읽기, **쇼핑몰 상세페이지·리콜 공표문에서 우클릭 → 'UnderFaker로 리콜 검증'** 한 번으로 그 페이지를 읽어 검증(`POST /api/verifications/page`) |
+| Backend | Java, Spring Boot 4 |
+| ORM | Spring Data JPA |
+| Database | MySQL, H2 |
+| Frontend | HTML, CSS, JavaScript |
+| Extension | Chrome Extension |
+| External API | SafetyKorea API, Google Vision |
+| Test | JUnit, Playwright |
+| Build | Gradle |
 
-## 실행
+## 프로젝트 구조
 
-자세한 순서는 [SETUP.md](SETUP.md). 요약:
+| 경로 | 설명 |
+|---|---|
+| `src/main/java/` | Spring Boot 백엔드 |
+| `src/main/resources/static/` | 웹 프론트엔드 |
+| `db/` | 리콜 데이터 및 적재 스크립트 |
+| `docs/` | API 명세 및 테스트 문서 |
+| `underfaker-extension/` | Chrome Extension |
 
-1. MySQL 에 `recallcheck` 스키마 → `src/main/resources/schema.sql` 실행 → `db/load-recall.bat` 로 리콜 4,092건 적재
-2. `src/main/resources/application.properties.example` 를 복사해 `application.properties` 를 만들고 DB 비밀번호·JWT 시크릿·SafetyKorea 인증키·(선택) Google Vision 키를 넣는다
-   - **키·비밀번호는 application.properties 에만.** git·채팅·Notion 에 올리지 않는다(이 파일은 .gitignore 대상)
-3. `gradlew bootRun` → http://localhost:8080
-4. 크롬 `chrome://extensions` → 개발자 모드 → '압축해제된 확장 프로그램 로드' → `underfaker-extension` 폴더
+## 실행 방법
 
-## 테스트
+자세한 설정은 `SETUP.md`를 참고합니다.
 
-- 서버: `gradlew test` — 단위·매칭 테스트(엣지케이스 20개 포함) + 통합 테스트(`ApiIntegrationTest` — 메모리 DB(H2)로 가입·로그인·검증·URL·사진 업로드·Swagger 까지 HTTP 로 확인, MySQL·키 불필요). `RecallCheckApplicationTests` 는 MySQL 이 떠 있어야 한다
-- 확장: `node test/*.test.js` (Playwright 필요한 것은 `content.browser`·`verify-page.e2e` — e2e 는 8080 을 비우고 `node test/verify-page.e2e.test.js <static 폴더>`)
-
-## 시연
-
-[DEMO.md](DEMO.md) — 시연 순서와 입력값(실제 리콜 DB 로 결과를 미리 확인한 값).
-
-## 한계
-
-- 판정은 리콜 공표문과의 **대조 결과**다. '불일치'는 안전하다는 뜻이 아니다.
-- 임계값은 정상 판매 상품 130건 라벨링셋(11/3)과 공표문 4,092건 실험으로 정했다. 리콜된 제품의 실제 판매 글은 확보하지 못해 재현율(리콜 제품을 놓치지 않는 비율)은 측정하지 못했다.
-- 구매이력 경로의 유아제품 실측은 10/30·31 4건(구매 후 취소로 확보)이다. 수집→고시→KC 조회→판정까지 관통했고 4건 모두 불일치였다. 11/3 쿠팡 유아·어린이 상품 130건은 확장과 같은 파서로 읽어 서버로 검증했다(정상 상품을 '일치'로 판정 0건, '의심' 3건 2.3%). 리콜 후보가 잡히는 제품을 구매이력 경로로 시험한 적은 없다.
-- 주문목록에서 유아·어린이 제품은 **상품 제목**으로 고른다. 제목에 아기·유아·어린이·장난감 같은 단어가 없으면 빠질 수 있다.
-- KC 번호가 상세 이미지 안에 그림으로만 있으면 읽지 못한다(OCR 은 10/1 스코프 컷).
-- 우클릭 검증(11/1)은 **브라우저에 보이는 그 페이지**의 HTML 을 확장이 서버로 보낸다(서버가 다시 받지 않음). 쿠팡은 고시 표, 공표문은 공표문 규칙으로 확장이 칸을 먼저 읽는다. 다른 쇼핑몰은 JSON-LD·메타 태그·고시 표만 보므로, 그게 없으면 제품명만 나오거나 V004. 상세설명이 다른 사이트 iframe 안이거나 그림이면 못 읽는다. 쿠팡 외 쇼핑몰도 11/4 팀장 실측에서 동작 확인. 읽은 값은 결과와 함께 위쪽 ① 직접 입력 칸에도 들어가, 틀린 값을 고쳐 다시 확인할 수 있다(11/4).
-- 사진 업로드 검증(10/31)은 OCR 없이 Google Vision 웹 검색만 쓴다 — 같은 사진이 실린 다른 사이트가 없으면 '확인불가'. 결과는 최대 '의심'.
-- 같은 입력을 다시 확인하면 기존 검증을 다시 쓴다(10/31). 그 전에 쌓인 중복은 `db/dedupe-verifications.sql` 로 정리한다.
-- 리콜 데이터 자동 갱신(10/31)은 **서버가 켜져 있을 때만** 돈다(기동 때 1회 + 6시간마다, 최근 7일·빈틈은 최대 90일). 공표일 조회는 2023-07-12 이후만 되므로 과거분은 덤프·키워드 적재로 넣는다.
+```bash
+gradlew bootRun
