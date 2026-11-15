@@ -2190,17 +2190,32 @@
     .scan-status.err { color: #b42318; }
     .scan-status.idle { color: #667085; }
 
-    .scan-filter-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-bottom: 12px;
-      padding: 8px 12px;
-      border-radius: 8px;
-      background: #eef4ff;
-      font-size: 0.92em;
+    /* 11/10 — '이번 조회 결과만 보는 중 … [전체 보기]' 막대(.scan-filter-bar)를 지웠다. 요약 줄과 같은 말이 두 번 나왔다(팀장 지적).
+       읽은 범위는 요약 아래 한 줄(.coupang-scan-note), 지난 결과는 맨 아래 '이전 검색 기록'(.coupang-prev) */
+    .coupang-scan-note {
+      margin: 8px 2px 0;
+      color: #667085;
+      font-size: 12px;
+    }
+
+    .coupang-prev {
+      margin-top: 26px;
+      padding-top: 16px;
+      border-top: 1px solid #eaecf0;
+    }
+
+    .mini-btn.coupang-prev-btn {
+      margin-left: 0;
+      padding: 8px 14px;
+      font-size: 13px;
+    }
+
+    .coupang-prev .coupang-fold { margin-top: 10px; }
+
+    .coupang-prev-note {
+      margin: 12px 2px 0;
+      color: #667085;
+      font-size: 12px;
     }
 
     .input-mode {
@@ -3172,7 +3187,7 @@
              11/8 — 글 안내 상자(확장 연결 상태·'사용 방법 보기' 버튼)를 지우고 사용 방법 그림(page-1.png)을 그대로 넣었다(팀장 요청).
              확장 연결 상태는 '쿠팡 구매이력으로 확인' 화면(#extensionStatus)에 그대로 나온다 -->
         <img class="page-verify-img" src="img/guide/page-1.png" width="1100" height="470"
-             alt="쇼핑몰 상품 상세페이지에서 바로 리콜 검증 — 상세페이지 빈 곳에서 마우스 오른쪽 버튼, 메뉴에서 UnderFaker로 리콜 검증을 누르면 UnderFaker 탭에 결과가 열립니다">
+             alt="쇼핑몰 상품 상세페이지에서 바로 리콜 검증 | 상세페이지 빈 곳에서 마우스 오른쪽 버튼, 메뉴에서 UnderFaker로 리콜 검증을 누르면 UnderFaker 탭에 결과가 열립니다">
 
         <div class="input-mode" role="tablist" aria-label="입력 방식">
           <button type="button" class="input-mode-btn active" id="modeManualBtn" role="tab"
@@ -3191,7 +3206,7 @@
             <input id="photoFile" type="file" accept="image/jpeg,image/png,image/gif,image/webp">
             <button type="button" class="mini-btn" id="photoVerifyBtn" onclick="verifyByPhoto()">사진으로 확인하기</button>
           </div>
-          <p class="url-read-msg idle" id="photoMsg">사진 속 글자는 읽지 않습니다. 같은 사진이 실린 웹 문서에서 여러 사이트에 반복된 상품명·KC 번호·모델명으로 리콜 공표문과 대조합니다. 판매자가 적은 값이 아니라 결과는 최대 '의심'입니다. (Google Vision 사용 — 월 사용 상한 있음)</p>
+          <p class="url-read-msg idle" id="photoMsg">사진 속 글자는 읽지 않습니다. 같은 사진이 실린 웹 문서에서 여러 사이트에 반복된 상품명·KC 번호·모델명으로 리콜 공표문과 대조합니다. 판매자가 적은 값이 아니라 결과는 최대 '의심'입니다. (Google Vision 사용 | 월 사용 상한 있음)</p>
         </div>
 
 
@@ -4000,7 +4015,8 @@
         </div>
 
         <!-- 11/8 — 쿠팡 구매이력 결과를 보는 한 곳. 예전 쿠팡 화면 아래 카드(요약·의심 먼저·이번 조회만 보기)를 여기로 옮겼다.
-             같은 상품은 최신 1건, 최근 100건까지 읽어 의심 → KC 번호 미표기 → 그 밖(접힘) → KC 대상 아님(접힘) 순서로 보여 준다 -->
+             같은 상품은 최신 1건, 최근 100건까지 읽어 의심 → KC 번호 미표기 → 그 밖(접힘) → KC 대상 아님(접힘) 순서로 보여 준다.
+             11/10 — 위에는 검색 한 번(방금 읽은 것, 없으면 가장 최근 검색)의 결과만, 그 전 검색은 맨 아래 '이전 검색 기록'에 검색별로 접어 둔다 -->
         <div class="card" id="coupangHistoryCard" style="display:none">
           <div class="card-title">
             <h2>쿠팡 구매이력으로 확인</h2>
@@ -4016,12 +4032,6 @@
             </span>
           </div>
 
-          <!-- 10/12 — 방금 버튼으로 읽은 결과만 보는 중 -->
-          <div class="scan-filter-bar" id="coupangScanFilterBar" style="display:none">
-            <span id="coupangScanFilterLabel"></span>
-            <button type="button" class="mini-btn" onclick="clearCoupangScanFilter()">전체 보기</button>
-          </div>
-
           <div class="coupang-result-summary">
             <div>
               <strong id="coupangResultProduct">-</strong>
@@ -4034,13 +4044,16 @@
             </div>
           </div>
 
+          <!-- 11/10 — 지금 보는 결과가 어느 검색인지 한 줄(읽은 범위·건너뛴 수). 건수는 위 요약에 있어 다시 적지 않는다 -->
+          <div class="coupang-scan-note" id="coupangScanNote" style="display:none"></div>
+
           <!-- 9/27 — 찾은 의심 제품(일치 먼저) -->
           <h3 class="coupang-sub-title" id="coupangSuspectTitle" style="display:none">리콜 의심 제품</h3>
           <div class="history-list coupang-suspect-list" id="coupangSuspectList"></div>
 
           <!-- 9/27 — KC 번호 미표기: KC 인증번호가 없어 텍스트로 못 찾은 제품. 사진으로 찾기 버튼 -->
           <h3 class="coupang-sub-title" id="coupangMissingTitle" style="display:none">
-            KC 번호 미표기 — 사진으로 한 번 더 찾아볼 수 있는 제품
+            KC 번호 미표기 | 사진으로 한 번 더 찾아볼 수 있는 제품
           </h3>
           <div class="history-list coupang-suspect-list" id="coupangMissingList"></div>
 
@@ -4055,6 +4068,13 @@
             <summary id="coupangHiddenSummary">KC 대상 아님(일치·의심 없음)</summary>
             <div class="history-list" id="coupangHiddenList"></div>
           </details>
+
+          <!-- 11/10 — 이전 검색 기록. 누르면 검색별로(예: 11월 8일 오전 11시 20분 검색 기록 (7건 조회)) 아래에 나열된다 -->
+          <div class="coupang-prev" id="coupangPrevBox" style="display:none">
+            <button type="button" class="mini-btn coupang-prev-btn" id="coupangPrevBtn"
+                    aria-expanded="false" onclick="toggleCoupangPrev()">이전 검색 기록 확인하기</button>
+            <div id="coupangPrevList" style="display:none"></div>
+          </div>
         </div>
 
       </div>
@@ -4120,7 +4140,7 @@
           </h2>
 
           <p>
-            읽을 범위를 고르세요 — <strong>최근 주문 상품 10건·30건</strong> 또는 <strong>구매일자 하루</strong>. 그 안에서 유아·어린이 제품만 읽고 식품·생활용품은 건너뜁니다.<br>
+            읽을 범위를 고르세요 | <strong>최근 주문 상품 10건·30건</strong> 또는 <strong>구매일자 하루</strong>. 그 안에서 유아·어린이 제품만 읽고 식품·생활용품은 건너뜁니다.<br>
             UnderFaker 확장 프로그램이 고른 주문의 상품 이름·사진·KC 인증정보를 읽어 리콜 공표문과 대조합니다.
           </p>
 
@@ -4457,7 +4477,7 @@
 
 <!-- 11/8 — 브라우저가 옛 app.js 를 들고 있으면 새 index.html 과 어긋난다(위쪽 메뉴 강조가 예전대로 보임).
      app.js 를 바꿀 때마다 v 값을 올린다 -->
-<script src="js/app.js?v=20261108d"></script>
+<script src="js/app.js?v=20261110b"></script>
 
 </body>
 </html>
