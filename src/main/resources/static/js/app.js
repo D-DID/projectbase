@@ -131,6 +131,7 @@ function fillInputFromSummary(id) {
   if (!s || s === '직접 입력' || !el || (el.textContent && el.textContent !== '-')) return;
   text('inputProduct', s);
   if (!lastInput.productName) lastInput.productName = s;
+  paintInputSummary();
 }
 
 /* DEMO_MODE 이력. localStorage 를 쓰지 않는다(P0-2). 새로고침하면 사라진다. */
@@ -176,7 +177,7 @@ document.addEventListener('DOMContentLoaded', function () {
   paintHeader();
   bindEnterKeys();
   bindCategoryChips();
-  applyRoute(); // 10/31 — 주소 # 의 화면(없으면 품명 확인). 새로고침해도 같은 화면
+  applyRoute(); // 주소 # 의 화면(없으면 제품 안전 확인 메인). 새로고침해도 같은 화면
   if (token) announceTokenToExtension();
   else if (!DEMO_MODE) announceLogoutToExtension();
   paintPageVerifyHint();
@@ -228,14 +229,14 @@ function paintExtensionStatus() {
   if (v && !extensionSupports('scan')) {
     /* 10/12 — 0.4.x 는 연결은 되지만 읽기 버튼(0.5.0)을 못 쓴다 */
     el.className = 'extension-status missing';
-    el.textContent = '확장 프로그램 v' + v + ' 연결됨 — 아래 읽기 버튼은 0.5.0 이상에서 됩니다. ' +
+    el.textContent = '확장 프로그램 v' + v + ' 연결됨 | 아래 읽기 버튼은 0.5.0 이상에서 됩니다. ' +
         'chrome://extensions 에서 새 버전 폴더를 다시 불러온 뒤 이 페이지를 새로고침하세요.';
   } else if (v) {
     el.className = 'extension-status ok';
     el.textContent = '✓ 확장 프로그램 연결됨 (v' + v + ')';
   } else {
     el.className = 'extension-status missing';
-    el.textContent = '확장 프로그램 미감지 — chrome://extensions 에서 설치(0.5.0 이상) 후 이 페이지 새로고침';
+    el.textContent = '확장 프로그램 미감지 | chrome://extensions 에서 설치(0.5.0 이상) 후 이 페이지 새로고침';
   }
 }
 
@@ -352,10 +353,17 @@ function handleAuthButton() {
    MESSAGE
 ================================================== */
 
+/* 11/10 — 화면 글자의 — (em dash)를 | 로(팀장 요청: 가독성). 이 파일의 문구는 직접 | 로 바꿨고,
+   서버·확장이 보낸 글(판정 근거·오류 문구·KC 근거 문구 등)은 그릴 때 여기서 바꾼다 — esc·text·show 와
+   글을 직접 넣는 곳(사진 안내·사진 다시 시도·판정 근거)에서 부른다. 값을 고치지는 않는다(입력 칸·전송 값은 그대로) */
+function noDash(s) {
+  return (s === null || s === undefined) ? s : String(s).replace(/[ \t]*\u2014[ \t]*/g, ' | ');
+}
+
 function show(id, text, ok) {
   const el = document.getElementById(id);
   if (!el) return;
-  el.textContent = text;
+  el.textContent = noDash(text);
   el.className = 'msg ' + (ok ? 'ok' : 'err');
 }
 
@@ -468,24 +476,58 @@ function handleUnauthorized() {
 /* 10/31 — 브라우저 뒤로 가기.
    한 페이지 안에서 화면만 바꾸는 구조(SPA)라, 예전에는 뒤로 가기를 누르면 앞 화면이 아니라 localhost:8080 을 떠났다.
    화면을 바꿀 때마다 주소 # 에 남기고(history.pushState), 뒤로·앞으로 가기(popstate)에서 그 화면을 다시 연다.
-     #verify  #history  #history-coupang  #coupang  #procedure  #login  #result/{검증 id}
+     #verify(홈)  #manual(제품명으로 확인)  #history  #history-coupang  #coupang  #procedure  #login  #result/{검증 id}
    새로고침해도 같은 화면이 열린다(#result 는 로그인돼 있어야 결과를 다시 불러온다). */
 const SCREEN_ROUTE = {
-  verifyScreen: 'verify', historyScreen: 'history', coupangScreen: 'coupang',
-  procedureScreen: 'procedure', loginScreen: 'login'
+  homeScreen: 'verify', verifyScreen: 'manual', historyScreen: 'history',
+  coupangScreen: 'coupang', procedureScreen: 'procedure', loginScreen: 'login'
 };
 let routing = false; // 뒤로·앞으로 가기로 화면을 여는 중 — 기록을 새로 쌓지 않고 바꿔 쓴다
 let lastRouteHash = null; // 마지막으로 연 화면의 # — popstate·hashchange 가 같이 와도 한 번만 연다
 
 function setRoute(route, replace) {
   if (!route) return;
+
   const hash = '#' + route;
-  if (location.hash === hash) return;
+  const currentState = history.state && typeof history.state === 'object'
+      ? history.state : {};
+  const isUnderFakerEntry = currentState.__underfakerRoute === true
+      && Number.isFinite(currentState.__underfakerIndex);
+
   try {
-    if (replace || routing) history.replaceState({ route: route }, '', hash);
-    else history.pushState({ route: route }, '', hash);
+    // 첫 진입 주소(# 없음 또는 직접 링크)는 현재 항목에 등록해
+    // 앱을 열자마자 뒤로 가기를 눌렀을 때 빈 화면/중복 메인으로 가지 않게 한다.
+    if (location.hash === hash) {
+      if (!isUnderFakerEntry || currentState.route !== route) {
+        history.replaceState(Object.assign({}, currentState, {
+          route: route,
+          __underfakerRoute: true,
+          __underfakerIndex: isUnderFakerEntry ? currentState.__underfakerIndex : 0
+        }), '', hash);
+      }
+      lastRouteHash = hash;
+      return;
+    }
+
+    const shouldReplace = !!(replace || routing);
+    const nextIndex = isUnderFakerEntry
+        ? currentState.__underfakerIndex + (shouldReplace ? 0 : 1)
+        : 0;
+    const nextState = Object.assign({}, currentState, {
+      route: route,
+      __underfakerRoute: true,
+      __underfakerIndex: nextIndex
+    });
+
+    // 앱 첫 로딩 시에는 현재 문서 항목을 초기 경로로 등록한다.
+    // 이후 화면 이동은 pushState로 쌓아 브라우저 뒤로/앞으로 가기를 지원한다.
+    if (shouldReplace || !isUnderFakerEntry) {
+      history.replaceState(nextState, '', hash);
+    } else {
+      history.pushState(nextState, '', hash);
+    }
     lastRouteHash = hash;
-  } catch (e) { /* file:// 등 — 기록 없이 화면만 바꾼다 */ }
+  } catch (e) { /* file:// 또는 제한된 브라우저 — 기록 없이 화면만 바꾼다 */ }
 }
 
 /* 주소 # 에 맞는 화면을 연다(처음 열 때·뒤로·앞으로 가기) */
@@ -501,9 +543,10 @@ function applyRoute() {
     } else if (h === 'history') goHistory();
     else if (h === 'history-coupang') goCoupangVerificationHistory();
     else if (h === 'coupang') goCoupangHistory();
+    else if (h === 'manual') goManualVerify();
     else if (h === 'procedure') goProcedure();
     else if (h === 'login' && !token) showScreen('loginScreen');
-    else showScreen('verifyScreen');
+    else goHome();
   } finally {
     routing = false;
   }
@@ -534,12 +577,23 @@ function showScreen(id, route, opts) {
       .forEach(el => el.classList.remove('active'));
 
   const navMap = {
-    verifyScreen: 'navVerify',
+    homeScreen: 'navVerify',
+    verifyScreen: 'navManual',
     procedureScreen: 'navProcedure',
-    coupangScreen: 'navCoupang'
+    coupangScreen: 'navCoupang',
+    historyScreen: 'navHistory' // 11/8 — 위쪽 메뉴 '내 검증 이력'
   };
 
-  const nav = document.getElementById(navMap[id]);
+  // 화면별 상단 메뉴 활성 상태를 구분한다.
+  // 이력 화면은 '내 검증 이력'(11/8), 결과 화면은 결과의 channel을 기준으로 표시한다.
+  const effectiveRoute = route || SCREEN_ROUTE[id] || 'verify';
+  let activeNavId = navMap[id] || null;
+
+  if (id === 'verifyScreen' && /^result\//.test(effectiveRoute)) {
+    activeNavId = resultChannel === 'EXTENSION' ? 'navCoupang' : 'navManual';
+  }
+
+  const nav = activeNavId ? document.getElementById(activeNavId) : null;
   if (nav) nav.classList.add('active');
 
   /* 화면을 옮길 때마다 결과 패널은 접는다. 기존 코드는 .show 를 붙이기만 하고 떼지 않아서
@@ -547,27 +601,140 @@ function showScreen(id, route, opts) {
      결과를 보여 줄 쪽(verify, openHistoryItem)이 showScreen 뒤에 다시 연다. */
   const resultPanel = document.getElementById('resultScreen');
   if (resultPanel) resultPanel.classList.remove('show');
+  /* 11/8 (A안) — 결과가 닫히면 입력 폼도 다시 펼친다 */
+  const verifyScreenEl = document.getElementById('verifyScreen');
+  if (verifyScreenEl) verifyScreenEl.classList.remove('result-open', 'input-open');
 
   updateLoginMessages();
 
-  if (id === 'coupangScreen') {
-    paintExtensionStatus();
-    if (token) startCoupangPolling();
-  } else {
-    stopCoupangPolling();
-  }
+  /* 11/8 — 쿠팡 결과 목록은 '쿠팡 구매이력 확인 이력'(이력 화면 쿠팡 탭)으로 옮겼다. 폴링은 그 탭이 켠다(showHistoryType) */
+  stopCoupangPolling();
+  if (id === 'coupangScreen') paintExtensionStatus();
 
-  setRoute(route || SCREEN_ROUTE[id] || 'verify', opts && opts.replace);
+  setRoute(effectiveRoute, opts && opts.replace);
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function goHome() {
+  showScreen('homeScreen');
+}
+
+function goManualVerify() {
   showScreen('verifyScreen');
 }
 
 function goProcedure() {
   showScreen('procedureScreen');
+}
+
+
+/* 화면 내 뒤로 가기 공통 처리.
+   앱 내부의 직전 화면이 있으면 브라우저 뒤로 가기를 사용하고,
+   직접 진입 등 내부 이력이 없으면 제품 안전 확인 메인으로 복귀한다. */
+function goBack() {
+  const state = history.state;
+  const canGoBackInsideApp = state
+      && state.__underfakerRoute === true
+      && Number.isFinite(state.__underfakerIndex)
+      && state.__underfakerIndex > 0;
+
+  if (canGoBackInsideApp) history.back();
+  else goHome();
+}
+
+
+/* ==================================================
+   11/8 (A안) — 결과가 나오면 입력 폼을 접는다
+   예전에는 입력 화면(제목·히어로·입력 칸, 약 1,100px) 아래에 결과가 붙어 한 화면이 4장 넘게 길었다.
+   결과를 열 때 #verifyScreen 에 result-open 을 붙여 입력 부분(.verify-input-part)을 숨기고
+   '확인한 제품' 한 줄(#inputSummaryBar)만 둔다. [입력 수정]을 누르면 칸이 다시 펼쳐진다 —
+   11/4 '우클릭으로 읽은 값을 칸에 넣고 고쳐서 다시 확인'은 그대로 쓴다.
+================================================== */
+function revealResult() {
+  const panel = document.getElementById('resultScreen');
+  if (!panel) return;
+  panel.classList.add('show');
+  const vs = document.getElementById('verifyScreen');
+  if (vs) {
+    vs.classList.add('result-open');
+    vs.classList.remove('input-open');
+  }
+  const btn = document.getElementById('inputSummaryBtn');
+  if (btn) btn.textContent = '입력 수정';
+  paintInputSummary();
+  /* 입력 칸이 접혀서 결과가 화면 위쪽에 온다 — '확인한 제품' 줄부터 보이게 맨 위로 */
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function toggleInputEdit(force) {
+  const vs = document.getElementById('verifyScreen');
+  if (!vs) return;
+  const open = typeof force === 'boolean' ? force : !vs.classList.contains('input-open');
+  vs.classList.toggle('input-open', open);
+  const btn = document.getElementById('inputSummaryBtn');
+  if (btn) btn.textContent = open ? '입력 접기' : '입력 수정';
+  if (open) {
+    const card = document.getElementById('verifyInputCard');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const name = document.getElementById('productName');
+    if (name && inputMode !== 'photo') {
+      try { name.focus({ preventScroll: true }); } catch (e) { name.focus(); }
+    }
+  }
+}
+
+/* '확인한 제품' 한 줄. 결과 화면 '내가 입력한 제품' 칸(renderInput 등이 채움)의 값을 그대로 쓴다 */
+function paintInputSummary() {
+  const box = document.getElementById('inputSummaryText');
+  if (!box) return;
+  const v = function (id) {
+    const el = document.getElementById(id);
+    const t = el ? String(el.textContent || '').trim() : '';
+    return t && t !== '-' ? t : '';
+  };
+  const product = v('inputProduct');
+  const model = v('inputModel');
+  const cert = v('inputCert');
+  const parts = [];
+  if (product) parts.push(product);
+  if (model) parts.push('모델명 ' + model);
+  if (cert) parts.push('KC ' + cert);
+  box.textContent = parts.length ? parts.join(' · ')
+      : (inputMode === 'photo' ? '올린 사진으로 확인했습니다' : '입력값 없음');
+
+  const fillMsg = document.getElementById('pageFillMsg');
+  const fromPage = !!(fillMsg && fillMsg.style.display !== 'none' && fillMsg.textContent);
+  const label = document.getElementById('inputSummaryLabel');
+  if (label) {
+    label.textContent = fromPage ? '판매 페이지에서 읽은 제품'
+        : resultChannel === 'EXTENSION' ? '쿠팡 구매이력에서 읽은 제품'
+        : inputMode === 'photo' ? '사진으로 확인한 제품'
+        : '확인한 제품';
+  }
+  const hint = document.getElementById('inputSummaryHint');
+  if (hint) {
+    hint.textContent = fromPage
+        ? '판매 페이지 값이 틀렸으면 [입력 수정]에서 고친 뒤 다시 확인하세요.'
+        : '';
+  }
+}
+
+/* 11/8 (E안) — 결과의 '← 다른 제품 확인하기'. 홈이 아니라 빈 입력 화면으로 간다(예전: 홈 → 한 번 더 눌러야 했다) */
+function startNewProduct() {
+  FORM_FILL_FIELDS.forEach(function (k) {
+    const el = document.getElementById(k);
+    if (el) el.value = '';
+  });
+  pageFillContext = null;
+  hidePageFillMsg();
+  setInputMode('manual');
+  clearMsg('verifyMsg');
+  goManualVerify();
+  const name = document.getElementById('productName');
+  if (name) {
+    try { name.focus({ preventScroll: true }); } catch (e) { name.focus(); }
+  }
 }
 
 
@@ -659,7 +826,7 @@ async function login() {
     paintHeader();
     show('authMsg', '더미 로그인되었습니다.', true);
 
-    setTimeout(function () { showScreen('verifyScreen', null, { replace: true }); }, 150);
+    setTimeout(function () { showScreen('homeScreen', null, { replace: true }); }, 150);
     return;
   }
 
@@ -683,7 +850,7 @@ async function login() {
     paintHeader();
     show('authMsg', '로그인되었습니다.', true);
 
-    setTimeout(function () { showScreen('verifyScreen', null, { replace: true }); }, 300); // 뒤로 가기로 로그인 화면에 안 돌아가게
+    setTimeout(function () { showScreen('homeScreen', null, { replace: true }); }, 300); // 뒤로 가기로 로그인 화면에 안 돌아가게
 
   } else {
     show('authMsg',
@@ -709,7 +876,7 @@ function logout() {
   stopCoupangPolling();
 
   paintHeader();
-  showScreen('verifyScreen');
+  showScreen('homeScreen');
 }
 
 
@@ -784,10 +951,10 @@ function paintPageVerifyHint() {
   if (!el) return;
   const ver = document.documentElement.getAttribute('data-underfaker-extension');
   if (extensionSupports('verify-page')) {
-    el.textContent = '확장 프로그램 연결됨' + (ver ? ' (v' + ver + ')' : '') + ' — 쇼핑몰에서 바로 쓸 수 있습니다.';
+    el.textContent = '확장 프로그램 연결됨' + (ver ? ' (v' + ver + ')' : '') + ' | 쇼핑몰에서 바로 쓸 수 있습니다.';
     el.className = 'page-verify-state ok';
   } else if (ver) {
-    el.textContent = '확장 프로그램 v' + ver + ' — 0.7.0 이상이 필요합니다. chrome://extensions 에서 새 버전으로 ⟳ 한 뒤 이 페이지를 새로고침하세요.';
+    el.textContent = '확장 프로그램 v' + ver + ' | 0.7.0 이상이 필요합니다. chrome://extensions 에서 새 버전으로 ⟳ 한 뒤 이 페이지를 새로고침하세요.';
     el.className = 'page-verify-state err';
   } else {
     el.textContent = '확장 프로그램이 없습니다. SETUP 안내대로 설치한 뒤 이 페이지를 새로고침하세요.';
@@ -802,7 +969,7 @@ async function verifyByPhoto() {
   const msg = function (m, kind) {
     const el = document.getElementById('photoMsg');
     if (!el) return;
-    el.textContent = m;
+    el.textContent = noDash(m);
     el.className = 'url-read-msg ' + (kind || 'idle');
   };
   if (!file) {
@@ -852,13 +1019,11 @@ async function verifyByPhoto() {
     lastInput = emptyInput();
     renderInput(lastInput);
     render(result);
-    const panel = document.getElementById('resultScreen');
-    if (panel) panel.classList.add('show');
+    revealResult();
     if (result.verificationId) {
       setRoute('result/' + result.verificationId); // 10/31 — 뒤로 가기로 입력 화면에 돌아간다
       loadEvidence(result.verificationId);
     }
-    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -946,15 +1111,12 @@ async function verify() {
     renderInput(lastInput);
     render(result);
 
-    const panel = document.getElementById('resultScreen');
-    if (panel) panel.classList.add('show');
+    revealResult();
 
     if (result && result.verificationId) {
       setRoute('result/' + result.verificationId); // 10/31 — 뒤로 가기로 입력 화면에 돌아간다
       loadEvidence(result.verificationId);
     }
-
-    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   } finally {
     if (btn) {
@@ -1078,6 +1240,7 @@ function renderInput(input) {
   text('inputModel', i.modelName);
   text('inputMaker', i.makerName);
   text('inputBrand', i.brandName);
+  paintInputSummary();
 }
 
 /* 10/31 — 서버가 결과에 저장된 입력값(input)을 내려주면 그것을 쓴다. 그때는 판정 근거의 inputValue 로 덮지 않는다
@@ -1121,6 +1284,12 @@ function render(d) {
      내 제품의 리콜 정보처럼 보였다(11/4 실측: 핑크퐁 우산 'KC 번호 미표기' 화면에 '어린이용 장신구' 프탈레이트 리콜이 표시됨).
      가장 가까운 후보는 판정 근거의 '가장 가까운 후보와의 대조 보기(참고)'에서만 보인다(10/7). 공표문 원문 링크와 같은 기준이다. */
   const R = (fr === 'MATCH' || fr === 'PARTIAL') ? d : {};
+  /* 11/8 (B안) — 일치·의심이 아니면 '리콜 정보' 카드가 '-'만 줄줄이 보였다(불일치·KC 번호 미표기가 대부분이라 스크롤만 늘었다).
+     카드를 숨기고, 제품 정보 비교·판정 근거는 새 결과마다 접어 둔다 */
+  const recallInfoCard = document.getElementById('recallInfoCard');
+  if (recallInfoCard) recallInfoCard.style.display = (fr === 'MATCH' || fr === 'PARTIAL') ? '' : 'none';
+  const evidenceFold = document.getElementById('evidenceFold');
+  if (evidenceFold) evidenceFold.open = false;
   /* 11/4 — '의심'은 같은 제품이라고 확정한 게 아니다. 제목이 '리콜 정보'면 내 제품이 리콜된 것으로 읽혀서(팀장 지적),
      의심일 때만 제목을 바꾼다. 일치·그 밖은 예전 제목 */
   text('recallInfoTitle', fr === 'PARTIAL' ? '닮은 리콜 공표문 (같은 제품인지 확인 필요)' : '리콜 정보');
@@ -1152,7 +1321,7 @@ function text(id, v) {
   const el = document.getElementById(id);
   if (!el) return;
   const s = (v === null || v === undefined || v === '') ? '-' : String(v);
-  el.textContent = s;
+  el.textContent = noDash(s);
 }
 
 /* publishDate 는 yyyyMMdd 문자열이다. 이미 하이픈이 있으면 그대로 둔다. */
@@ -1225,7 +1394,7 @@ function setResultState(fr, score, d) {
     notice.innerHTML =
         '<strong>🔎 리콜 의심 제품입니다.</strong><br>' +
         '제품명이나 KC 인증번호·품번 중 일부만 리콜 공표문과 맞아 같은 제품이라고 확정하지 않았습니다 ' +
-        '(예: 번호는 같은데 제품명이 다름 — 같은 번호로 여러 제품이 공표된 경우가 있음). ' +
+        '(예: 번호는 같은데 제품명이 다름 | 같은 번호로 여러 제품이 공표된 경우가 있음). ' +
         '아래 <strong>공표문 원문</strong>의 모델명·인증번호·사진을 내 제품과 직접 비교하세요.';
 
   } else if (fr === 'MISSING') {
@@ -1233,7 +1402,7 @@ function setResultState(fr, score, d) {
     /* 10/7 — 사진 확인 뒤에도 KC 번호 미표기(구 항목누락)로 남는다(ResultView). 이미 사진으로 찾아봤으면 그 사실을 적는다. */
     const imageChecked = d && (d.imageCheck === 'FOUND' || d.imageCheck === 'NONE');
     notice.innerHTML =
-            '<strong>🟣 KC 번호 미표기 — KC 인증번호로 판단할 수 없습니다.</strong><br>' +
+            '<strong>🟣 KC 번호 미표기 | KC 인증번호로 판단할 수 없습니다.</strong><br>' +
             esc((d && d.missingReason) || 'KC 인증번호가 없습니다.') + ' ' +
             (imageChecked
                     ? '사진으로도 찾아봤지만 일치하는 리콜 공표문은 없었습니다. ' +
@@ -1248,7 +1417,7 @@ function setResultState(fr, score, d) {
     /* 10/10 — 국외 판매(해외직구·구매대행) 상품은 판단 범위가 아니다(팀장 결정). 서버 ResultView.EXCLUDED */
     notice.className = 'result-notice unknown';
     notice.innerHTML =
-        '<strong>– 판단 제외 — (어린이제품이 아닌) 해외직구·구매대행 상품</strong><br>' +
+        '<strong>– 판단 제외 | (어린이제품이 아닌) 해외직구·구매대행 상품</strong><br>' +
         esc((d && d.missingReason) || '(어린이제품이 아닌) 해외직구·구매대행 상품이라 판단하지 않습니다.') + ' ' +
         '이 서비스는 국내에서 판매되는 KC 인증 대상 공산품·유아제품만 판단합니다. ' +
         /* 10/10 — 어린이제품은 구매대행도 KC 표시 필수(어린이제품법 제30조)라 서버가 판단 제외하지 않는다 */
@@ -1293,8 +1462,8 @@ function notChildBoxHtml(kcText, suspect) {
   const t = String(kcText || '');
   let head;
   if (/^어린이제품 아님/.test(t)) head = '어린이제품이 아닙니다';
-  else if (/식품용 기구/.test(t)) head = '식품용 기구 — 어린이제품 KC 대상이 아닙니다';
-  else if (/고시\(KC 대상 아님\)|^[^(]+\(KC 대상 아님\)/.test(t)) head = '다른 법이 관리하는 품목 — 어린이제품 KC 대상이 아닙니다';
+  else if (/식품용 기구/.test(t)) head = '식품용 기구 | 어린이제품 KC 대상이 아닙니다';
+  else if (/고시\(KC 대상 아님\)|^[^(]+\(KC 대상 아님\)/.test(t)) head = '다른 법이 관리하는 품목 | 어린이제품 KC 대상이 아닙니다';
   else head = 'KC(어린이제품) 인증 대상이 아닙니다';
   return '<div class="not-child-box">' +
       '<div class="not-child-head">' + head + '</div>' +
@@ -1330,11 +1499,11 @@ const KC_EXPIRED_NOTE =
     '신고 유효기간(어린이제품 안전확인은 신고일부터 5년)이 지난 번호입니다. ' +
     '만료 전에 출고(국내 제조)·통관(수입)을 마친 재고는 만료 뒤에도 유통·판매할 수 있어(한국제품안전관리원 안내), ' +
     '이것만으로 판매가 불법이라고 볼 수는 없습니다.' +
-    '<br>지금 파는 물량이 언제 출고·통관됐는지는 확인할 수 없습니다 — 판매자에게 출고·통관 시점이나 지금 유효한 KC 번호를 확인해 보세요. ' +
+    '<br>지금 파는 물량이 언제 출고·통관됐는지는 확인할 수 없습니다 | 판매자에게 출고·통관 시점이나 지금 유효한 KC 번호를 확인해 보세요. ' +
     '리콜 여부와는 별개입니다.';
 const KC_ACTION_NOTE =
     '적합·기간만료가 아닌 상태입니다(인증 취소·효력상실·사용금지·개선명령 등 행정처분). ' +
-    '기간만료와는 다릅니다 — 제품안전정보센터에서 처분 내용과 대상 모델을 확인하세요. 리콜 판정과는 별개입니다.';
+    '기간만료와는 다릅니다 | 제품안전정보센터에서 처분 내용과 대상 모델을 확인하세요. 리콜 판정과는 별개입니다.';
 /* 11/4 — KC 인증 조회를 사진 카드(imageFoundCard)와 같은 카드로 보인다. 예전에는 긴 문단 한 덩어리라 읽기 어려웠다.
    카드: KC 인증번호(크게) · 인증상태 · 인증 품목/모델명 · 인증일 · 리콜 공표문 대조. 긴 설명(기간만료·처분)은 접어 둔다.
    tone: '' 보통 · check 확인 필요(주황) · danger 처분(빨강) · muted 판정 보류(회색) */
@@ -1346,8 +1515,8 @@ function kcRow(label, value) {
 function kcStateText(e) {
   const level = kcStateLevel(e.certState);
   const state = esc(e.certState || '상태 정보 없음');
-  if (level === 'expired') return { tone: 'check', html: '<b class="kc-state-check">ⓘ ' + state + '</b> — 신고 유효기간(5년)이 지난 번호. 판매자에게 지금 유효한 KC 번호를 확인하세요' };
-  if (level === 'action') return { tone: 'danger', html: '<b class="kc-state-danger">⚠ ' + state + '</b> — 행정처분 상태. 제품안전정보센터에서 처분 내용을 확인하세요' };
+  if (level === 'expired') return { tone: 'check', html: '<b class="kc-state-check">ⓘ ' + state + '</b> | 신고 유효기간(5년)이 지난 번호. 판매자에게 지금 유효한 KC 번호를 확인하세요' };
+  if (level === 'action') return { tone: 'danger', html: '<b class="kc-state-danger">⚠ ' + state + '</b> | 행정처분 상태. 제품안전정보센터에서 처분 내용을 확인하세요' };
   if (level === 'valid') return { tone: '', html: '<b>' + state + '</b>' };
   return { tone: 'muted', html: state };
 }
@@ -1360,10 +1529,10 @@ function kcRecallLine(d, nums) {
   const notice = d && d.recallUid
       ? '공표번호 ' + esc(d.recallUid) + (d.recallModelName ? ' \'' + esc(d.recallModelName) + '\'' : '')
       : '';
-  if (same && state === 'MATCH') return '<b>일치</b> — 같은 KC 번호의 리콜 공표문(' + notice + ')과 제품명도 맞습니다.';
-  if (same) return '<b>같은 KC 번호의 리콜 공표문 있음</b> — ' + notice + '. 제품명이 달라 \'일치\'가 아니라 \'의심\'입니다(같은 번호로 여러 제품이 공표된 경우가 있음).';
-  if (state === 'MATCH') return '<b>일치</b> — 위 판정과 같습니다.';
-  if (state === 'PARTIAL') return '<b>의심</b> — KC 번호가 아니라 제품명 등이 공표문과 닮았습니다(아래 공식 리콜 정보).';
+  if (same && state === 'MATCH') return '<b>일치</b> | 같은 KC 번호의 리콜 공표문(' + notice + ')과 제품명도 맞습니다.';
+  if (same) return '<b>같은 KC 번호의 리콜 공표문 있음</b> | ' + notice + '. 제품명이 달라 \'일치\'가 아니라 \'의심\'입니다(같은 번호로 여러 제품이 공표된 경우가 있음).';
+  if (state === 'MATCH') return '<b>일치</b> | 위 판정과 같습니다.';
+  if (state === 'PARTIAL') return '<b>의심</b> | KC 번호가 아니라 제품명 등이 공표문과 닮았습니다(아래 공식 리콜 정보).';
   return '<b>같은 KC 번호의 리콜 공표문 없음</b>';
 }
 
@@ -1402,12 +1571,12 @@ function kcCertHtml(d) {
   }
   if (kc.status === 'NOT_FOUND') {
     return kcCardWrap('check', KC_CARD_HEAD, num, null, [
-      kcRow('인증상태', '<b class="kc-state-check">ⓘ 인증 DB에 없는 번호</b> — 신고정보가 없습니다. 판매 페이지의 번호를 다시 확인하세요'),
+      kcRow('인증상태', '<b class="kc-state-check">ⓘ 인증 DB에 없는 번호</b> | 신고정보가 없습니다. 판매 페이지의 번호를 다시 확인하세요'),
       kcRow('리콜 공표문 대조', kcRecallLine(d, [kc.certNum]))
     ], null, null);
   }
   return kcCardWrap('muted', KC_CARD_HEAD, num, null, [
-    kcRow('인증상태', '판정 보류 — KC 인증 DB를 지금 조회하지 못했습니다. 리콜 대조는 입력한 정보로 그대로 했습니다'),
+    kcRow('인증상태', '판정 보류 | KC 인증 DB를 지금 조회하지 못했습니다. 리콜 대조는 입력한 정보로 그대로 했습니다'),
     kcRow('리콜 공표문 대조', kcRecallLine(d, [kc.certNum]))
   ], null, null);
 }
@@ -1444,7 +1613,7 @@ function kcMultiHtml(kc, d) {
       txt = '<b class="kc-state-check">ⓘ 인증 DB에 없는 번호</b>';
       const base = num.replace(/(-\d{4,6})[A-Z]{1,3}$/i, '$1');
       if (base !== num && foundNums[base.toUpperCase()]) {
-        txt += ' — 끝 영문 \'' + esc(num.slice(base.length)) + '\' 없이 적은 번호(' + esc(base) +
+        txt += ' | 끝 영문 \'' + esc(num.slice(base.length)) + '\' 없이 적은 번호(' + esc(base) +
                 ')는 인증 DB에 있습니다. 판매자가 번호를 잘못 적었을 수 있습니다';
       }
     } else {
@@ -1457,11 +1626,11 @@ function kcMultiHtml(kc, d) {
 
   const seller = d && d.input && d.input.kcText;
   const sub = '이 상품에 KC 번호가 ' + all.length + '개 적혀 있어 번호마다 조회했습니다' +
-      (seller ? ' — 판매자 표기 「' + esc(String(seller).slice(0, 120)) + '」' : '') + '.';
-  let foot = '받는 제품이 어느 번호의 제품인지는 알 수 없습니다 — 포장의 KC 표시와 대조하거나 판매자에게 확인하세요.';
+      (seller ? ' | 판매자 표기 「' + esc(String(seller).slice(0, 120)) + '」' : '') + '.';
+  let foot = '받는 제품이 어느 번호의 제품인지는 알 수 없습니다 | 포장의 KC 표시와 대조하거나 판매자에게 확인하세요.';
   if (kc.status === 'FOUND') foot += ' 판정 근거의 \'인증 모델명\'에는 ' + esc(kc.certNum) + '(첫 번째로 인증 DB에 있는 번호)만 씁니다.';
-  const details = (anyExpired ? '<b>기간만료</b> — ' + KC_EXPIRED_NOTE : '') +
-      (anyAction ? (anyExpired ? '<br>' : '') + '<b>처분</b> — ' + KC_ACTION_NOTE : '');
+  const details = (anyExpired ? '<b>기간만료</b> | ' + KC_EXPIRED_NOTE : '') +
+      (anyAction ? (anyExpired ? '<br>' : '') + '<b>처분</b> | ' + KC_ACTION_NOTE : '');
   return kcCardWrap(tone, KC_CARD_HEAD, 'KC 번호 ' + all.length + '개', sub, rows, foot, details);
 }
 
@@ -1493,7 +1662,7 @@ function imageCheckHtml(d) {
       d.imageModelName ? '모델명 <b>' + esc(d.imageModelName) + '</b>' : null
     ].filter(Boolean);
     const found = facts.length
-            ? '📷 사진으로 찾은 정보: ' + facts.join(' · ') + ' — 같은 사진이 여러 사이트에 실려 있고 그 사이트들에서 ' +
+            ? '📷 사진으로 찾은 정보: ' + facts.join(' · ') + ' | 같은 사진이 여러 사이트에 실려 있고 그 사이트들에서 ' +
               '같은 값이 반복돼 이 값으로 공표문과 한 번 더 대조했습니다. 판매자가 직접 적은 값이 아니라서 최대 \'의심\'까지만 판정합니다.'
             : '📷 사진으로 웹을 검색했지만 여러 사이트에 반복된 같은 상품을 찾지 못해 상품을 특정하지 못했습니다.';
     return '<span class="image-check-note">' + found + '</span>';
@@ -1518,23 +1687,23 @@ function imageFoundCard(d) {
   let recall;
   let foot;
   if (state === 'PARTIAL') {
-    recall = '<b>의심</b> — 사진으로 찾은 값이 리콜 공표문과 닮았습니다. 아래 \'공식 리콜 정보\'와 판정 근거를 확인하세요.';
+    recall = '<b>의심</b> | 사진으로 찾은 값이 리콜 공표문과 닮았습니다. 아래 \'공식 리콜 정보\'와 판정 근거를 확인하세요.';
     foot = '판매자가 적은 값이 아니라서 \'일치\'가 아니라 \'의심\'까지만 판정합니다.';
   } else if (state === 'MATCH') {
-    recall = '<b>일치</b> — 위 판정과 같습니다.';
+    recall = '<b>일치</b> | 위 판정과 같습니다.';
     foot = '';
   } else {
-    recall = '<b>일치하는 리콜 공표문 없음</b> — 사진으로 찾은 값으로 다시 대조했지만 판정 기준에 못 미쳤습니다(점수는 아래 판정 근거).';
+    recall = '<b>일치하는 리콜 공표문 없음</b> | 사진으로 찾은 값으로 다시 대조했지만 판정 기준에 못 미쳤습니다(점수는 아래 판정 근거).';
     foot = state === 'MISSING'
-        ? '판매 페이지에 KC 인증번호가 없다는 점은 그대로입니다 — 판매자에게 KC 인증번호를 확인하세요.'
+        ? '판매 페이지에 KC 인증번호가 없다는 점은 그대로입니다 | 판매자에게 KC 인증번호를 확인하세요.'
         : '리콜 공표문과 맞지 않는다고 안전하다는 뜻은 아닙니다.';
   }
 
   return '<div class="image-found-card">' +
       '<div class="image-found-head">📷 사진으로 찾은 상품</div>' +
       '<div class="image-found-name">“' + esc(name) + '”</div>' +
-      '<div class="image-found-sub">이 상품으로 예상됩니다 — 같은 사진이 여러 사이트에 실려 있고, 그 사이트들에서 반복된 값입니다(판매자가 적은 값 아님).</div>' +
-      row('KC 인증번호', d.imageCertNum ? '<b>' + esc(d.imageCertNum) + '</b> — 공표문 번호와 대조함' : notFound) +
+      '<div class="image-found-sub">이 상품으로 예상됩니다 | 같은 사진이 여러 사이트에 실려 있고, 그 사이트들에서 반복된 값입니다(판매자가 적은 값 아님).</div>' +
+      row('KC 인증번호', d.imageCertNum ? '<b>' + esc(d.imageCertNum) + '</b> | 공표문 번호와 대조함' : notFound) +
       row('모델명', d.imageModelName ? '<b>' + esc(d.imageModelName) + '</b>' : notFound) +
       row('리콜 공표문 대조', recall) +
       (foot ? '<div class="image-found-foot">' + foot + '</div>' : '') +
@@ -1562,7 +1731,7 @@ async function checkImage(id, btn) {
     if (!r.json || !r.json.success) {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = '📷 다시 시도 — ' + ((r.json && r.json.message) || ('오류 ' + r.status));
+        btn.textContent = '📷 다시 시도 | ' + noDash((r.json && r.json.message) || ('오류 ' + r.status));
       }
       return;
     }
@@ -1570,11 +1739,7 @@ async function checkImage(id, btn) {
     renderInput(emptyInput());
     render(result);
     showScreen('verifyScreen', 'result/' + id);
-    const panel = document.getElementById('resultScreen');
-    if (panel) {
-      panel.classList.add('show');
-      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    revealResult();
     const evidence = await loadEvidence(id);
     if (evidence) applyEvidenceInputs(evidence.comparisons);
     fillInputFromSummary(id);
@@ -1619,7 +1784,7 @@ async function loadEvidence(id) {
 
   if (reasonEl) {
     reasonEl.textContent = data.reason
-        ? '판정 근거 · ' + data.reason
+        ? '판정 근거 · ' + noDash(data.reason)
         : '판정 근거가 기록되지 않았습니다.';
   }
 
@@ -1688,7 +1853,7 @@ function renderComparisons(comparisons, decision) {
     box.innerHTML =
             '<div class="evidence-empty">비슷한 리콜 공표문이 없습니다.</div>' +
             '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:0.92em">' +
-            '가장 가까운 후보와의 대조 보기 (참고 — 의심 기준에 못 미친 공표문)</summary>' +
+            '가장 가까운 후보와의 대조 보기 (참고 | 의심 기준에 못 미친 공표문)</summary>' +
             table + '</details>';
     return;
   }
@@ -1712,6 +1877,7 @@ function applyEvidenceInputs(comparisons) {
   });
 
   lastInput = filled;
+  paintInputSummary();
 }
 
 
@@ -1737,14 +1903,25 @@ function showHistoryType(type) {
   if (tabManual) tabManual.classList.toggle('active', manual);
   if (tabCoupang) tabCoupang.classList.toggle('active', !manual);
 
+  // 11/8 — 이력 화면은 탭과 상관없이 위쪽 메뉴 '내 검증 이력'을 켠다
+  document.querySelectorAll('.nav-item').forEach(function (el) {
+    el.classList.remove('active');
+  });
+  const historyNav = document.getElementById('navHistory');
+  if (historyNav) historyNav.classList.add('active');
+
   /* 10/31 — 이력 탭도 주소 # 에 맞춘다(기록은 안 쌓고 바꿔 쓴다) */
   const historyScreen = document.getElementById('historyScreen');
   if (historyScreen && historyScreen.classList.contains('active')) {
     setRoute(manual ? 'history' : 'history-coupang', true);
   }
 
-  if (manual) loadHistoryChannel('WEB', 'historyListManual');
-  else loadHistoryChannel('EXTENSION', 'historyListCoupang');
+  if (manual) {
+    stopCoupangPolling();
+    loadHistoryChannel('WEB', 'historyListManual');
+  } else if (token) {
+    startCoupangPolling(); // 11/8 — 예전 쿠팡 화면 카드가 하던 일(요약·의심 먼저·이번 조회만 보기)
+  }
 }
 
 
@@ -1883,11 +2060,7 @@ async function openHistoryItem(id, channelHint, opts) {
      이력에서 항목을 누르면 빈 화면이 떴다. 부모 화면을 켠 뒤 패널을 연다. */
   showScreen('verifyScreen', 'result/' + id); // 10/31 — 뒤로 가기로 이력 목록에 돌아간다
 
-  const panel = document.getElementById('resultScreen');
-  if (panel) {
-    panel.classList.add('show');
-    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
+  revealResult();
 
   const evidence = await loadEvidence(id);
   if (evidence) applyEvidenceInputs(evidence.comparisons);
@@ -1908,15 +2081,13 @@ async function openHistoryItem(id, channelHint, opts) {
    요약을 '최신 1건'에서 '찾은 건수'로 바꿨다. 못 찾았을 때도 '안전'이라고 쓰지 않는다.
 ================================================== */
 
-const COUPANG_RECENT_SIZE = 5;
 /* 요약 계산용으로 한 번에 읽는 이력 수. 데모 규모(주문목록 몇 페이지)면 충분하다. */
 const COUPANG_SCAN_SIZE = 100;
-const COUPANG_SUSPECT_SHOW = 10;
 const COUPANG_POLL_MS = 8000;
 let coupangPollTimer = null;
 let coupangLoading = false;
 
-/* 쿠팡 화면을 보고 있는 동안만 주기적으로 다시 읽는다.
+/* '쿠팡 구매이력 확인 이력'을 보고 있는 동안만 주기적으로 다시 읽는다(11/8 — 예전에는 쿠팡 화면 아래 카드).
    데모에서 쿠팡 탭을 연 뒤 이 탭으로 돌아오면 방금 들어온 결과가 바로 보이게 하려는 것.
    탭이 백그라운드면 건너뛴다 — 불필요한 호출을 만들지 않는다. */
 function startCoupangPolling() {
@@ -1948,7 +2119,11 @@ function refreshCoupang() {
    이벤트 내용은 JSON 문자열로 주고받는다(확장 쪽 세계와 객체를 바로 나누지 못한다).
 ================================================== */
 
-var coupangScanFilter = null;   // { ids: Set<verificationId>, label } — 이번 조회 결과만 보기
+var coupangScanFilter = null;   // { ids: Set<verificationId>, label, note } — 방금 버튼으로 읽은 검색(이력 화면 위쪽에 이것만 보인다)
+var coupangPrevOpen = false;    // 11/10 — 맨 아래 '이전 검색 기록'을 펼쳤는가
+var coupangPrevGroups = [];     // 마지막으로 읽은 이전 검색 묶음(버튼을 누르면 다시 읽지 않고 이것으로 그린다)
+var coupangPrevCapped = false;
+var coupangPrevSig = null;      // 바뀐 게 없으면 다시 그리지 않는다(8초마다 읽는다)
 var coupangScanBusy = false;
 var coupangScanWatchdog = null;
 var coupangScanReq = null;      // 이 화면에서 보낸 요청 { mode, limit, date } — 상태 문구에 쓴다
@@ -1960,12 +2135,12 @@ const SCAN_ERROR_TEXT = {
   BAD_LIMIT: '읽을 건수는 10건 또는 30건만 고를 수 있습니다.',
   BAD_DATE: '구매일자를 다시 골라 주세요.',
   NO_PAGE: '쿠팡 주문목록을 열지 못했습니다. 이 브라우저에서 쿠팡에 로그인돼 있는지 확인해 주세요.',
-  DATE_UNREADABLE: '쿠팡 주문목록에서 주문일을 읽지 못했습니다. 쿠팡 화면 구조가 달라졌을 수 있습니다 — 최근 N건 읽기를 써 주세요.',
+  DATE_UNREADABLE: '쿠팡 주문목록에서 주문일을 읽지 못했습니다. 쿠팡 화면 구조가 달라졌을 수 있습니다 | 최근 N건 읽기를 써 주세요.',
   TAB_FAILED: '쿠팡 주문목록 탭을 열지 못했습니다.',
   CONTEXT_LOST: '확장 프로그램이 새로고침돼 이 페이지와 연결이 끊겼습니다. 이 페이지를 새로고침(F5)해 주세요.',
   NO_EXTENSION: '확장 프로그램이 응답하지 않습니다. 확장 0.5.0 이상을 설치하고 이 페이지를 새로고침해 주세요.',
-  FAILED: '읽는 도중 오류가 났습니다. 들어온 결과까지만 아래에 보입니다. 다시 눌러 주세요.',
-  STALLED: '확장 프로그램의 진행 소식이 1분 넘게 없습니다. 아래 목록에 들어온 결과를 확인하고, 필요하면 다시 눌러 주세요.'
+  FAILED: '읽는 도중 오류가 났습니다. 들어온 결과까지는 아래 \'쿠팡 구매이력 확인 이력 보기\'에서 볼 수 있습니다. 다시 눌러 주세요.',
+  STALLED: '확장 프로그램의 진행 소식이 1분 넘게 없습니다. 들어온 결과는 \'쿠팡 구매이력 확인 이력 보기\'에서 확인하고, 필요하면 다시 눌러 주세요.'
 };
 
 /* 진행 소식이 이 시간 넘게 없으면 멈춘 것으로 보고 버튼을 다시 켠다(확장 service worker 가 중간에 꺼진 경우 등).
@@ -2078,17 +2253,17 @@ function onScanStatus(s) {
     /* 쿠팡 주문목록 한 쪽이 20초 넘게 안 오면 확장이 NO_PAGE 를 보낸다.
        확장이 'listing' 을 먼저 보냈으면 그 문구를 덮지 않는다 */
     const cur = document.getElementById('scanStatus');
-    if (!cur || !/쪽 읽는 중|읽는 중 \d/.test(cur.textContent)) setScanStatus(label + ' — 쿠팡 주문목록을 여는 중…', 'busy');
+    if (!cur || !/쪽 읽는 중|읽는 중 \d/.test(cur.textContent)) setScanStatus(label + ' | 쿠팡 주문목록을 여는 중…', 'busy');
   } else if (s.phase === 'listing') {
-    setScanStatus(label + ' — 주문목록 ' + (s.page || 1) + '쪽 읽는 중' +
+    setScanStatus(label + ' | 주문목록 ' + (s.page || 1) + '쪽 읽는 중' +
         (s.found ? ' (고른 상품 ' + s.found + '건)' : '') + '…', 'busy');
   } else if (s.phase === 'reading') {
-    setScanStatus(label + ' — 고른 상품 ' + (s.total || 0) + '건의 상세페이지(KC 인증정보) 읽는 중 ' +
+    setScanStatus(label + ' | 고른 상품 ' + (s.total || 0) + '건의 상세페이지(KC 인증정보) 읽는 중 ' +
         (s.done || 0) + '/' + (s.total || 0) + '…', 'busy');
     loadCoupangRecent();
   } else if (s.phase === 'done') {
     const ids = new Set(s.verificationIds || []);
-    coupangScanFilter = { ids: ids, label: label };
+    coupangScanFilter = { ids: ids, label: label, note: '' };
     const secs = s.elapsedMs ? Math.round(s.elapsedMs / 1000) : null;
     const avg = (s.avgReadMs !== null && s.avgReadMs !== undefined)
         ? ' · 상세페이지 한 건당 평균 ' + (s.avgReadMs / 1000).toFixed(1) + '초' : '';
@@ -2096,20 +2271,31 @@ function onScanStatus(s) {
     const skipped = s.skipped ? ' 유아·어린이 제품이 아닌 ' + s.skipped + '건은 건너뛰었습니다.' : '';
     /* 11/4 (확장 0.7.3) — KC 대상 아님도 보내서 제품명으로만 대조한다(notKcChecked). 0.7.2 이하는 뺀 수(notKc)를 보낸다 */
     const notKc = s.notKcChecked
-        ? ' 상세페이지상 KC(어린이제품) 대상이 아닌 ' + s.notKcChecked + '건(식품·위생용품 등)도 제품명으로 리콜 공표문과 대조했습니다 — 일치·의심일 때만 목록에 보입니다.'
+        ? ' 상세페이지상 KC(어린이제품) 대상이 아닌 ' + s.notKcChecked + '건(식품·위생용품 등)도 제품명으로 리콜 공표문과 대조했습니다 | 일치·의심일 때만 목록에 보입니다.'
         : (s.notKc ? ' 상세페이지상 KC 대상이 아닌 ' + s.notKc + '건(식품·위생용품 등)은 뺐습니다.' : '');
     /* 0.7.1(11/3) — '최근 N건' = 최근 주문 상품 N건(그중 유아·어린이만 읽음). 확장이 센 상품 수(counted)를 같이 보낸다 */
     const scope = (s.mode === 'recent' && typeof s.counted === 'number') ? '최근 상품 ' + s.counted + '건 중 ' : '';
-    finishScanUi(s.found
-        ? label + ' — ' + scope + '유아·어린이 제품 ' + s.found + '건을 읽어 ' + (s.sent || 0) + '건 확인했습니다' +
+    const doneMsg = s.found
+        ? label + ' | ' + scope + '유아·어린이 제품 ' + s.found + '건을 읽어 ' + (s.sent || 0) + '건 확인했습니다' +
           (secs !== null ? ' (' + secs + '초' + avg + ')' : '') + '.' + skipped + notKc
-        : label + ' — ' + (scope ? scope + '유아·어린이 제품이 없습니다' : '읽을 유아·어린이 제품 주문이 없습니다') + (s.mode === 'date' ? ' (그날 주문이 없거나 주문목록 앞쪽 ' + (s.pagesRead || 0) + '쪽 안에 없음)' : '') + '.' + skipped,
-        s.found ? 'ok' : 'idle');
-    loadCoupangRecent();
+        : label + ' | ' + (scope ? scope + '유아·어린이 제품이 없습니다' : '읽을 유아·어린이 제품 주문이 없습니다') + (s.mode === 'date' ? ' (그날 주문이 없거나 주문목록 앞쪽 ' + (s.pagesRead || 0) + '쪽 안에 없음)' : '') + '.' + skipped +
+          /* 11/8 — 보낸 상품이 없으면 이력으로 넘어가지 않는다. 멈춘 것처럼 보여서(팀장 실측) 이유와 다음 행동을 적는다 */
+          ' 확인할 상품이 없어 이 화면에 그대로 있습니다' +
+          (s.mode === 'recent' && Number(s.limit || req.limit) < 30 ? ' | 30건으로 늘리거나 구매일자로 읽어 보세요.' : ' | 다른 구매일자로 읽어 보세요.');
+    finishScanUi(doneMsg, s.found ? 'ok' : 'idle');
+    /* 11/10 — 이력 화면 요약 아래 한 줄. 예전에는 doneMsg 를 통째로 다시 적어 요약 줄과 같은 말(N건 확인)이 두 번 나왔다 */
+    coupangScanFilter.note = [label + ' 읽기']
+        .concat(s.skipped ? ['유아·어린이 제품이 아닌 ' + s.skipped + '건은 건너뜀'] : [])
+        .concat(secs !== null ? [secs + '초'] : []).join(' · ');
+    /* 11/8 — 결과는 '쿠팡 구매이력 확인 이력' 한 곳에서 본다. 쿠팡 화면에서 읽었고 보낸 건이 있으면 그리로 넘어간다.
+       다른 화면을 보고 있으면(읽는 동안 옮겨 감) 끌고 가지 않는다 — 다음에 이력을 열면 이번 조회만 보인다 */
+    const onCoupangScreen = !!document.querySelector('#coupangScreen.active');
+    if (onCoupangScreen && ids.size) goCoupangVerificationHistory();
+    else loadCoupangRecent();
   } else if (s.phase === 'error') {
-    finishScanUi(label + ' — ' + (SCAN_ERROR_TEXT[s.error] || ('읽지 못했습니다 (' + s.error + ')')), 'err');
+    finishScanUi(label + ' | ' + (SCAN_ERROR_TEXT[s.error] || ('읽지 못했습니다 (' + s.error + ')')), 'err');
     if (s.verificationIds && s.verificationIds.length) {
-      coupangScanFilter = { ids: new Set(s.verificationIds), label: label + ' (중간까지)' };
+      coupangScanFilter = { ids: new Set(s.verificationIds), label: label + ' (중간까지)', note: label + ' 읽기 | 오류로 중간까지만 읽음' };
     }
     loadCoupangRecent();
   }
@@ -2121,24 +2307,127 @@ window.addEventListener('underfaker-scan-status', function (e) {
   onScanStatus(s);
 });
 
-function paintScanFilterBar() {
-  const bar = document.getElementById('coupangScanFilterBar');
-  if (!bar) return;
-  if (!coupangScanFilter) {
-    bar.style.display = 'none';
-    return;
-  }
-  bar.style.display = '';
-  text('coupangScanFilterLabel', '이번 조회 결과만 보는 중: ' + coupangScanFilter.label +
-      ' (' + coupangScanFilter.ids.size + '건)');
+/* 11/10 — '이번 조회 결과만 보는 중 … [전체 보기]' 막대를 지웠다(팀장 지적: 요약 줄과 같은 말이 두 번 나오고,
+   지난 결과를 보려면 [전체 보기]를 또 눌러야 했다). 이제 위에는 검색 한 번의 결과만 있고,
+   요약 아래에 어느 검색인지 한 줄만 적는다. 지난 검색은 맨 아래 '이전 검색 기록'에 검색별로 접어 둔다. */
+function paintScanNote(noteText) {
+  const el = document.getElementById('coupangScanNote');
+  if (!el) return;
+  el.textContent = noteText || '';
+  el.style.display = noteText ? '' : 'none';
 }
 
-function clearCoupangScanFilter() {
-  coupangScanFilter = null;
-  loadCoupangRecent();
+/* 검색 한 번 = 확인 시각이 이어진 묶음. 서버에는 '검색' 단위가 없다(검증 건마다 시각만 있다).
+   마지막 확인 시각(checkedAt, 없으면 createdAt)이 SEARCH_GAP_MS 넘게 벌어지면 다른 검색으로 본다.
+   상세페이지 한 건 읽기가 최대 25초라 한 번의 읽기 안에서는 이만큼 벌어지지 않는다.
+   한계: 3분 안에 연달아 두 번 읽으면 한 기록으로 묶인다. 같은 상품을 다시 읽으면 그 건의 확인 시각이
+   새 검색으로 옮겨 가므로(10/31 — 같은 입력은 새 검증을 쌓지 않는다) 예전 기록에서는 빠진다. */
+const SEARCH_GAP_MS = 3 * 60 * 1000;
+
+function checkedTime(v) {
+  const s = v && (v.checkedAt || v.createdAt);
+  const t = s ? new Date(String(s).replace(' ', 'T')).getTime() : NaN;
+  return isNaN(t) ? null : t;
+}
+
+/** @returns {Array<{at: number|null, items: Array}>} 최신 검색 먼저. at 은 그 검색에서 가장 이른 확인 시각 */
+function groupBySearch(items) {
+  const sorted = (items || []).slice().sort(function (a, b) {
+    return (checkedTime(b) || 0) - (checkedTime(a) || 0);
+  });
+  const groups = [];
+  let last = null;
+  sorted.forEach(function (v) {
+    const t = checkedTime(v);
+    const g = groups[groups.length - 1];
+    if (!g || (t !== null && last !== null && last - t > SEARCH_GAP_MS)) {
+      groups.push({ at: t, items: [v] });
+    } else {
+      g.items.push(v);
+      if (t !== null) g.at = t;
+    }
+    if (t !== null) last = t;
+  });
+  return groups;
+}
+
+/** "11월 8일 오전 11시 20분" — 올해가 아니면 연도를 붙인다 */
+function searchTimeLabel(t) {
+  if (t === null || t === undefined) return '시각 모름';
+  const d = new Date(t);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  return (d.getFullYear() !== new Date().getFullYear() ? d.getFullYear() + '년 ' : '') +
+      (d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + (h < 12 ? '오전 ' : '오후 ') + (h % 12 || 12) + '시' +
+      (m ? ' ' + m + '분' : '');
+}
+
+function toggleCoupangPrev() {
+  coupangPrevOpen = !coupangPrevOpen;
+  renderCoupangPrev(coupangPrevGroups, coupangPrevCapped);
+}
+
+/* 맨 아래 '이전 검색 기록 확인하기'. 누르면 검색별로 한 줄씩(시각 · 조회 건수 · 의심 수) 나열되고,
+   한 줄을 누르면 그 검색에서 확인한 상품이 의심 → KC 번호 미표기 → 그 밖 → KC 대상 아님 순서로 펼쳐진다. */
+function renderCoupangPrev(groups, capped) {
+  coupangPrevGroups = groups || [];
+  coupangPrevCapped = !!capped;
+  const box = document.getElementById('coupangPrevBox');
+  const list = document.getElementById('coupangPrevList');
+  const btn = document.getElementById('coupangPrevBtn');
+  if (!box || !list) return;
+  if (!coupangPrevGroups.length) {
+    box.style.display = 'none';
+    list.innerHTML = '';
+    coupangPrevSig = null;
+    return;
+  }
+  box.style.display = '';
+  if (btn) {
+    btn.textContent = (coupangPrevOpen ? '이전 검색 기록 접기' : '이전 검색 기록 확인하기') +
+        ' (' + coupangPrevGroups.length + '회)';
+    btn.setAttribute('aria-expanded', coupangPrevOpen ? 'true' : 'false');
+  }
+  list.style.display = coupangPrevOpen ? '' : 'none';
+  if (!coupangPrevOpen) return;
+
+  /* 바뀐 게 없으면 그대로 둔다 — 보는 동안 8초마다 다시 읽는데, 그때마다 다시 그리면 펼쳐 보던 목록이 깜빡인다 */
+  const sig = JSON.stringify(coupangPrevGroups.map(function (g) {
+    return [g.at].concat(g.items.map(function (v) {
+      return [v.verificationId, v.status, stateOf(v), v.checkedAt || v.createdAt, !!v.imageCheckAvailable, v.kcLookup, v.kcCertState];
+    }));
+  })) + (coupangPrevCapped ? '+' : '');
+  if (sig === coupangPrevSig && list.children.length) return;
+  coupangPrevSig = sig;
+
+  const open = {};
+  list.querySelectorAll('details[open]').forEach(function (d) { open[d.getAttribute('data-key')] = true; });
+
+  const finders = coupangPrevGroups.map(function (g) { return summarizeCoupang(g.items); });
+  list.innerHTML = coupangPrevGroups.map(function (g, i) {
+    const f = finders[i];
+    const key = String(g.at);
+    const count = f.total + (f.notKcHidden || 0);
+    return '<details class="coupang-fold" data-key="' + esc(key) + '"' + (open[key] ? ' open' : '') + '>' +
+        '<summary>' + esc(searchTimeLabel(g.at) + ' 검색 기록 (' + count + '건 조회' +
+            (f.suspects.length ? ' · 의심 ' + f.suspects.length + '개' : '') + ')') + '</summary>' +
+        '<div class="history-list" id="coupangPrevItems' + i + '"></div>' +
+        '</details>';
+  }).join('') +
+      (coupangPrevCapped
+          ? '<div class="coupang-prev-note">최근에 확인한 ' + COUPANG_SCAN_SIZE + '건까지만 불러옵니다. 그보다 오래된 기록은 여기에 나오지 않습니다.</div>'
+          : '');
+  finders.forEach(function (f, i) {
+    renderHistoryList('coupangPrevItems' + i, f.suspects.concat(f.missingItems, f.others, f.hiddenItems));
+  });
 }
 
 async function loadCoupangRecent() {
+
+  /* 11/8 — 결과는 이력 화면 쿠팡 탭에만 있다. 그 탭이 안 보이면 읽지 않는다(진행 소식·폴링이 불러도) */
+  const historyCard = document.getElementById('coupangHistoryCard');
+  if (!historyCard || historyCard.style.display === 'none' ||
+      !document.querySelector('#historyScreen.active')) return;
 
   if (coupangLoading) return;
   coupangLoading = true;
@@ -2157,34 +2446,54 @@ async function loadCoupangRecent() {
           'GET'
       );
       if (!r.json || !r.json.success) {
-        const list = document.getElementById('coupangRecentList');
-        if (list) {
-          list.innerHTML = '<div class="history-empty">최근 결과를 불러오지 못했습니다 (' + r.status + ').</div>';
-        }
+        text('coupangResultProduct', '쿠팡 구매이력 확인 기록을 불러오지 못했습니다 (' + r.status + ')');
+        text('coupangResultMeta', '새로고침을 눌러 다시 시도하세요.');
         return;
       }
       items = (r.json.data && r.json.data.content) || [];
     }
 
-    /* 10/12 — 방금 버튼으로 읽은 결과만 보여 준다(확장이 돌려준 검증 id). '전체 보기'로 푼다. */
+    /* 11/10 — 위에는 검색 한 번의 결과만 보여 준다: 방금 버튼으로 읽은 결과(확장이 돌려준 검증 id),
+       그게 없으면(새로고침했거나 나중에 다시 옴) 가장 최근 검색. 그 전 검색은 맨 아래 '이전 검색 기록'으로 보낸다.
+       10/12 의 '이번 조회 결과만 보는 중 … [전체 보기]' 막대를 대신한다 */
+    const capped = items.length >= COUPANG_SCAN_SIZE;
+    let previous;
+    let note;
     if (coupangScanFilter) {
-      items = items.filter(function (v) { return coupangScanFilter.ids.has(v.verificationId); });
+      const ids = coupangScanFilter.ids;
+      previous = groupBySearch(items.filter(function (v) { return !ids.has(v.verificationId); }));
+      items = items.filter(function (v) { return ids.has(v.verificationId); });
+      note = '이번 검색 · ' + (coupangScanFilter.note || (coupangScanFilter.label + ' 읽기'));
+    } else {
+      const groups = groupBySearch(items);
+      items = groups.length ? groups[0].items : [];
+      previous = groups.slice(1);
+      note = groups.length ? '가장 최근 검색 · ' + searchTimeLabel(groups[0].at) : '';
     }
-    paintScanFilterBar();
+    paintScanNote(note);
+    renderCoupangPrev(previous, capped);
 
     const finder = summarizeCoupang(items);
     updateCoupangResultCard(finder);
-    renderHistoryList('coupangSuspectList', finder.suspects.slice(0, COUPANG_SUSPECT_SHOW));
-    const suspectList = document.getElementById('coupangSuspectList');
-    if (suspectList && !finder.suspects.length) suspectList.innerHTML = '';
-    /* 9/27 — KC 번호 미표기(구 항목누락) 목록(사진으로 찾기 버튼) */
-    renderHistoryList('coupangMissingList', finder.missingItems.slice(0, COUPANG_SUSPECT_SHOW));
-    const missingList = document.getElementById('coupangMissingList');
-    if (missingList && !finder.missingItems.length) missingList.innerHTML = '';
-    const missingTitle = document.getElementById('coupangMissingTitle');
-    if (missingTitle) missingTitle.style.display = finder.missingItems.length ? '' : 'none';
-    /* 최근 목록도 같은 상품은 최신 1건만 — 같은 이름이 연달아 보이지 않게 */
-    renderHistoryList('coupangRecentList', finder.unique.slice(0, COUPANG_RECENT_SIZE));
+    /* 11/8 — 한 상품은 한 곳에만: 의심 → KC 번호 미표기(사진으로 찾기) → 그 밖(접힘) → KC 대상 아님(접힘).
+       같은 상품은 최신 1건(summarizeCoupang). 접은 상태는 새로고침해도 그대로 둔다 */
+    const section = function (listId, titleId, list) {
+      renderHistoryList(listId, list);
+      const el = document.getElementById(listId);
+      if (el && !list.length) el.innerHTML = '';
+      const title = document.getElementById(titleId);
+      if (title) title.style.display = list.length ? '' : 'none';
+    };
+    section('coupangSuspectList', 'coupangSuspectTitle', finder.suspects);
+    section('coupangMissingList', 'coupangMissingTitle', finder.missingItems);
+    const fold = function (listId, foldId, summaryId, label, list) {
+      const f = document.getElementById(foldId);
+      if (f) f.style.display = list.length ? '' : 'none';
+      text(summaryId, label + ' ' + list.length + '개');
+      renderHistoryList(listId, list);
+    };
+    fold('coupangOtherList', 'coupangOtherFold', 'coupangOtherSummary', '그 밖에 확인한 상품', finder.others);
+    fold('coupangHiddenList', 'coupangHiddenFold', 'coupangHiddenSummary', 'KC 대상 아님(일치·의심 없음)', finder.hiddenItems);
 
   } finally {
     coupangLoading = false;
@@ -2232,6 +2541,7 @@ function summarizeCoupang(items) {
      같은 상품은 최신 기록 1건으로 먼저 줄이고 나서 가린다 — 예전 기록(예: 0.7.2 의 'KC 번호 미표기')이 대신 올라오지 않게 */
   const all = items || [];
   const hiddenKeys = new Set();
+  const hiddenItems = []; // 11/8 — 지우지 않고 이력 화면 맨 아래에 접어 둔다
   all.forEach(function (v) {
     const key = productKey(v);
     if (seen.has(key)) return;
@@ -2239,6 +2549,7 @@ function summarizeCoupang(items) {
     if (v && v.kcStatus === 'NONE' && (!v.status || v.status === STATUS_OK) &&
         stateOf(v) !== 'MATCH' && stateOf(v) !== 'PARTIAL') {
       hiddenKeys.add(key);
+      hiddenItems.push(v);
       return;
     }
     unique.push(v);
@@ -2284,6 +2595,9 @@ function summarizeCoupang(items) {
     pending: unique.filter(v => v.status === 'PENDING').length,
     failed: unique.filter(v => v.status === 'FAILED').length,
     notKcHidden: notKcCount,
+    /* 11/8 — 이력 화면 목록용: 의심·미표기가 아닌 나머지(불일치·판단 제외·확인 중·실패)와 숨긴 KC 대상 아님 */
+    others: unique.filter(v => suspects.indexOf(v) < 0 && missing.indexOf(v) < 0),
+    hiddenItems: hiddenItems,
     kcExpired: kcExpired,
     kcWarn: kcWarn
   };
@@ -2292,10 +2606,8 @@ function summarizeCoupang(items) {
 
 function updateCoupangResultCard(f) {
 
-  const card = document.getElementById('coupangResultCard');
+  const card = document.getElementById('coupangHistoryCard'); // 11/8 — 예전 쿠팡 화면 카드(coupangResultCard)에서 옮김
   if (!card) return;
-
-  card.classList.add('show');
 
   /* 클릭 대상은 요약 줄만. 카드 전체에 걸면 아래 목록 항목·새로고침 버튼 클릭이
      버블링돼서 늘 같은 건이 열린다. */
@@ -2327,12 +2639,16 @@ function updateCoupangResultCard(f) {
   }
 
   if (!f || !f.total) {
-    text('coupangResultProduct', '아직 쿠팡에서 넘어온 검증이 없습니다');
+    /* 11/8 — 이력 화면으로 옮기면서 안내도 바꿨다. 예전 문구('주문목록 페이지를 열면 자동으로 보냅니다')는
+       쿠팡 화면 안내('쿠팡 주문목록을 직접 열었을 때는 읽지 않습니다')와 어긋났다 */
+    text('coupangResultProduct', coupangScanFilter
+        ? '이번 조회에서 확인한 상품이 없습니다'
+        : '아직 쿠팡 구매이력으로 확인한 제품이 없습니다');
     /* 9/30 — 주문목록을 못 읽었을 때의 대안(직접 입력)을 같이 안내한다 */
     if (meta) {
-      meta.textContent = '쿠팡 주문목록 페이지를 열면 확장 프로그램이 자동으로 보냅니다. ' +
-          '열었는데도 넘어오지 않으면 확장 프로그램 설치·로그인을 확인하고, 그래도 안 되면 ' +
-          "위 '품명으로 제품 확인'에서 제품명을 직접 입력해 확인하세요.";
+      meta.textContent = "위쪽 '쿠팡 구매이력으로 확인'에서 [최근 N건 읽기] 또는 [구매일자 읽기]를 누르면 " +
+          '확장 프로그램이 유아·어린이 제품을 읽어 여기에 정리합니다. ' +
+          "확장 프로그램이 없으면 '제품명으로 확인'에서 제품명을 직접 넣어 확인하세요.";
     }
     if (pill) pill.style.display = 'none';
     return;
@@ -2344,12 +2660,12 @@ function updateCoupangResultCard(f) {
             (f.missingCheckable ? ' (사진으로 찾기 가능 ' + f.missingCheckable + '개)' : ''));
   }
   if (f.excluded) extra.push('(어린이제품이 아닌) 해외직구·구매대행 판단 제외 ' + f.excluded + '개');
-  if (f.kcExpired) extra.push('KC 신고 기간만료 ' + f.kcExpired + '개(확인 필요 — 만료 전 통관 재고는 판매 가능, 리콜과 별개)');
-  if (f.kcWarn) extra.push('KC 인증 취소·처분 또는 DB에 없는 번호 ' + f.kcWarn + '개(리콜과 별개 — 제품을 눌러 확인)');
+  if (f.kcExpired) extra.push('KC 신고 기간만료 ' + f.kcExpired + '개(확인 필요 | 만료 전 통관 재고는 판매 가능, 리콜과 별개)');
+  if (f.kcWarn) extra.push('KC 인증 취소·처분 또는 DB에 없는 번호 ' + f.kcWarn + '개(리콜과 별개 | 제품을 눌러 확인)');
   if (f.pending) extra.push('확인 중 ' + f.pending + '개');
   if (f.failed) extra.push('처리 실패 ' + f.failed + '개');
   /* 11/4 — 목록에서 가린 KC 대상 아님(대조는 했고 일치·의심 없음). 구매한 제품 수에는 넣는다 */
-  if (f.notKcHidden) extra.push('KC 대상 아님 ' + f.notKcHidden + '개(제품명으로 대조 · 일치·의심 없음 — 목록에서 숨김)');
+  if (f.notKcHidden) extra.push('KC 대상 아님 ' + f.notKcHidden + '개(제품명으로 대조 · 일치·의심 없음 | 맨 아래에 접어 둠)');
   const checked = f.done + (f.notKcHidden || 0);
 
   if (pill) pill.style.display = '';
@@ -2358,8 +2674,11 @@ function updateCoupangResultCard(f) {
     text('coupangResultProduct',
         '구매한 제품 ' + checked + '개 중 리콜 의심 제품 ' + f.suspects.length + '개를 찾았습니다');
     if (meta) {
-      meta.textContent = ['리콜 일치 ' + f.match + '개', '의심 ' + f.partial + '개']
-          .concat(extra).join(' · ') + ' — 제품을 눌러 판정 근거를 확인하세요.';
+      /* 11/10 — 일치가 없으면 '리콜 일치 0개 · 의심 N개'는 머리글(리콜 의심 제품 N개)과 같은 말이라 적지 않는다.
+         일치가 있을 때만 일치·의심을 나눠 적는다 */
+      const breakdown = f.match ? ['리콜 일치 ' + f.match + '개', '의심 ' + f.partial + '개'] : [];
+      const parts = breakdown.concat(extra);
+      meta.textContent = (parts.length ? parts.join(' · ') + ' | ' : '') + '제품을 눌러 판정 근거를 확인하세요.';
     }
     if (pill) {
       pill.className = 'status-pill status-' + (f.match ? 'MATCH' : 'PARTIAL');
@@ -2379,7 +2698,7 @@ function updateCoupangResultCard(f) {
   } else if (f.missing) {
     text('coupangResultProduct',
             '구매한 제품 ' + checked + '개 중 KC 번호 미표기 ' + f.missing + '개' +
-            (f.missingCheckable ? ' — 사진으로 찾아보세요' : ' — KC 인증번호를 확인하지 못했습니다'));
+            (f.missingCheckable ? ' | 사진으로 찾아보세요' : ' | KC 인증번호를 확인하지 못했습니다'));
     if (meta) {
       meta.textContent = f.missingCheckable
               ? '상품명만으로는 리콜 의심 제품을 찾지 못했습니다. KC 인증번호가 없는 제품은 ' +
@@ -2524,7 +2843,7 @@ function createDemoManualResult(input) {
 
 function esc(s) {
   if (s === null || s === undefined) return '';
-  return String(s).replace(/[&<>"']/g, function (c) {
+  return noDash(s).replace(/[&<>"']/g, function (c) {
     return {
       '&': '&amp;',
       '<': '&lt;',
@@ -2540,61 +2859,76 @@ function esc(s) {
    11/1 — 사용 방법 팝업(강사 피드백: 사용설명서처럼 그림으로 사용 방법을 보여 준다).
    그림은 /img/guide/*.png — 웹 화면은 실제 화면 캡처, 쇼핑몰 우클릭 화면은 예시(실제 캡처로 바꿀 자리).
    처음 연 사람에게 한 번 자동으로 띄운다(이 브라우저에 본 기록이 없을 때). 위쪽 '사용 방법'으로 언제든 다시 연다.
+   그림을 누르면 새 탭에서 크게 본다(11/8 — 휴대폰에서 그림 글씨가 작다).
 ================================================== */
 
+/* 11/8 — 사용 방법 개선(팀장 요청: 사람들이 알기 쉽게)
+   ① 한 화면에 다 보이게(그림 높이 제한 — 1366×768 노트북에서 팝업이 830px 이라 잘렸다)
+   ② 그림을 page-1 형식(왼쪽 1·2·3 단계 + 오른쪽 해당 부분만 확대)으로 통일 — 지금 화면으로 다시 찍음
+   ③ 탭을 위쪽 메뉴 이름에 맞춰 5개로  ④ '결과 읽는 법'은 그림 대신 색깔 표  ⑤ 장마다 글 한두 줄
+   ⑥ 처음 온 사람은 1장(처음 설정)부터, 마지막 장 버튼은 [시작하기] */
 const GUIDE = [
   {
     key: 'start', tab: '처음 설정',
     steps: [
-      { title: '1. 로그인하고 확장 프로그램 연결 확인', img: 'img/guide/start-1.png',
-        text: 'UnderFaker 웹(localhost:8080)에 로그인합니다. 크롬 확장 프로그램을 설치했으면 \'쿠팡 구매이력 제품 확인\' 화면에 ' +
-              '<b>✓ 확장 프로그램 연결됨</b>이 보입니다. 확장을 새로 고쳤으면 chrome://extensions 에서 ⟳ 한 뒤 이 화면을 새로고침(F5)하세요.' }
+      { title: '확장 프로그램 연결 확인', img: 'img/guide/start-1.png',
+        text: '처음 한 번만 하면 됩니다. 확장을 새로 바꿨으면 chrome://extensions 에서 ⟳ 한 뒤 이 화면을 새로고침(F5)하세요.' }
     ]
   },
   {
     key: 'page', tab: '쇼핑몰에서 바로 확인',
     steps: [
-      { title: '1. 상품 상세페이지에서 마우스 오른쪽 버튼 → UnderFaker로 리콜 검증', img: 'img/guide/page-1.png',
-        text: '쿠팡·다른 쇼핑몰의 상품 상세페이지, 또는 제품안전정보센터 리콜 공표문 화면에서 빈 곳을 오른쪽 버튼으로 누르고 ' +
-              '<b>UnderFaker로 리콜 검증</b>을 고릅니다. 쿠팡은 주문목록이 아니라 상품 하나가 크게 보이는 상세페이지에서 눌러야 합니다.' },
-      { title: '2. 결과가 UnderFaker 화면에 바로 뜹니다', img: 'img/guide/page-2.png',
-        text: '확장 프로그램이 그 페이지의 상품명·모델명·제조사·KC 인증번호를 읽어 리콜 공표문과 대조하고, UnderFaker 탭으로 넘어가 결과를 보여 줍니다. ' +
-              '읽을 값이 없으면 쇼핑몰 화면 아래에 안내가 뜹니다 — 그때는 \'① 직접 입력\'을 쓰세요.' }
+      { title: '상세페이지에서 오른쪽 버튼 → UnderFaker로 리콜 검증', img: 'img/guide/page-1.png',
+        text: '쿠팡은 주문목록이 아니라 상품 하나가 크게 보이는 상세페이지에서 누르세요.' },
+      { title: 'UnderFaker 탭에 결과가 바로 뜹니다', img: 'img/guide/page-2.png',
+        text: '판매 페이지에서 읽은 값이 틀렸으면 [입력 수정]으로 고친 뒤 다시 확인하세요.' }
     ]
   },
   {
-    key: 'manual', tab: '직접 입력',
+    key: 'manual', tab: '제품명으로 확인',
     steps: [
-      { title: '1. 아는 값만 넣고 [리콜 여부 확인하기]', img: 'img/guide/manual-1.png',
-        text: '제품명은 꼭 넣고, 포장·상품정보에 있는 <b>KC 인증번호</b>·모델명·제조사를 아는 만큼 넣습니다. ' +
-              'KC 번호와 제품명이 함께 맞아야 \'일치\'로 확정하고, 하나만 맞으면 \'의심\'으로 보여 줍니다.' }
+      { title: '① 직접 입력 | 아는 값만 넣고 확인', img: 'img/guide/manual-1.png',
+        text: '제품명만 넣어도 되지만, 포장의 KC 인증번호를 넣으면 훨씬 정확합니다.' },
+      { title: '② 제품 사진 올리기 | 사진 한 장으로 찾기', img: 'img/guide/photo-1.png',
+        text: '사진 속 글자는 읽지 않고 같은 사진이 실린 웹 문서로 찾습니다. 그래서 결과는 최대 \'의심\'입니다.' }
     ]
   },
   {
-    key: 'photo', tab: '사진 올리기',
+    key: 'coupang', tab: '쿠팡 구매이력으로 확인',
     steps: [
-      { title: '1. 제품 사진 한 장으로 찾기', img: 'img/guide/photo-1.png',
-        text: '\'② 제품 사진 올리기\'에서 사진을 고르고 [사진으로 확인하기]를 누릅니다. 같은 사진이 실린 여러 웹 문서에서 반복된 상품명·KC 번호를 찾아 대조합니다. ' +
-              '사진 속 글자를 읽는 것은 아니어서 결과는 최대 \'의심\'입니다.' }
-    ]
-  },
-  {
-    key: 'coupang', tab: '쿠팡 구매이력',
-    steps: [
-      { title: '1. 산 제품을 한 번에 확인', img: 'img/guide/coupang-1.png',
-        text: '\'쿠팡 구매이력 제품 확인\'에서 <b>최근 10·30건</b> 또는 <b>구매일자</b>를 골라 읽기 버튼을 누릅니다. ' +
-              '확장 프로그램이 주문목록에서 유아·어린이 제품만 골라 상세페이지의 KC 인증정보를 읽고 대조합니다(식품·생활용품은 건너뜀).' }
+      { title: '산 제품을 한 번에 확인', img: 'img/guide/coupang-1.png',
+        text: 'UnderFaker와 쿠팡에 둘 다 로그인돼 있어야 합니다. 식품·생활용품은 건너뜁니다.' }
     ]
   },
   {
     key: 'result', tab: '결과 읽는 법',
     steps: [
-      { title: '1. 일치 · 의심 · KC 번호 미표기 · 불일치', img: 'img/guide/result-1.png',
-        text: '<b>일치</b>: KC 번호(또는 품번)와 제품명이 공표문과 같습니다. <b>의심</b>: 한쪽만 같습니다 — 아래 \'공표문 원문 보기\'로 직접 확인하세요. ' +
-              '<b>불일치</b>는 공표문과 맞지 않는다는 뜻이지 안전하다는 뜻이 아닙니다. KC 인증 상태(기간만료·처분)는 리콜 판정과 따로 보여 줍니다.' }
+      { title: '판정 읽는 법 | \'불일치\'는 안전하다는 뜻이 아닙니다', legend: true,
+        text: 'KC 인증 상태(기간만료·처분)는 리콜 판정과 따로 보여 줍니다.' }
     ]
   }
 ];
+
+/* ④ — '결과 읽는 법' 색깔 표. 색은 결과 화면·이력의 판정 표시(status-pill)와 같다 */
+const GUIDE_LEGEND =
+    '<table class="guide-legend-table">' +
+    '<thead><tr><th>판정</th><th>뜻</th><th>이렇게 하세요</th></tr></thead><tbody>' +
+    '<tr><td><span class="status-pill status-MATCH">일치</span></td>' +
+    '<td>KC 번호(또는 품번)와 제품명이 리콜 공표문과 같습니다</td>' +
+    '<td>사용을 멈추고 공표문 원문의 소비자 행동요령을 따르세요</td></tr>' +
+    '<tr><td><span class="status-pill status-PARTIAL">의심</span></td>' +
+    '<td>일부만 공표문과 같아 같은 제품인지 확정하지 않았습니다</td>' +
+    '<td>공표문 원문의 모델명·사진을 내 제품과 직접 비교하세요</td></tr>' +
+    '<tr><td><span class="status-pill status-MISSING">KC 번호 미표기</span></td>' +
+    '<td>KC 인증번호가 없어 번호로 판단하지 못했습니다</td>' +
+    '<td>포장의 KC 인증번호를 넣어 다시 확인하거나 [사진으로 찾기]를 누르세요</td></tr>' +
+    '<tr><td><span class="status-pill status-NO_MATCH">불일치</span></td>' +
+    '<td>리콜 공표문과 맞지 않습니다</td>' +
+    '<td>안전하다는 뜻은 아닙니다. 새 공표문이 나오면 다시 확인할 수 있습니다</td></tr>' +
+    '<tr><td><span class="status-pill status-EXCLUDED">판단 제외</span></td>' +
+    '<td>(어린이제품이 아닌) 해외직구·구매대행 상품</td>' +
+    '<td>이 서비스가 판단하는 범위가 아닙니다</td></tr>' +
+    '</tbody></table>';
 
 var guideSection = 0;
 var guideStep = 0;
@@ -2613,6 +2947,13 @@ function closeGuide() {
   const el = document.getElementById('guideOverlay');
   if (el) el.classList.remove('show');
   try { localStorage.setItem(GUIDE_SEEN_KEY, '1'); } catch (e) { /* noop */ }
+}
+
+/* ⑥ — 마지막 장의 버튼은 [시작하기](팝업 닫기). 화살표 키로는 닫지 않는다 */
+function guideNextClick() {
+  const last = guideSection === GUIDE.length - 1 && guideStep === GUIDE[guideSection].steps.length - 1;
+  if (last) closeGuide();
+  else guideMove(1);
 }
 
 function guideMove(delta) {
@@ -2638,16 +2979,31 @@ function paintGuide() {
   }
   text('guideStepTitle', step.title);
   const img = document.getElementById('guideImg');
-  if (img) { img.src = step.img; img.alt = step.title; }
+  if (img) {
+    img.style.display = step.img ? '' : 'none';
+    if (step.img) { img.src = step.img; img.alt = step.title; }
+  }
+  const legend = document.getElementById('guideLegend');
+  if (legend) {
+    legend.style.display = step.legend ? '' : 'none';
+    legend.innerHTML = step.legend ? GUIDE_LEGEND : '';   // 고정 문구(사용자 입력 아님)
+  }
   const t = document.getElementById('guideText');
   if (t) t.innerHTML = step.text;   // 고정 문구(사용자 입력 아님)
-  const total = GUIDE.reduce(function (n, g) { return n + g.steps.length; }, 0);
-  const before = GUIDE.slice(0, guideSection).reduce(function (n, g) { return n + g.steps.length; }, 0);
-  text('guideDots', (before + guideStep + 1) + ' / ' + total);
+  /* 11/8 — '1 / 7'(전체 장 수) 대신 탭 5개 기준으로 센다(팀장 요청). 그림이 2장인 탭은 '그림 1/2'를 붙인다 */
+  text('guideDots', (guideSection + 1) + ' / ' + GUIDE.length +
+      (sec.steps.length > 1 ? ' · 그림 ' + (guideStep + 1) + '/' + sec.steps.length : ''));
   const prev = document.getElementById('guidePrev');
   const next = document.getElementById('guideNext');
   if (prev) prev.disabled = guideSection === 0 && guideStep === 0;
-  if (next) next.disabled = guideSection === GUIDE.length - 1 && guideStep === sec.steps.length - 1;
+  if (next) {
+    const last = guideSection === GUIDE.length - 1 && guideStep === sec.steps.length - 1;
+    next.disabled = false;
+    next.textContent = last ? '시작하기' : '다음 →';
+    next.classList.toggle('guide-start', last);
+  }
+  const body = document.getElementById('guideBody');
+  if (body) body.scrollTop = 0;
 }
 
 document.addEventListener('keydown', function (e) {
@@ -2662,5 +3018,5 @@ document.addEventListener('keydown', function (e) {
 function maybeShowGuideOnce() {
   let seen = false;
   try { seen = localStorage.getItem(GUIDE_SEEN_KEY) === '1'; } catch (e) { seen = true; }
-  if (!seen && !/^#result\//.test(location.hash || '')) openGuide('page');
+  if (!seen && !/^#result\//.test(location.hash || '')) openGuide('start'); // 11/8 ⑥ — 1장(처음 설정)부터
 }
